@@ -14,6 +14,7 @@ private:
 	EventLoop m_evLoop;
 	void* m_ctxt;
 	TimerHandler m_evh;
+	Duration m_timeout;
 
 public:
 	this(EventLoop evl)
@@ -22,8 +23,20 @@ public:
 
 	mixin ContextMgr;
 
+	@property Duration timeout() const {
+		return m_timeout;
+	}
+
 	@property oneShot(bool b) {
 		m_oneshot = b;
+	}
+
+	bool rearm(Duration timeout) {
+		m_timerId = m_evLoop.run(this, m_evh, timeout);
+		if (m_timerId == 0)
+			return false;
+		else
+			return true;
 	}
 
 	bool run(TimerHandler cb, Duration timeout) {
@@ -41,7 +54,7 @@ public:
 
 package:
 
-	version(Posix) static if (!EPOLL) mixin EvInfoMixins;
+	version(Posix) mixin EvInfoMixins;
 
 	@property bool oneShot() const {
 		return m_oneshot;

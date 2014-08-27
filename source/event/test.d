@@ -1,10 +1,11 @@
 module event.test;
-version(unittest):
+//version(unittest):
 import event.events;
 import std.stdio;
 import std.datetime;
 
-unittest {
+//unittest {
+void main() {
 	cbCheck = new shared bool[17];
 
 	lastTimer = Clock.currTime();
@@ -31,6 +32,9 @@ unittest {
 		i++;
 	}
 	writeln("Callback triggers were successful, run time: ", Clock.currTime - start);
+	assert(cbTimerCnt == 4); // MultiTimer expired 4 times
+
+	listnr.kill();
 }
 
 shared bool cbCheck[];
@@ -90,8 +94,9 @@ void testEvents() {
 	import std.concurrency;
 	Tid t2 = spawn(&testSharedEvent);
 	import core.thread : Thread;
-	while (!shrEvent2)
+	while (!shrEvent2 || shrEvent2.id == 0)
 		Thread.sleep(100.msecs);
+
 	shrEvent2.trigger(evl, hshr);
 }
 
@@ -140,6 +145,7 @@ void testMultiTimer() {
 	th.fct = (AsyncTimer ctxt) {
 		assert(lastTimer !is SysTime.init && Clock.currTime() - lastTimer > 900.msecs && Clock.currTime() - lastTimer < 1100.msecs);
 		assert(ctxt.id > 0);
+		assert(!ctxt.oneShot);
 		lastTimer = Clock.currTime();
 		cbTimerCnt++;
 		cbCheck[5] = true;
@@ -160,7 +166,7 @@ TCPEventHandler handler(void* ptr, AsyncTCPConnection conn) {
 }
 
 void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
-	//// writeln("##TrafficHandler!");
+	//writeln("##TrafficHandler!");
 	void doRead() {
 		static ubyte[] bin = new ubyte[4092];
 		while (true) {
@@ -169,10 +175,15 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 			// import std.file;
 			if (len > 0) {
 				auto res = cast(string)bin[0..len];
+				//writeln(res);
 				if (res == "Client Hello")
 					cbCheck[7] = true;
 				if (res == "Client WRITEClient READ")
 					cbCheck[8] = true;
+				if (res == "Client READClient WRITEClient READClient WRITE") {
+					cbCheck[8] = true;
+					cbCheck[9] = true;
+				}
 				if (res == "Client READ")
 					cbCheck[9] = true;
 				if (res == "Client KILL")
@@ -215,7 +226,7 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 
 void testTCPListen(string ip, ushort port) {
 	import event.memory;
-	AsyncTCPListener listnr = new AsyncTCPListener(evl);
+	listnr = new AsyncTCPListener(evl);
 
 	auto addr = evl.resolveHost(ip, port);
 
@@ -236,8 +247,8 @@ void testTCPConnect(string ip, ushort port) {
 				assert(conn.socket > 0);
 				uint len = conn.recv(bin);
 				// writeln("!!Client Received " ~ len.to!string ~ " bytes");
-				// if (len > 0)
-					// writeln(cast(string)bin[0..len]);
+				//if (len > 0)
+				//	writeln(cast(string)bin[0..len]);
 				if (len < bin.length)
 					break;
 			}
@@ -351,6 +362,7 @@ class Context {
 }
 
 EventLoop evl;
+AsyncTCPListener listnr;
 __gshared SysTime start;
 shared AsyncSignal tlsEvent;
 shared AsyncSignal shrEvent;

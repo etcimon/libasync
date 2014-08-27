@@ -20,7 +20,7 @@ import event.memory : FreeListObjectAlloc;
 import event.epoll;
 import event.kqueue;
 enum SOCKET_ERROR = -1;
-version(linux) enum RT_USER_SIGNAL = 53;
+version(linux) enum RT_USER_SIGNAL = 34;
 alias fd_t = int;
 
 version(linux)
@@ -102,10 +102,19 @@ package:
 			sigset_t mask;
 
 			try {
+				foreach (j; 0 .. 32) {
+					sigemptyset(&mask);
+					sigaddset(&mask, RT_USER_SIGNAL + m_instanceId + j);
+					err = pthread_sigmask(SIG_BLOCK, &mask, null);
+					if (catchError!"sigprocmask"(err))
+					{
+						return false;
+					}
+				}
 				sigemptyset(&mask);
 				sigaddset(&mask, RT_USER_SIGNAL + m_instanceId);
-				err = pthread_sigmask(SIG_BLOCK, &mask, null); 
 
+				err = pthread_sigmask(SIG_BLOCK, &mask, null);
 				if (catchError!"sigprocmask"(err))
 				{
 					return false;
@@ -119,17 +128,17 @@ package:
 
 			EventType evtype;
 
-			epoll_event event;
-			event.events = EPOLLIN;
+			epoll_event _event;
+			_event.events = EPOLLIN;
 			evtype = EventType.Signal;
 			try 
 				m_evSignal = FreeListObjectAlloc!EventInfo.alloc(sfd, evtype, EventObject.init, m_instanceId);
 			catch (Exception e){ 
 				assert(false, "Allocation error"); 
 			}
-			event.data.ptr = cast(void*) m_evSignal;
+			_event.data.ptr = cast(void*) m_evSignal;
 
-			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, sfd, &event);
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, sfd, &_event);
 			if (catchError!"EPOLL_CTL_ADD(sfd)"(err))
 			{
 				return false;
@@ -164,9 +173,9 @@ package:
 			if (catchError!"siprocmask"(err))
 				return 0;
 
-			kevent_t event;
-			EV_SET(&event, SIGUSR1, EVFILT_SIGNAL, EV_ADD | EV_ENABLE, 0, 0, m_evSignal);
-			err = kevent(m_kqueuefd, &event, 1, null, 0, null);
+			kevent_t _event;
+			EV_SET(&_event, SIGUSR1, EVFILT_SIGNAL, EV_ADD | EV_ENABLE, 0, 0, m_evSignal);
+			err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 			if (catchError!"kevent_add(SIGUSR1)"(err))
 				assert(false, "Add SIGUSR1 failed at kevent call");
 		}
@@ -259,28 +268,28 @@ package:
 			m_status = StatusInfo.init;
 			static if (EPOLL) 
 			{
-				epoll_event event = events[i];
+				epoll_event _event = events[i];
 				try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch {}
 			}
 			else /* if KQUEUE */
 			{
-				kevent_t event = events[i];
+				kevent_t _event = events[i];
 			}
 
 
 			static if (EPOLL) {
 				// prevent some issues with loopback...
-				if (event.events == 0 || event.events & EPOLLWRBAND || event.events & EPOLLRDBAND) {
+				if (_event.events == 0 || _event.events & EPOLLWRBAND || _event.events & EPOLLRDBAND) {
 					assert(false, "loopback error");
 				}
-				EventInfo* info = cast(EventInfo*) event.data.ptr;
-				int event_flags = cast(int) event.events;
+				EventInfo* info = cast(EventInfo*) _event.data.ptr;
+				int event_flags = cast(int) _event.events;
 
 			}
 			else /* if KQUEUE */
 			{
-				EventInfo* info = cast(EventInfo*) event.udata;
-				int event_flags = (event.filter << 16) | (event.flags & 0xffff);
+				EventInfo* info = cast(EventInfo*) _event.udata;
+				int event_flags = (event.filter << 16) | (_event.flags & 0xffff);
 			}
 
 			assert(info.owner == m_instanceId, "Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
@@ -302,6 +311,11 @@ package:
 
 				case EventType.Timer:
 					try log("Got timer!"); catch {}
+					static if (EPOLL) {
+						static long val;
+						import core.sys.posix.unistd : read;
+						read(info.evObj.timerHandler.ctxt.id, &val, long.sizeof);
+					}
 					try info.evObj.timerHandler();
 					catch (Exception e) {
 						setInternalError!"signalEvHandler"(Status.ERROR);
@@ -586,12 +600,12 @@ package:
 			if (catchSocketError!("run AsyncNotifier")(fd))
 				return 0;
 
-			epoll_event event;
-			event.events = EPOLLIN | EPOLLET;
+			epoll_event _event;
+			_event.events = EPOLLIN | EPOLLET;
 		}	
 		else /* if KQUEUE */
 		{
-			kevent_t event;
+			kevent_t _event;
 			fd_t fd = cast(fd_t)createIndex();
 		}
 		EventType evtype = EventType.Notifier;
@@ -621,17 +635,17 @@ package:
 		}
 
 		static if (EPOLL) {
-			event.data.ptr = cast(void*) evinfo;
+			_event.data.ptr = cast(void*) evinfo;
 			
-			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &event);
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event);
 			if (catchSocketError!("epoll_add(eventfd)")(err))
 				return fd_t.init;
 		}
 		else /* if KQUEUE */
 		{
-			EV_SET(&event, fd, EVFILT_USER, EV_ADD | EV_CLEAR, NOTE_FFCOPY, 0, evinfo);
-			
-			err = kevent(m_kqueuefd, &event, 1, null, 0, null);
+			EV_SET(&_event, fd, EVFILT_USER, EV_ADD | EV_CLEAR, NOTE_FFCOPY, 0, evinfo);
+
+			err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 			
 			if (catchError!"kevent_addSignal"(err))
 				return fd_t.init;
@@ -671,15 +685,15 @@ package:
 
 			fd_t fd;
 			itimerspec its;
-
+			
 			its.it_value.tv_sec = timeout.split!("seconds", "nsecs")().seconds;
 			its.it_value.tv_nsec = timeout.split!("seconds", "nsecs")().nsecs;
-
-			if (!ctxt.oneShot) {
+			if (!ctxt.oneShot)
+			{
 				its.it_interval.tv_sec = its.it_value.tv_sec;
 				its.it_interval.tv_nsec = its.it_value.tv_nsec;
 			}
-
+			import std.stdio;
 			if (ctxt.id == fd_t.init) {
 
 				fd = timerfd_create(CLOCK_REALTIME, 0);
@@ -691,7 +705,44 @@ package:
 
 			if (catchError!"timer_settime"(err))
 				return 0;
+			epoll_event _event;
 
+			EventType evtype;
+			TimerHandler evh;
+			evh.ctxt = ctxt;
+			
+			evtype = EventType.Timer;
+			evh.fct = (AsyncTimer ctxt) {
+				try {
+					ctxt.handler();
+				} catch (Exception e) {
+					//setInternalError!"AsyncTimer handler"(Status.ERROR);
+				}
+			};
+			
+			EventObject eobj;
+			eobj.timerHandler = evh;
+			
+			EventInfo* evinfo;
+			
+			if (!ctxt.evInfo) {
+				try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
+				catch (Exception e) {
+					assert(false, "Failed to allocate resources: " ~ e.msg);
+				}
+				
+				ctxt.evInfo = evinfo;
+			}
+
+			_event.events |= EPOLLIN | EPOLLET;
+			_event.data.ptr = evinfo;
+			if (ctxt.id > 0)
+				err = epoll_ctl(m_epollfd, EPOLL_CTL_DEL, ctxt.id, null); 
+
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event); 
+
+			if (catchError!"timer_epoll_add"(err))
+				return 0;
 			return fd;
 		}
 		else /* if KQUEUE */
@@ -699,8 +750,10 @@ package:
 			// todo: EVFILT_TIMER
 
 			import event.kqueue;
+			fd_t fd = ctxt.id;
 
-			fd_t fd = cast(fd_t) createIndex();
+			if (ctxt.id == 0)
+				fd = cast(fd_t) createIndex();
 			EventType evtype;
 			TimerHandler evh;
 			evh.ctxt = ctxt;
@@ -727,18 +780,18 @@ package:
 
 				ctxt.evInfo = evinfo;
 			}
-			kevent_t event;
+			kevent_t _event;
 
 			int msecs = cast(int) timeout.total!"msecs";
 
 			// www.khmere.com/freebsd_book/html/ch06.html - EV_CLEAR set internally
 
-			EV_SET(&event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
+			EV_SET(&_event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
 
 			if (ctxt.oneShot)
 				event.flags |= EV_ONESHOT;
 
-			int err = kevent(m_kqueuefd, &event, 1, null, 0, null);
+			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 
 			if (catchError!"kevent_timer_add"(err))
 				return 0;
@@ -806,10 +859,10 @@ package:
 			if (ctxt.id == fd_t.init)
 				return false;
 
-			kevent_t event;
-			EV_SET(&event, ctxt.id, EVFILT_USER, EV_DELETE | EV_DISABLE, 0, 0, null);
+			kevent_t _event;
+			EV_SET(&_event, ctxt.id, EVFILT_USER, EV_DELETE | EV_DISABLE, 0, 0, null);
 			
-			int err = kevent(m_kqueuefd, &event, 1, null, 0, null);
+			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 
 			try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
 			catch (Exception e){ assert(false, "Error freeing resources"); }
@@ -846,6 +899,12 @@ package:
 			fd_t err = close(ctxt.id);
 			if (catchError!"timer_kill"(err))
 				return false;
+
+			if (ctxt.evInfo) {
+				try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+				catch (Exception e) { assert(false, "Failed to free resources: " ~ e.msg); }
+			}
+			
 		}
 		else /* if KQUEUE */
 		{
@@ -858,9 +917,9 @@ package:
 				try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
 				catch (Exception e) { assert(false, "Failed to free resources: " ~ e.msg); }
 			}
-			kevent_t event;
-			EV_SET(&event, ctxt.id, EVFILT_TIMER, EV_DELETE, 0, 0, null);
-			int err = kevent(m_kqueuefd, &event, 1, null, 0, null);
+			kevent_t _event;
+			EV_SET(&_event, ctxt.id, EVFILT_TIMER, EV_DELETE, 0, 0, null);
+			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 			if (catchError!"kevent_del(timer)"(err))
 				return false;
 		}
@@ -1646,10 +1705,10 @@ private:
 
 		static if (EPOLL)
 		{
-			epoll_event event;
-			event.data.ptr = ev;
-			event.events = EPOLLIN | EPOLLOUT | EPOLLET;
-			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &event);
+			epoll_event _event;
+			_event.data.ptr = ev;
+			_event.events = EPOLLIN | EPOLLOUT | EPOLLET;
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event);
 			if (catchError!"epoll_ctl"(err)) {
 				return closeAll();
 			}
@@ -1658,17 +1717,17 @@ private:
 		else /* if KQUEUE */
 		{
 			import event.kqueue;
-			kevent_t[2] event;
-			EV_SET(&(event[0]), fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, ev);
-			EV_SET(&(event[1]), fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, ev);
-			err = kevent(m_kqueuefd, &(event[0]), 2, null, 0, null);
+			kevent_t[2] _event;
+			EV_SET(&(_event[0]), fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, ev);
+			EV_SET(&(_event[1]), fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, ev);
+			err = kevent(m_kqueuefd, &(_event[0]), 2, null, 0, null);
 			if (catchError!"kevent_add_udp"(err))
 				return closeAll();
 			
 			nothrow void deregisterEvent() {
-				EV_SET(&(event[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
-				EV_SET(&(event[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
-				kevent(m_kqueuefd, &(event[0]), 2, null, 0, cast(timespec*) null);
+				EV_SET(&(_event[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
+				EV_SET(&(_event[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
+				kevent(m_kqueuefd, &(_event[0]), 2, null, 0, cast(timespec*) null);
 			}
 
 		}
@@ -1713,10 +1772,10 @@ private:
 		/// Add socket to event loop
 		static if (EPOLL)
 		{
-			epoll_event event;
-			event.data.ptr = ev;
-			event.events = EPOLLIN | EPOLLET;
-			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &event);
+			epoll_event _event;
+			_event.data.ptr = ev;
+			_event.events = EPOLLIN | EPOLLET;
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event);
 			if (catchError!"epoll_ctl_add"(err))
 				return closeAll();
 
@@ -1727,15 +1786,15 @@ private:
 		else /* if KQUEUE */
 		{
 			import event.kqueue;
-			kevent_t event;
-			EV_SET(&event, fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, ev);
-			err = kevent(m_kqueuefd, &event, 1, null, 0, null);
+			kevent_t _event;
+			EV_SET(&_event, fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, ev);
+			err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 			if (catchError!"kevent_add_listener"(err))
 				return closeAll();
 
 			nothrow void deregisterEvent() {
-				EV_SET(&event, fd, EVFILT_READ, EV_CLEAR | EV_DISABLE, 0, 0, null);
-				kevent(m_kqueuefd, &event, 1, null, 0, null);
+				EV_SET(&_event, fd, EVFILT_READ, EV_CLEAR | EV_DISABLE, 0, 0, null);
+				kevent(m_kqueuefd, &_event, 1, null, 0, null);
 				// wouldn't know how to deal with errors here...
 			}
 		}
@@ -1775,10 +1834,6 @@ private:
 		try ev = FreeListObjectAlloc!EventInfo.alloc(fd, EventType.TCPTraffic, eo, m_instanceId);
 		catch (Exception e){ assert(false, "Allocation error"); }
 		assert(ev !is null);
-		try {
-			import std.stdio;
-			writeln(*ev);
-		}catch {}
 		ctxt.evInfo = ev;
 		nothrow bool destroyEvInfo() {
 			try FreeListObjectAlloc!EventInfo.free(ev);
@@ -1793,10 +1848,10 @@ private:
 		/// Add socket and callback object to event loop
 		static if (EPOLL)
 		{
-			epoll_event event = void;
-			event.data.ptr = ev;
-			event.events = 0 | EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP | EPOLLET;
-			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &event);
+			epoll_event _event = void;
+			_event.data.ptr = ev;
+			_event.events = 0 | EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP | EPOLLET;
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event);
 			log("Connection FD#" ~ fd.to!string ~ " added to " ~ m_epollfd.to!string);
 			if (catchError!"epoll_ctl_add"(err))
 				return destroyEvInfo();
@@ -1945,25 +2000,29 @@ private:
 	
 	void log(StatusInfo val)
 	{
-		import std.stdio;
-		try {
-			writeln("Backtrace: ", m_status.text);
-			writeln(" | Status:  ", m_status.code);
-			writeln(" | Error: " , m_error);
-			if ((m_error in EPosixMessages) !is null)
-				writeln(" | Message: ", EPosixMessages[m_error]);
-		} catch(Exception e) {
-			return;
+		version(none) {
+			import std.stdio;
+			try {
+				writeln("Backtrace: ", m_status.text);
+				writeln(" | Status:  ", m_status.code);
+				writeln(" | Error: " , m_error);
+				if ((m_error in EPosixMessages) !is null)
+					writeln(" | Message: ", EPosixMessages[m_error]);
+			} catch(Exception e) {
+				return;
+			}
 		}
 	}
 
 	void log(T)(T val)
 	{
-		import std.stdio;
-		try {
-			writeln(val);
-		} catch(Exception e) {
-			return;
+		version(none) {
+			import std.stdio;
+			try {
+				writeln(val);
+			} catch(Exception e) {
+				return;
+			}
 		}
 	}
 
