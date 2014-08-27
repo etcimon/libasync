@@ -304,7 +304,7 @@ package:
 					break;
 
 				case EventType.Timer:
-					try log("Got timer!"); catch {}
+					try log("Got timer! " ~ info.fd.to!string); catch {}
 					static if (EPOLL) {
 						static long val;
 						import core.sys.posix.unistd : read;
@@ -733,9 +733,6 @@ package:
 		}
 		else /* if KQUEUE */
 		{
-			// todo: EVFILT_TIMER
-
-			import event.kqueue;
 			fd_t fd = ctxt.id;
 
 			if (ctxt.id == 0)
@@ -2124,7 +2121,7 @@ nothrow:
 			g_evIdxAvailable.reserve(32);
 
 			foreach (i; g_evIdxAvailable.length .. g_evIdxAvailable.capacity) {
-				g_evIdxAvailable.insertBack(size_t.init);
+				g_evIdxAvailable.insertBack(i + 1);
 			}
 			g_evIdxCapacity = 32;
 			g_idxCapacity = 32;

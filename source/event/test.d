@@ -147,7 +147,7 @@ void testOneshotTimer() {
 		
 	};
 	th.ctxt = g_timerOneShot;
-	g_timerOneShot.run(th, 1.seconds);
+	assert(g_timerOneShot.run(th, 1.seconds), g_timerOneShot.status.code.to!string ~ ": " ~ g_timerOneShot.status.text ~ " | " ~ g_timerOneShot.error);
 }
 
 void testMultiTimer() {	
@@ -163,7 +163,7 @@ void testMultiTimer() {
 		g_cbCheck[5] = true;
 	};
 	th.ctxt = g_timerMulti;
-	g_timerMulti.run(th, 1.seconds);
+	assert(g_timerMulti.run(th, 1.seconds), g_timerOneShot.status.code.to!string ~ ": " ~ g_timerOneShot.status.text ~ " | " ~ g_timerOneShot.error);
 }
 
 TCPEventHandler handler(void* ptr, AsyncTCPConnection conn) {
@@ -191,6 +191,8 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 				if (res == "Client Hello")
 					g_cbCheck[7] = true;
 				if (res == "Client WRITEClient READ")
+					g_cbCheck[8] = true;
+				if (res == "Client READClient WRITE")
 					g_cbCheck[8] = true;
 				if (res == "Client READClient WRITEClient READClient WRITE") {
 					g_cbCheck[8] = true;

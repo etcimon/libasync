@@ -23,6 +23,8 @@ public:
 
 	mixin ContextMgr;
 
+	mixin DefStatus;
+
 	@property Duration timeout() const {
 		return m_timeout;
 	}
@@ -41,7 +43,9 @@ public:
 
 	bool run(TimerHandler cb, Duration timeout) {
 		m_evh = cb;
+		import std.stdio;
 		m_timerId = m_evLoop.run(this, cb, timeout);
+		// try writeln("Timer starting", m_timerId); catch {}
 		if (m_timerId == 0)
 			return false;
 		else
