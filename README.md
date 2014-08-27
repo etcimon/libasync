@@ -9,26 +9,33 @@ The event.d asynchroneous library (beta) is written completely in D, features a 
 
 The following capabilities are now being tested and should not be used in any circumstance in a production environment.
 
-(*) *Asynchroneous TCP connection* - handles multiple requests at a time in each individual thread
-(*) *Asynchroneous TCP listener* - delivers a new connection to the delegate of your choice
-(*) *UDP connection* - receives or sends packets from/to multiple peers
-(*) *Timer* - sets a periodic or one-shot timer with high-precision (μs) to call a select delegate
-(*) *Signal* - Wakes up the event loop in a foreign thread and passes a message to its delegate
-(*) *Notifier* - Thread-local and lock-less adaptation of *Signal* which queues a message intended for a local delegate
-(*) *Multi-threading* support - EventLoop can be launched and run from an unlimited number of threads!
-(*) *Tested on Mac, Linux, Windows and FreeBSD* - Platforms used were Mac OS X (10.8), Linux (Fedora 20) and Windows (8.1), although it should be compatible to 99% of OS.
+- **Asynchroneous TCP connection** - handles multiple requests at a time in each individual thread
+
+- **Asynchroneous TCP listener** - delivers a new connection to the delegate of your choice
+
+- **UDP connection** - receives or sends packets from/to multiple peers
+
+- **Timer** - sets a periodic or one-shot timer with high-precision (μs) to call a select delegate
+
+- **Signal** - Wakes up the event loop in a foreign thread and passes a message to its delegate
+
+- **Notifier** - Thread-local and lock-less adaptation of **Signal** which queues a message intended for a local delegate
+
+- **Multi-threading** support - EventLoop can be launched and run from an unlimited number of threads!
+
+(*) _Tested on Mac, Linux, Windows and FreeBSD_ - Platforms used were Mac OS X (10.8), Linux (Fedora 20) and Windows (8.1), although it should be compatible to 99% of Desktop OS users.
 
 ### Limitations
 
 Some or all of these limitations are possibly being implemented currently and may be available in a future release.
 
-(*) *Native Delegates* - Delegates must be implemented at a higher level, a choice made in favor of manual memory management friendliness
-(*) *DNS resolver* - Currently only a thread-blocking DNS resolver is offered
-(*) *File Watcher* - No file watcher is currently implemented
-(*) *Async File I/O* - 50% completed
-(*) *Signal* - An upper limit of 32 `AsyncSignal` instances can be `run()`ing per process on Linux
-(*) *Futures and Promises* - Call chaining is not supported yet
-(*) *Manual error management* - The entire library is `nothrow` and error management must be built on top of it.
+- **Native Delegates** - Delegates must be implemented at a higher level, a choice made in favor of manual memory management friendliness
+- **DNS resolver** - Currently only a thread-blocking DNS resolver is offered
+- **File Watcher** - No file watcher is currently implemented
+- **Async File I/O** - 50% completed
+- **Signal** - An upper limit of 32 `AsyncSignal` instances can be `run()`ing per process on Linux
+- **Futures and Promises** - Call chaining is not supported yet
+- **Manual error management** - The entire library is `nothrow` and error management must be built on top of it.
 
 Installation Instructions
 -------------------------
