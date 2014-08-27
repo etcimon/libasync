@@ -1,8 +1,14 @@
 ﻿<Properties>
   <MonoDevelop.Ide.Workspace ActiveConfiguration="Default" />
-  <MonoDevelop.Ide.Workbench ActiveDocument="dub.json">
+  <MonoDevelop.Ide.Workbench ActiveDocument="source\app.d">
     <Files>
-      <File FileName="dub.json" Line="40" Column="40" />
+      <File FileName="dub.json" Line="1" Column="1" />
+      <File FileName="source\app.d" Line="28" Column="28" />
+      <File FileName="..\..\source\event\test.d" Line="5" Column="5" />
+      <File FileName="..\..\source\event\tcp.d" Line="9" Column="9" />
+      <File FileName="..\..\source\event\udp.d" Line="18" Column="18" />
+      <File FileName="..\..\source\event\types.d" Line="1" Column="1" />
+      <File FileName="..\..\source\event\windows.d" Line="17" Column="17" />
     </Files>
   </MonoDevelop.Ide.Workbench>
   <MonoDevelop.Ide.DebuggingService.Breakpoints>

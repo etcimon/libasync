@@ -1,0 +1,7 @@
+{
+    "name": "simple_listener",
+    "description": "A simple TCP listener",
+    "dependencies": {
+        "event-d": {"version": "~master", "path": "../../"}
+    }
+}
