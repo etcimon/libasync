@@ -1,0 +1,10 @@
+{
+	"name": "event-d",
+	"description": "A cross-platform D event loop.",
+	"license": "MIT",
+	"authors": ["Etienne Cimon", "Sönke Ludwig"],
+	"targetType": "staticLibrary",
+	"sourcePaths": ["source/event"],
+	"libs-win32": ["ws2_32", "advapi32", "user32"],
+	"libs-linux": ["rt"]
+}
