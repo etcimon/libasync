@@ -3,56 +3,40 @@ import event.events;
 import std.stdio;
 import std.datetime;
 
-class Context {
-	int writes;
-}
-
-EventLoop evl;
-__gshared SysTime start;
-shared AsyncSignal tlsEvent;
-shared AsyncSignal shrEvent;
-shared AsyncSignal shrEvent2;
-
-struct Msg {
-	string message;
-}
-shared Msg* hshr = new shared Msg("Hello from Shared!");
-shared Msg* htls = new shared Msg("Hello from TLS!");
+version(unittest):
 
 unittest {
-	//import etc.linux.memoryerror;
-	//version(linux)
-	//	registerMemoryErrorHandler();
+	cbCheck = new shared bool[17];
+
+	lastTimer = Clock.currTime();
 	start = Clock.currTime();
 	evl = new EventLoop;
-	testTimer();
-	// writeln("Timer added");
-
+	writeln("Loading objects...");
+	testOneshotTimer();
+	testMultiTimer();
 	tlsEvent = new shared AsyncSignal(evl);
-
 	testSignal();
-	// writeln("Signal succeeded");
 	testEvents();
-	// writeln("Events succeeded");
 	testTCPListen("localhost", 8080);
-	// writeln("Added listener");
-	bool second;
-	while(Clock.currTime() - start < 3.seconds) {
-		evl.loop();
-
-		if (Clock.currTime() - start > 2.seconds && !second){
-			testTCPConnect("localhost", 8080);
-			// writeln("Connecting");
-			second = true;
-		}
-	}
-
 	testHTTPConnect();
+	writeln("Loaded. Running event loop...");
+
+	testTCPConnect("localhost", 8080);
 
 	while(Clock.currTime() - start < 4.seconds) 
-		evl.loop();
+		evl.loop(100.msecs);
 		
+	int i;
+	foreach (bool b; cbCheck) {
+		assert(b, "Callback not triggered: cbCheck[" ~ i.to!string ~ "]");
+		i++;
+	}
+	writeln("Callback triggers were successful, run time: ", Clock.currTime - start);
 }
+
+shared bool cbCheck[];
+int cbTimerCnt;
+SysTime lastTimer;
 
 string message = "Some message here";
 void testSignal() {
@@ -67,8 +51,13 @@ void testSignal() {
 	sh.fct = (AsyncNotifier signal) {
 		auto ctxt = signal.getContext!(StructCtxtTest)();
 		auto msg = *signal.getMessage!(string*)();
-		// writeln("Context: ", ctxt.title);
-		// writeln("Message: ", msg);
+		static assert(is(typeof(ctxt) == StructCtxtTest));
+		assert(ctxt.title == "This is my title");
+		static assert(is(typeof(msg) == string));
+		assert(msg == "Some message here");
+
+		cbCheck[0] = true;
+
 		return;
 	};
 
@@ -81,7 +70,8 @@ void testEvents() {
 	shared SignalHandler sh;
 	sh.ctxt = tlsEvent;
 	sh.fct = (shared AsyncSignal ev) {
-		// writeln(ev.getMessage!(shared Msg*)().message);
+		assert(ev.getMessage!(shared Msg*)().message is htls.message);
+		cbCheck[1] = true;
 	};
 	tlsEvent.run(sh);
 
@@ -90,7 +80,8 @@ void testEvents() {
 	shared SignalHandler sh2;
 	sh2.ctxt = shrEvent;
 	sh2.fct = (shared AsyncSignal ev) {
-		// writeln(ev.getMessage!(shared Msg*)().message);
+		assert(ev.getMessage!(shared Msg*)().message is hshr.message);
+		cbCheck[2] = true;
 	};
 	shrEvent.run(sh2);
 
@@ -99,8 +90,8 @@ void testEvents() {
 	import std.concurrency;
 	Tid t2 = spawn(&testSharedEvent);
 	import core.thread : Thread;
-	Thread.sleep(1.seconds);
-
+	while (!shrEvent2)
+		Thread.sleep(100.msecs);
 	shrEvent2.trigger(evl, hshr);
 }
 
@@ -112,11 +103,12 @@ void testSharedEvent() {
 	EventLoop evl2 = new EventLoop;
 
 	shrEvent2 = new shared AsyncSignal(evl2);
-
 	shared SignalHandler sh2;
 	sh2.ctxt = shrEvent2;
 	sh2.fct = (shared AsyncSignal ev) {
-		// writeln(ev.getMessage!(shared Msg*)().message);
+		assert(ev.getMessage!(shared Msg*)().message is hshr.message);
+		cbCheck[3] = true;
+		return;
 	};
 	shrEvent2.run(sh2);
 	shrEvent.trigger(evl2, hshr);
@@ -127,24 +119,43 @@ void testSharedEvent() {
 		evl2.loop();
 }
 
-void testTimer() {	
+void testOneshotTimer() {	
+	AsyncTimer at = new AsyncTimer(evl);
+	at.oneShot = true;
+	TimerHandler th;
+	th.fct = (AsyncTimer ctxt) {
+		assert(!cbCheck[4] && Clock.currTime() - start > 900.msecs && Clock.currTime() - start < 1100.msecs);
+		assert(ctxt.id > 0);
+		cbCheck[4] = true;
+		
+	};
+	th.ctxt = at;
+	at.run(th, 1.seconds);
+}
+
+void testMultiTimer() {	
 	AsyncTimer at = new AsyncTimer(evl);
 	at.oneShot = false;
 	TimerHandler th;
 	th.fct = (AsyncTimer ctxt) {
-		// writeln("Timer (1s) callback triggered at: ", (Clock.currTime() - start).toString());
+		assert(lastTimer !is SysTime.init && Clock.currTime() - lastTimer > 900.msecs && Clock.currTime() - lastTimer < 1100.msecs);
+		assert(ctxt.id > 0);
+		lastTimer = Clock.currTime();
+		cbTimerCnt++;
+		cbCheck[5] = true;
 	};
 	th.ctxt = at;
 	at.run(th, 1.seconds);
-
-
 }
 
 TCPEventHandler handler(void* ptr, AsyncTCPConnection conn) {
-	assert(ptr is null);
+	assert(ptr is null); // no context provided
+
+	cbCheck[6] = true;
 	TCPEventHandler evh;
 	evh.conn = conn;
 	evh.fct = &trafficHandler;
+
 	return evh;
 }
 
@@ -155,9 +166,18 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 		while (true) {
 			uint len = conn.recv(bin);
 			// writeln("!!Server Received " ~ len.to!string ~ " bytes");
-			import std.file;
-			if (len > 0)
-				// writeln(cast(string)bin[0..len]);
+			// import std.file;
+			if (len > 0) {
+				auto res = cast(string)bin[0..len];
+				if (res == "Client Hello")
+					cbCheck[7] = true;
+				if (res == "Client WRITEClient READ")
+					cbCheck[8] = true;
+				if (res == "Client READ")
+					cbCheck[9] = true;
+				if (res == "Client KILL")
+					cbCheck[10] = true;
+			}
 			if (len < bin.length)
 				break;
 		}
@@ -178,11 +198,12 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 			break;
 		case TCPEvent.WRITE:
 			// writeln("!!Server Write is ready");
+			cbCheck[11] = true;
 			if (conn.socket != 0)
 				conn.send(cast(ubyte[])"Server WRITE");
 			break;
 		case TCPEvent.CLOSE:
-			// writeln("!!Server Disconnected");
+			cbCheck[12] = true;
 			break;
 		case TCPEvent.ERROR:
 			// writeln("!!Server Error!");
@@ -212,9 +233,10 @@ void testTCPConnect(string ip, ushort port) {
 		void doRead() {
 			static ubyte[] bin = new ubyte[4092];
 			while (true) {
+				assert(conn.socket > 0);
 				uint len = conn.recv(bin);
 				// writeln("!!Client Received " ~ len.to!string ~ " bytes");
-				if (len > 0)
+				// if (len > 0)
 					// writeln(cast(string)bin[0..len]);
 				if (len < bin.length)
 					break;
@@ -225,8 +247,10 @@ void testTCPConnect(string ip, ushort port) {
 				// writeln("!!Client Connected");
 				conn.setOption(TCPOption.QUICK_ACK, true);
 				conn.setOption(TCPOption.NODELAY, true);
+				cbCheck[14] = true;
 				if (conn.socket != 0)
 					conn.send(cast(ubyte[])"Client Hello");
+				assert(conn.socket > 0);
 				break;
 			case TCPEvent.READ:
 				// writeln("!!Client Read is ready");
@@ -239,6 +263,8 @@ void testTCPConnect(string ip, ushort port) {
 					if (conn.socket != 0)
 						conn.send(cast(ubyte[])"Client KILL");
 					conn.kill();
+
+					cbCheck[13] = true;
 				}
 				else
 					if (conn.socket != 0)
@@ -284,25 +310,18 @@ void testHTTPConnect() {
 				static ubyte[] abin = new ubyte[4092];
 				while (true) {
 					uint len = conn.recv(abin);
-					// writeln("!!Received " ~ len.to!string ~ " bytes");
-					import std.file;
-					File file = File("index.html", "a");
-					if (len > 0)
-						file.write(cast(string)abin[0..len]);
 					if (len < abin.length)
 						break;
 				}
+				cbCheck[15] = true;
 				conn.send(cast(ubyte[])"GET http://example.org/\nHost: example.org\nConnection: close");
 				break;
 			case TCPEvent.READ:
 				static ubyte[] bin = new ubyte[4092];
 				while (true) {
 					uint len = conn.recv(bin);
+					cbCheck[16] = true;
 					// writeln("!!Received " ~ len.to!string ~ " bytes");
-					import std.file;
-					File file = File("index.html", "a");
-					if (len > 0)
-						file.write(cast(string)bin[0..len]);
 					if (len < bin.length)
 						break;
 				}
@@ -326,3 +345,18 @@ void testHTTPConnect() {
 	
 	conn.run(evh);
 }
+
+class Context {
+	int writes;
+}
+
+EventLoop evl;
+__gshared SysTime start;
+shared AsyncSignal tlsEvent;
+shared AsyncSignal shrEvent;
+shared AsyncSignal shrEvent2;
+struct Msg {
+	string message;
+}
+shared Msg* hshr = new shared Msg("Hello from Shared!");
+shared Msg* htls = new shared Msg("Hello from TLS!");

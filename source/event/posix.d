@@ -1943,7 +1943,7 @@ private:
 
 	}
 	
-	debug void log(StatusInfo val)
+	void log(StatusInfo val)
 	{
 		import std.stdio;
 		try {
@@ -1957,7 +1957,7 @@ private:
 		}
 	}
 
-	debug void log(T)(T val)
+	void log(T)(T val)
 	{
 		import std.stdio;
 		try {

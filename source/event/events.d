@@ -16,7 +16,6 @@ public import event.notifier;
 public import event.dns;
 public import event.timer;
 public import event.signal;
-public import event.filesystem;
 
 version(Windows) {
 	public import event.windows;

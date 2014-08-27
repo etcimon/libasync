@@ -1,4 +1,4 @@
-﻿module event.filesystem;
+﻿module event.file;
 version(none):
 import event.types;
 import event.events;

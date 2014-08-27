@@ -61,14 +61,16 @@ package:
 
 		m_status = StatusInfo.init;
 
-		import event.memory : defaultAllocator, FreeListObjectAlloc;
+		import event.memory : manualAllocator, FreeListObjectAlloc;
 		import core.thread;
 		try Thread.getThis().priority = Thread.PRIORITY_MAX;
 		catch (Exception e) { assert(false, "Could not set thread priority"); }
 
 		try {
-			m_connHandlers = FreeListObjectAlloc!(typeof(*m_connHandlers)).alloc(defaultAllocator());
-			m_tcpHandlers = FreeListObjectAlloc!(typeof(*m_tcpHandlers)).alloc(defaultAllocator());
+			m_connHandlers = FreeListObjectAlloc!(typeof(*m_connHandlers)).alloc(manualAllocator());
+			m_tcpHandlers = FreeListObjectAlloc!(typeof(*m_tcpHandlers)).alloc(manualAllocator());
+			m_udpHandlers = FreeListObjectAlloc!(typeof(*m_udpHandlers)).alloc(manualAllocator());
+			m_timerHandlers = FreeListObjectAlloc!(typeof(*m_timerHandlers)).alloc(manualAllocator());
 		} catch (Exception e) { assert(false, "failed to setup allocator strategy in HashMap"); }
 		m_evLoop = evl;
 		shared static ushort i;
@@ -99,6 +101,7 @@ package:
 		RegisterClassW(&wc);
 		m_hwnd = CreateWindowW(wnz, clsn, 0, 0, 0, 385, 375, HWND_MESSAGE,
 		                       cast(HMENU) null, null, null);
+		try log("Window registered: " ~ m_hwnd.to!string); catch{}
 		SetWindowLongPtrA(m_hwnd, GWLP_USERDATA, cast(ULONG_PTR)cast(void*)&this);
 		assert( cast(EventLoopImpl*)cast(void*)GetWindowLongPtrA(m_hwnd, GWLP_USERDATA) is &this );
 		WSADATA wd;
@@ -287,7 +290,8 @@ package:
 	
 	fd_t run(shared AsyncSignal ctxt) {
 		m_status = StatusInfo.init;
-		return cast(fd_t) m_hwnd;
+		try log("Signal subscribed to: " ~ m_hwnd.to!string); catch {}
+		return (cast(fd_t)m_hwnd);
 	}
 
 	fd_t run(AsyncNotifier ctxt) {
@@ -619,7 +623,7 @@ package:
 	{
 
 		m_status = StatusInfo.init;
-		//log("NOTIFY ptr=" ~ payload.to!string);
+		import std.conv;
 		ubyte[4] ubwparam = ((cast(ubyte*)&payload)[0 .. 4]);
 		ubyte[4] ublparam = ((cast(ubyte*)&payload)[4 .. 8]);
 		WPARAM wparam = *cast(uint*)&ubwparam;
@@ -629,7 +633,7 @@ package:
 			err = PostMessageA(cast(HWND)fd, WM_USER_SIGNAL, wparam, lparam);
 		else
 			err = PostMessageA(cast(HWND)fd, WM_USER_EVENT, wparam, lparam);
-		//try log("Sending notification " ~ payload.to!string); catch {}
+		try log("Sending notification to: " ~ (cast(HWND)fd).to!string); catch {}
 		if (err == 0)
 		{
 			m_error = GetLastErrorSafe();
@@ -950,7 +954,9 @@ private:
 				ptr[0 .. 4] = (cast(ubyte*)&msg.lParam)[0 .. 4];
 				ptr[4 .. 8] = (cast(ubyte*)&msg.wParam)[4 .. 8];
 				shared AsyncSignal ctxt = cast(shared AsyncSignal) *cast(void**) &ptr;
+				try log("Got notification in : " ~ m_hwnd.to!string ~ " pointer: " ~ ptr.to!string); catch {}
 				try {
+					assert(ctxt.id != 0);
 					ctxt.handler();
 				}
 				catch (Exception e) {
@@ -1315,9 +1321,9 @@ private:
 		}
 	}
 
-	debug void log(StatusInfo val)
+	void log(StatusInfo val)
 	{
-		version(none){
+		version(none) {
 			import std.stdio;
 			try {
 				writeln("Backtrace: ", m_status.text);
@@ -1331,9 +1337,9 @@ private:
 		}
 	}
 
-	debug void log(T)(T val)
+	void log(T)(T val)
 	{
-		version(none){
+		version(none) {
 			import std.stdio;
 			try {
 				writeln(val);

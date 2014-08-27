@@ -548,11 +548,11 @@ template FreeListObjectAlloc(T, bool USE_GC = true, bool INIT = true)
 
 	TR alloc(ARGS...)(ARGS args)
 	{
-		import std.stdio;
-		writefln("alloc %s/%d", T.stringof, ElemSize);
+		//import std.stdio;
+		//writefln("alloc %s/%d", T.stringof, ElemSize);
 
 		auto mem = manualAllocator().alloc(ElemSize);
-		scope(exit) writefln("ptr: %s", mem.ptr);
+		//scope(exit) writefln("ptr: %s", mem.ptr);
 		static if( hasIndirections!T ) GC.addRange(mem.ptr, ElemSize);
 		static if( INIT ) return emplace!T(mem, args);
 		else return cast(TR)mem.ptr;
@@ -560,8 +560,8 @@ template FreeListObjectAlloc(T, bool USE_GC = true, bool INIT = true)
 
 	void free(TR obj)
 	{
-		import std.stdio;
-		writeln("Free'ing ", obj);
+		//import std.stdio;
+		//writeln("Free'ing ", obj);
 		static if( INIT ){
 			auto objc = obj;
 			.destroy(objc);//typeid(T).destroy(cast(void*)obj);
