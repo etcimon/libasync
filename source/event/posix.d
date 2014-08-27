@@ -7,15 +7,11 @@ import core.thread : Fiber;
 import std.string : toStringz;
 import std.conv : to;
 import std.datetime : Duration, msecs, seconds;
-
 import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
 import std.utf : toUTFz;
 import core.stdc.errno;
 import event.events;
-import std.container : Array;
-import core.sync.mutex : Mutex;
-import core.sync.rwmutex : ReadWriteMutex;
 import event.memory : FreeListObjectAlloc;
 import event.epoll;
 import event.kqueue;
@@ -94,7 +90,6 @@ package:
 			import core.sys.linux.sys.signalfd;
 			import core.sys.posix.signal;
 			import core.thread : getpid;
-			import event.memory : FreeListObjectAlloc;
 
 			fd_t err;
 			fd_t sfd;
@@ -188,7 +183,6 @@ package:
 	void exit() {
 		import core.sys.posix.unistd : close;
 		static if (EPOLL) {
-			import event.memory : FreeListObjectAlloc;
 			close(m_epollfd);
 
 			try FreeListObjectAlloc!EventInfo.free(m_evSignal);
@@ -242,7 +236,6 @@ package:
 			import event.kqueue;
 			import core.sys.posix.time : time_t;
 			import core.sys.posix.config : c_long;
-			import std.datetime : Duration, FracSec;
 			static kevent_t[] events;
 			if (events.length == 0) {
 				try events = allocArray!kevent_t(manualAllocator(), 128); 
@@ -368,7 +361,6 @@ package:
 					success = onUDPTraffic(info.fd, info.evObj.udpHandler, event_flags);
 
 					nothrow void abortHandler(bool graceful) {
-						import event.memory : FreeListObjectAlloc;
 
 						if (graceful) {
 							try info.evObj.udpHandler(UDPEvent.CLOSE);
@@ -400,7 +392,6 @@ package:
 					success = onTCPTraffic(info.fd, info.evObj.tcpEvHandler, event_flags, info.evObj.tcpEvHandler.conn.connected, info.evObj.tcpEvHandler.conn.disconnecting);
 
 					nothrow void abortTCPHandler(bool graceful) {
-						import event.memory : FreeListObjectAlloc;
 
 						nothrow void closeAll() {
 							try log("closeAll()"); catch {}
@@ -561,12 +552,6 @@ package:
 		import core.sys.posix.sys.socket;
 		import std.c.linux.socket;
 		import core.sys.posix.unistd;
-		/*
-		static if (!EPOLL) {
-			gs_mutex.lock_nothrow();
-			scope(exit) gs_mutex.unlock_nothrow();
-		}*/
-
 		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP);
 
 		if (catchSocketError!("run AsyncUDPSocket")(fd))
@@ -927,7 +912,6 @@ package:
 	}
 
 	bool kill(AsyncUDPSocket ctxt) {
-		import event.memory : FreeListObjectAlloc;
 		import core.sys.posix.unistd : close;
 
 
@@ -1353,7 +1337,7 @@ package:
 	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true) 
 	in {
 		import event.validator;
-		assert(validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
+		debug assert(validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
 	}
 	body {
 		import std.c.linux.socket : addrinfo, AI_NUMERICHOST, AI_NUMERICSERV;
@@ -1367,7 +1351,7 @@ package:
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true)
 	in { 
 		import event.validator;	
-		assert(validateHost(host), "Trying to connect to an invalid domain"); 
+		debug assert(validateHost(host), "Trying to connect to an invalid domain"); 
 	}
 	body {
 		import std.c.linux.socket : addrinfo;
@@ -1454,7 +1438,6 @@ private:
 			}
 
 			// Allocate a new connection handler object
-			import event.memory : FreeListObjectAlloc;
 			AsyncTCPConnection conn;
 			try conn = FreeListObjectAlloc!AsyncTCPConnection.alloc(m_evLoop);
 			catch (Exception e){ assert(false, "Allocation failure"); }
@@ -1685,7 +1668,6 @@ private:
 	{
 		import core.sys.posix.sys.socket;
 		import core.sys.posix.unistd;
-		import event.memory : FreeListObjectAlloc;
 
 		fd_t err;
 
@@ -1755,7 +1737,6 @@ private:
 		EventObject eo;
 		eo.tcpAcceptHandler = del;
 		EventInfo* ev;
-		import event.memory : FreeListObjectAlloc;
 
 		try ev = FreeListObjectAlloc!EventInfo.alloc(fd, EventType.TCPAccept, eo, m_instanceId);
 		catch (Exception e){ assert(false, "Allocation error"); }
@@ -1785,7 +1766,6 @@ private:
 		}
 		else /* if KQUEUE */
 		{
-			import event.kqueue;
 			kevent_t _event;
 			EV_SET(&_event, fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, ev);
 			err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
@@ -1826,7 +1806,6 @@ private:
 
 		/// Create callback object
 		import core.sys.posix.sys.socket : connect;
-		import event.memory : FreeListObjectAlloc;
 		EventObject eo;
 		eo.tcpEvHandler = del;
 		EventInfo* ev;
@@ -2086,6 +2065,9 @@ private:
 static if (!EPOLL)
 {
 nothrow:
+	import std.container : Array;
+	import core.sync.mutex : Mutex;
+	import core.sync.rwmutex : ReadWriteMutex;
 	size_t g_evIdxCapacity;
 	Array!size_t g_evIdxAvailable;
 

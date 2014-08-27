@@ -6,6 +6,7 @@
 	Authors: Sönke Ludwig
 */
 module event.hashmap;
+version(Windows):
 
 import event.memory;
 

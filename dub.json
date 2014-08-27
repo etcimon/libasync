@@ -4,6 +4,8 @@
 	"license": "MIT",
 	"authors": ["Etienne Cimon", "Sönke Ludwig"],
 	"targetType": "executable",
+	"targetPath": "build",
+	"workingDirectory": "build",
 	"sourcePaths": ["source/event"],
 	"libs-win32": ["ws2_32", "advapi32", "user32"],
 	"libs-linux": ["rt"]
