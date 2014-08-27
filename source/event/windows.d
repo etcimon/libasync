@@ -1036,12 +1036,16 @@ private:
 			return false;
 		}	catch {}
 		if (sock == 0) { // highly unlikely...
-			setInternalError!"onTCPEvent"(Status.EVLOOP_FAILURE, "no socket defined");
+			setInternalError!"onTCPEvent"(Status.ERROR, "no socket defined");
 			return false;
 		}
 		if (err) {
-			setInternalError!"onTCPEvent"(Status.EVLOOP_FAILURE, string.init, cast(error_t)err);
-			// todo: figure out how to send this in the callbacks without operating on the socket
+			setInternalError!"onTCPEvent"(Status.ERROR, string.init, cast(error_t)err);
+			try {
+				//log("CLOSE FD#" ~ sock.to!string);
+				(*m_tcpHandlers)[sock](TCPEvent.ERROR);
+			} catch { // can't do anything about this...
+			}
 			return false;
 		}
 
@@ -1145,7 +1149,8 @@ private:
 						connected = false;
 				}
 				catch (Exception e) {
-					setInternalError!"del@TCPEvent.CLOSE"(Status.ABORT); 
+					if (m_status.code == Status.OK)
+						setInternalError!"del@TCPEvent.CLOSE"(Status.ABORT); 
 					return false;
 				}
 
@@ -1323,7 +1328,7 @@ private:
 
 	void log(StatusInfo val)
 	{
-		version(none) {
+		static if (LOG) {
 			import std.stdio;
 			try {
 				writeln("Backtrace: ", m_status.text);
@@ -1339,7 +1344,7 @@ private:
 
 	void log(T)(T val)
 	{
-		version(none) {
+		static if (LOG) {
 			import std.stdio;
 			try {
 				writeln(val);

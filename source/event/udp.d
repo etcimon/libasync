@@ -30,6 +30,19 @@ public:
 		return m_evLoop.sendTo(m_socket, data, addr);
 	}
 
+	@property void host(string hostname, size_t port)
+	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
+	body
+	{
+		m_local = m_evLoop.resolveHost(hostname, cast(ushort) port);
+	}
+
+	@property void ip(string ip, size_t port)
+	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
+	body {
+		m_local = m_evLoop.resolveIP(ip, cast(ushort) port);
+	}
+
 	bool run(UDPHandler del, NetworkAddress addr)
 	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
 	body {

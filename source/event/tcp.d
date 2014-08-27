@@ -53,13 +53,32 @@ public:
 		return m_peer;
 	}
 
-	@property void peer(NetworkAddress addr)
+	@property typeof(this) peer(NetworkAddress addr)
 	in { 
 		assert(m_socket == fd_t.init, "Cannot change remote address on a connected socket"); 
 		assert(addr != NetworkAddress.init);
 	}
 	body {
 		m_peer = addr;
+		return this;
+	}
+
+	@property typeof(this) host(string hostname, size_t port)
+	in { 
+		assert(m_socket == fd_t.init, "Cannot change remote address on a connected socket"); 
+	}
+	body {
+		m_peer = m_evLoop.resolveHost(hostname, cast(ushort) port);
+		return this;
+	}
+
+	@property typeof(this) ip(string ip, size_t port)
+	in { 
+		assert(m_socket == fd_t.init, "Cannot change remote address on a connected socket"); 
+	}
+	body {
+		m_peer = m_evLoop.resolveIP(ip, cast(ushort) port);
+		return this;
 	}
 
 	uint recv(ref ubyte[] ub)
@@ -143,10 +162,27 @@ public:
 		return m_local;
 	}
 
-	bool run(TCPAcceptHandler del, NetworkAddress addr)
+	@property typeof(this) host(string hostname, size_t port)
 	in { assert(m_socket == fd_t.init, "Cannot rebind a listening socket"); }
 	body {
-		m_local = addr;
+		m_local = m_evLoop.resolveHost(hostname, cast(ushort) port);
+		return this;
+	}
+	
+	@property typeof(this) ip(string ip, size_t port)
+	in { assert(m_socket == fd_t.init, "Cannot rebind a listening socket"); }
+	body {
+		m_local = m_evLoop.resolveIP(ip, cast(ushort) port);
+		return this;
+	}
+
+	bool run(TCPAcceptHandler del)
+	in { 
+		assert(m_socket == fd_t.init, "Cannot rebind a listening socket");
+		assert(m_local != NetworkAddress.init, "Cannot bind without an address. Please run .host() or .ip()");
+
+	}
+	body {
 		m_socket = m_evLoop.run(this, del);
 		if (m_socket == fd_t.init)
 			return false;

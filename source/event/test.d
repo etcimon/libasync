@@ -241,13 +241,11 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 void testTCPListen(string ip, ushort port) {
 	g_listnr = new AsyncTCPListener(g_evl);
 
-	auto addr = g_evl.resolveHost(ip, port);
-
 	TCPAcceptHandler ach;
 	ach.ctxt = null;
 	ach.fct = &handler;
 
-	auto success = g_listnr.run(ach, addr);
+	auto success = g_listnr.host(ip, port).run(ach);
 	assert(success);
 }
 

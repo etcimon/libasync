@@ -1977,7 +1977,7 @@ private:
 	
 	void log(StatusInfo val)
 	{
-		version(none) {
+		static if (LOG) {
 			import std.stdio;
 			try {
 				writeln("Backtrace: ", m_status.text);
@@ -1993,7 +1993,7 @@ private:
 
 	void log(T)(T val)
 	{
-		version(none) {
+		static if (LOG) {
 			import std.stdio;
 			try {
 				writeln(val);

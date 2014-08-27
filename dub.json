@@ -7,6 +7,7 @@
 	"targetPath": "build",
 	"workingDirectory": "build",
 	"sourcePaths": ["source/event"],
+	"copyFiles": ["ws2_32.lib"],
 	"libs-win32": ["ws2_32", "advapi32", "user32"],
 	"libs-linux": ["rt"]
 }

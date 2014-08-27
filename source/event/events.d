@@ -213,7 +213,7 @@ package:
 	/**
 		Runs the event loop once and returns false if a an unrecoverable error occured
 	*/
-	bool loop(Duration max_timeout = 1.seconds)
+	public bool loop(Duration max_timeout = 1.seconds)
 	{
 		if (!m_evLoop.loop(max_timeout) && m_evLoop.status.code == Status.EVLOOP_FAILURE)
 			return false;
