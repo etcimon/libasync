@@ -789,7 +789,7 @@ package:
 	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true)
 	in {
 		import event.validator;
-		assert( validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
+		debug assert( validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
 	}
 	body {
 		m_status = StatusInfo.init;
@@ -827,7 +827,7 @@ package:
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true, in bool force = true)
 	in { 
 		import event.validator;
-		assert(validateHost(host), "Trying to connect to an invalid domain");
+		debug assert(validateHost(host), "Trying to connect to an invalid domain");
 	}
 	body {
 		m_status = StatusInfo.init;

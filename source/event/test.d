@@ -1,9 +1,8 @@
 module event.test;
+version(unittest):
 import event.events;
 import std.stdio;
 import std.datetime;
-
-version(unittest):
 
 unittest {
 	cbCheck = new shared bool[17];
@@ -39,6 +38,7 @@ int cbTimerCnt;
 SysTime lastTimer;
 
 string message = "Some message here";
+
 void testSignal() {
 	NotifierHandler sh;
 	AsyncNotifier as = new AsyncNotifier(evl);

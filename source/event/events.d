@@ -103,33 +103,37 @@ package:
 		return m_evLoop.send(data, fd, dst);
 	}*/
 
-	/* Returns a structure representing the peer address from an IP or a Hostname
-	 * It is much slower to use a hostname because of the blocking dns resolver.
-	 * An AsyncDNS can be used to retrieve this and improve performance-critical code.
-	*/
-	NetworkAddress resolveAny(string host, ushort port)
-	in { assert(host !is null); }
-	body {
-		import event.validator;
-		import std.typecons : Flag;
 
-		NetworkAddress addr;
-		try {
-			if ( validateHost(host) )
-				addr = resolveIP(host, port, isIPv6.no, isTCP.yes, isForced.no);
-			else if ( validateHost(host) ) // this validation is faster than IPv6
-				addr = resolveHost(host, port, isIPv6.no, isTCP.yes, isForced.yes);
-			else if ( validateIPv6(host) )
-				addr = resolveIP(host, port, isIPv6.yes, isTCP.yes, isForced.no);
-			else {
-				m_evLoop.setInternalError!"AsyncTCP.resolver(invalid_host)"(Status.ERROR);
+	version(none) { // std.regex increases the release size by 1MB
+		/* Returns a structure representing the peer address from an IP or a Hostname
+		 * It is much slower to use a hostname because of the blocking dns resolver.
+		 * An AsyncDNS can be used to retrieve this and improve performance-critical code.
+		*/
+		NetworkAddress resolveAny(string host, ushort port)
+		in { assert(host !is null); }
+		body {
+
+			import event.validator;
+			import std.typecons : Flag;
+
+			NetworkAddress addr;
+			try {
+				if ( validateHost(host) )
+					addr = resolveIP(host, port, isIPv6.no, isTCP.yes, isForced.no);
+				else if ( validateHost(host) ) // this validation is faster than IPv6
+					addr = resolveHost(host, port, isIPv6.no, isTCP.yes, isForced.yes);
+				else if ( validateIPv6(host) )
+					addr = resolveIP(host, port, isIPv6.yes, isTCP.yes, isForced.no);
+				else {
+					m_evLoop.setInternalError!"AsyncTCP.resolver(invalid_host)"(Status.ERROR);
+					return NetworkAddress.init;
+				}
+			} catch (Exception e) {
+				m_evLoop.setInternalError!"AsyncTCP.resolver"(Status.ERROR, e.msg);
 				return NetworkAddress.init;
 			}
-		} catch (Exception e) {
-			m_evLoop.setInternalError!"AsyncTCP.resolver"(Status.ERROR, e.msg);
-			return NetworkAddress.init;
+			return addr;
 		}
-		return addr;
 	}
 
 	NetworkAddress resolveIP(in string ip, ushort port = 0, isIPv6 ipv6 = isIPv6.no, isTCP tcp = isTCP.yes, isForced force = isForced.yes)

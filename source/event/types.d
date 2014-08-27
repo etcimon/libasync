@@ -1218,7 +1218,7 @@ static this() {
 			WSAHOST_NOT_FOUND		:	"Host not found.",
 			WSATRY_AGAIN			:	"Nonauthoritative host not found.",
 			WSANO_RECOVERY			:	"This is a nonrecoverable error.",
-			WSANO_DATA				:	"Valid name, no data record of requested type.",
+			WSANO_DATA				:	"Valid name, no data record of requested type."/*,
 			WSA_QOS_RECEIVERS		:	"QOS receivers.",
 			WSA_QOS_SENDERS			:	"QOS senders.",
 			WSA_QOS_NO_SENDERS		:	"No QOS senders.",
@@ -1245,7 +1245,7 @@ static this() {
 			WSA_QOS_EPSFILTERSPEC		:	"Invalid QOS provider-specific filterspec.",
 			WSA_QOS_ESDMODEOBJ			:	"Invalid QOS shape discard mode object.",
 			WSA_QOS_ESHAPERATEOBJ		:	"Invalid QOS shaping rate object.",
-			WSA_QOS_RESERVED_PETYPE		:	"Reserved policy QOS element type."
+			WSA_QOS_RESERVED_PETYPE		:	"Reserved policy QOS element type."*/
 		];
 	}
 
