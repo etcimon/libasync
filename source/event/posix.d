@@ -443,7 +443,7 @@ package:
 	in { assert(ctxt.socket == fd_t.init, "TCP Connection is active. Use another instance."); }
 	body {
 		m_status = StatusInfo.init;
-		import core.sys.posix.sys.socket : socket, SOCK_STREAM;
+		import event.socket_compat : socket, SOCK_STREAM;
 		import core.sys.posix.unistd : close;
 
 		/*static if (!EPOLL) {
@@ -491,7 +491,7 @@ package:
 	}
 	body {
 		m_status = StatusInfo.init;
-		import core.sys.posix.sys.socket : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR;
+		import event.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR;
 		import core.sys.posix.unistd : close;
 		/*static if (!EPOLL) {
 			gs_mutex.lock_nothrow();
@@ -550,8 +550,7 @@ package:
 	fd_t run(AsyncUDPSocket ctxt, UDPHandler del) {
 		m_status = StatusInfo.init;
 
-		import core.sys.posix.sys.socket;
-		import std.c.linux.socket;
+		import event.socket_compat;
 		import core.sys.posix.unistd;
 		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP);
 
@@ -947,8 +946,8 @@ package:
 		m_status = StatusInfo.init;
 		import std.traits : isIntegral;
 
-		import core.sys.posix.sys.socket : socklen_t, setsockopt, SO_KEEPALIVE, SO_RCVBUF, SO_SNDBUF, SO_RCVTIMEO, SO_SNDTIMEO, SO_LINGER, SOL_SOCKET;
-		import std.c.linux.socket : IPPROTO_TCP, TCP_NODELAY, TCP_QUICKACK, TCP_KEEPCNT, TCP_KEEPINTVL, TCP_KEEPIDLE, TCP_CONGESTION, TCP_CORK, TCP_DEFER_ACCEPT;
+		import event.socket_compat : socklen_t, setsockopt, SO_KEEPALIVE, SO_RCVBUF, SO_SNDBUF, SO_RCVTIMEO, SO_SNDTIMEO, SO_LINGER, SOL_SOCKET;
+		import event.socket_compat : IPPROTO_TCP, TCP_NODELAY, TCP_QUICKACK, TCP_KEEPCNT, TCP_KEEPINTVL, TCP_KEEPIDLE, TCP_CONGESTION, TCP_CORK, TCP_DEFER_ACCEPT;
 		int err;
 		nothrow bool errorHandler() {
 			if (catchError!"setOption:"(err)) {
@@ -1131,7 +1130,7 @@ package:
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
 		m_status = StatusInfo.init;
-		import core.sys.posix.sys.socket : recv;
+		import event.socket_compat : recv;
 		int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
 		
 		static if (LOG) log(".recv " ~ ret.to!string ~ " bytes of " ~ data.length.to!string ~ " @ " ~ fd.to!string);
@@ -1150,7 +1149,7 @@ package:
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		m_status = StatusInfo.init;
-		import core.sys.posix.sys.socket : send;
+		import event.socket_compat : send;
 		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
 
 		if (catchError!"send"(ret)) { // ret == -1
@@ -1165,7 +1164,7 @@ package:
 
 	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
 	{
-		import core.sys.posix.sys.socket;
+		import event.socket_compat;
 
 		m_status = StatusInfo.init;
 
@@ -1191,7 +1190,7 @@ package:
 	
 	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
 	{
-		import core.sys.posix.sys.socket;
+		import event.socket_compat;
 
 		m_status = StatusInfo.init;
 
@@ -1289,7 +1288,7 @@ package:
 		
 		int err;
 		log("shutdown");
-		import core.sys.posix.sys.socket : shutdown, SHUT_WR, SHUT_RDWR;
+		import event.socket_compat : shutdown, SHUT_WR, SHUT_RDWR;
 		if (forced) 
 			err = shutdown(fd, SHUT_RDWR);
 		else
@@ -1338,7 +1337,7 @@ package:
 		debug assert(validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
 	}
 	body {
-		import std.c.linux.socket : addrinfo, AI_NUMERICHOST, AI_NUMERICSERV;
+		import event.socket_compat : addrinfo, AI_NUMERICHOST, AI_NUMERICSERV;
 		addrinfo hints;
 		hints.ai_flags |= AI_NUMERICHOST | AI_NUMERICSERV; // Specific to an IP resolver!
 
@@ -1352,7 +1351,7 @@ package:
 		debug assert(validateHost(host), "Trying to connect to an invalid domain"); 
 	}
 	body {
-		import std.c.linux.socket : addrinfo;
+		import event.socket_compat : addrinfo;
 		addrinfo hints;
 		return getAddressInfo(host, port, ipv6, tcp, hints);
 	}
@@ -1383,7 +1382,7 @@ private:
 	
 	bool onTCPAccept(fd_t fd, TCPAcceptHandler del, int events)
 	{
-		import core.sys.posix.sys.socket : AF_INET, AF_INET6, socklen_t, accept;
+		import event.socket_compat : AF_INET, AF_INET6, socklen_t, accept;
 
 		static if (EPOLL) 
 		{
@@ -1486,7 +1485,7 @@ private:
 		if (error) { // socket failure
 			m_status.text = "listen socket error";
 			int err;
-			import core.sys.posix.sys.socket : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
+			import event.socket_compat : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
 			socklen_t len = int.sizeof;
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
 			m_error = cast(error_t) err;
@@ -1546,7 +1545,7 @@ private:
 		if (error) // socket failure
 		{ 
 
-			import core.sys.posix.sys.socket : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
+			import event.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			import core.sys.posix.unistd : close;
 			int err;
 			socklen_t errlen = err.sizeof;
@@ -1648,7 +1647,7 @@ private:
 		
 		if (error) 
 		{
-			import core.sys.posix.sys.socket : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
+			import event.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			int err;
 			socklen_t errlen = err.sizeof;
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen);
@@ -1664,7 +1663,7 @@ private:
 	
 	bool initUDPSocket(fd_t fd, AsyncUDPSocket ctxt, UDPHandler del)
 	{
-		import core.sys.posix.sys.socket;
+		import event.socket_compat;
 		import core.sys.posix.unistd;
 
 		fd_t err;
@@ -1728,7 +1727,7 @@ private:
 		assert(ctxt.local !is NetworkAddress.init);
 	}
 	body {
-		import core.sys.posix.sys.socket : bind, listen, SOMAXCONN;
+		import event.socket_compat : bind, listen, SOMAXCONN;
 		fd_t err;
 
 		/// Create callback object
@@ -1803,7 +1802,7 @@ private:
 		fd_t err;
 
 		/// Create callback object
-		import core.sys.posix.sys.socket : connect;
+		import event.socket_compat : connect;
 		EventObject eo;
 		eo.tcpEvHandler = del;
 		EventInfo* ev;
@@ -1898,7 +1897,7 @@ private:
 	{
 		m_status.text = TRACE;
 		int err;
-		import core.sys.posix.sys.socket : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
+		import event.socket_compat : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
 		socklen_t len = int.sizeof;
 		getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
 		m_error = cast(error_t) err;
@@ -2006,8 +2005,8 @@ private:
 	NetworkAddress getAddressInfo(addrinfo)(in string host, ushort port, bool ipv6, bool tcp, ref addrinfo hints) 
 	{
 		m_status = StatusInfo.init;
-		import core.sys.posix.sys.socket : AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM;
-		import std.c.linux.socket : IPPROTO_TCP, IPPROTO_UDP, freeaddrinfo, getaddrinfo;
+		import event.socket_compat : AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM;
+		import event.socket_compat : IPPROTO_TCP, IPPROTO_UDP, freeaddrinfo, getaddrinfo;
 
 		NetworkAddress addr;
 		addrinfo* infos;
@@ -2371,7 +2370,7 @@ struct EventInfo {
 		Represents a network/socket address. (taken from vibe.core.net)
 */
 public struct NetworkAddress {
-	import std.c.linux.socket : sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6;
+	import event.socket_compat : sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6;
 	private union {
 		sockaddr addr;
 		sockaddr_in addr_ip4;
