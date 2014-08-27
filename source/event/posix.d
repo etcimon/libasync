@@ -204,8 +204,8 @@ package:
 	}
 
 	bool loop(Duration timeout = 0.seconds)
-	in { assert(Fiber.getThis() is null); }
-	body {
+	//in { assert(Fiber.getThis() is null); }
+	{
 
 		import event.memory;
 		bool success = true;
@@ -283,7 +283,7 @@ package:
 			else /* if KQUEUE */
 			{
 				EventInfo* info = cast(EventInfo*) _event.udata;
-				int event_flags = (event.filter << 16) | (_event.flags & 0xffff);
+				int event_flags = (_event.filter << 16) | (_event.flags & 0xffff);
 			}
 
 			assert(info.owner == m_instanceId, "Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
@@ -775,7 +775,7 @@ package:
 			EV_SET(&_event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
 
 			if (ctxt.oneShot)
-				event.flags |= EV_ONESHOT;
+				_event.flags |= EV_ONESHOT;
 
 			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 
@@ -1230,9 +1230,9 @@ package:
 		{
 			import event.kqueue;
 			
-			kevent_t event;
-			EV_SET(&event, fd, EVFILT_USER, EV_ENABLE | EV_CLEAR, NOTE_TRIGGER | 0x1, 0, ctxt.evInfo);
-			int err = kevent(m_kqueuefd, &event, 1, null, 0, null);
+			kevent_t _event;
+			EV_SET(&_event, fd, EVFILT_USER, EV_ENABLE | EV_CLEAR, NOTE_TRIGGER | 0x1, 0, ctxt.evInfo);
+			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 			
 			if (catchError!"kevent_notify"(err)) {
 				return false;
