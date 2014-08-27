@@ -1,5 +1,4 @@
 ﻿module event.kqueue;
-version(OSX):
 nothrow:
 import core.stdc.stdint;    // intptr_t, uintptr_t
 import core.stdc.time : time_t;

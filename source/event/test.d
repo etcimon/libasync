@@ -1,20 +1,36 @@
 module event.test;
-//version(unittest):
+version(unittest):
 import event.events;
 import std.stdio;
 import std.datetime;
 
-//unittest {
-void main() {
-	cbCheck = new shared bool[17];
+AsyncTimer g_timerOneShot;
+AsyncTimer g_timerMulti;
+AsyncTCPConnection g_tcpConnect;
+AsyncTCPConnection g_httpConnect;
+EventLoop g_evl;
+AsyncNotifier g_notifier;
+AsyncTCPListener g_listnr;
+__gshared SysTime gs_start;
+shared AsyncSignal gs_tlsEvent;
+shared AsyncSignal gs_shrEvent;
+shared AsyncSignal gs_shrEvent2;
+string g_message = "Some message here";
+shared Msg* gs_hshr = new shared Msg("Hello from Shared!");
+shared Msg* gs_htls = new shared Msg("Hello from TLS!");
+shared bool g_cbCheck[];
+int g_cbTimerCnt;
+SysTime g_lastTimer;
 
-	lastTimer = Clock.currTime();
-	start = Clock.currTime();
-	evl = new EventLoop;
+unittest {
+	g_cbCheck = new shared bool[17];
+	g_lastTimer = Clock.currTime();
+	gs_start = Clock.currTime();
+	g_evl = new EventLoop;
 	writeln("Loading objects...");
 	testOneshotTimer();
 	testMultiTimer();
-	tlsEvent = new shared AsyncSignal(evl);
+	gs_tlsEvent = new shared AsyncSignal(g_evl);
 	testSignal();
 	testEvents();
 	testTCPListen("localhost", 8080);
@@ -23,36 +39,31 @@ void main() {
 
 	testTCPConnect("localhost", 8080);
 
-	while(Clock.currTime() - start < 4.seconds) 
-		evl.loop(100.msecs);
+	while(Clock.currTime() - gs_start < 4.seconds) 
+		g_evl.loop(100.msecs);
 		
 	int i;
-	foreach (bool b; cbCheck) {
-		assert(b, "Callback not triggered: cbCheck[" ~ i.to!string ~ "]");
+	foreach (bool b; g_cbCheck) {
+		assert(b, "Callback not triggered: g_cbCheck[" ~ i.to!string ~ "]");
 		i++;
 	}
-	writeln("Callback triggers were successful, run time: ", Clock.currTime - start);
-	assert(cbTimerCnt == 4); // MultiTimer expired 4 times
+	writeln("Callback triggers were successful, run time: ", Clock.currTime - gs_start);
+	assert(g_cbTimerCnt == 4); // MultiTimer expired 4 times
 
-	listnr.kill();
+	g_listnr.kill();
 }
-
-shared bool cbCheck[];
-int cbTimerCnt;
-SysTime lastTimer;
-
-string message = "Some message here";
 
 void testSignal() {
 	NotifierHandler sh;
-	AsyncNotifier as = new AsyncNotifier(evl);
+	g_notifier = new AsyncNotifier(g_evl);
 	class StructCtxtTest {
 		string title = "This is my title";
 	}
-	as.setContext(new StructCtxtTest);
-	sh.ctxt = as;
+	g_notifier.setContext(new StructCtxtTest);
+	sh.ctxt = g_notifier;
 
 	sh.fct = (AsyncNotifier signal) {
+		import std.stdio;
 		auto ctxt = signal.getContext!(StructCtxtTest)();
 		auto msg = *signal.getMessage!(string*)();
 		static assert(is(typeof(ctxt) == StructCtxtTest));
@@ -60,104 +71,105 @@ void testSignal() {
 		static assert(is(typeof(msg) == string));
 		assert(msg == "Some message here");
 
-		cbCheck[0] = true;
+		g_cbCheck[0] = true;
 
 		return;
 	};
 
-	as.run(sh);
-	as.trigger(&message);
+	g_notifier.run(sh);
+
+	g_notifier.trigger(&g_message);
 }
 
 void testEvents() {
 
 	shared SignalHandler sh;
-	sh.ctxt = tlsEvent;
+	sh.ctxt = gs_tlsEvent;
 	sh.fct = (shared AsyncSignal ev) {
-		assert(ev.getMessage!(shared Msg*)().message is htls.message);
-		cbCheck[1] = true;
+		assert(ev.getMessage!(shared Msg*)().message is gs_htls.message);
+		g_cbCheck[1] = true;
 	};
-	tlsEvent.run(sh);
+	gs_tlsEvent.run(sh);
 
-	shrEvent = new shared AsyncSignal(evl);
+	gs_shrEvent = new shared AsyncSignal(g_evl);
 	
 	shared SignalHandler sh2;
-	sh2.ctxt = shrEvent;
+	sh2.ctxt = gs_shrEvent;
 	sh2.fct = (shared AsyncSignal ev) {
-		assert(ev.getMessage!(shared Msg*)().message is hshr.message);
-		cbCheck[2] = true;
+		assert(ev.getMessage!(shared Msg*)().message is gs_hshr.message);
+		g_cbCheck[2] = true;
 	};
-	shrEvent.run(sh2);
+	gs_shrEvent.run(sh2);
 
 	testTLSEvent();
 
 	import std.concurrency;
 	Tid t2 = spawn(&testSharedEvent);
 	import core.thread : Thread;
-	while (!shrEvent2 || shrEvent2.id == 0)
+	while (!gs_shrEvent2 || gs_shrEvent2.id == 0)
 		Thread.sleep(100.msecs);
 
-	shrEvent2.trigger(evl, hshr);
+	gs_shrEvent2.trigger(g_evl, gs_hshr);
 }
 
 void testTLSEvent() {
-	tlsEvent.trigger(htls);
+	gs_tlsEvent.trigger(gs_htls);
 }
 
 void testSharedEvent() {
 	EventLoop evl2 = new EventLoop;
 
-	shrEvent2 = new shared AsyncSignal(evl2);
+	gs_shrEvent2 = new shared AsyncSignal(evl2);
 	shared SignalHandler sh2;
-	sh2.ctxt = shrEvent2;
+	sh2.ctxt = gs_shrEvent2;
 	sh2.fct = (shared AsyncSignal ev) {
-		assert(ev.getMessage!(shared Msg*)().message is hshr.message);
-		cbCheck[3] = true;
+		assert(ev.getMessage!(shared Msg*)().message is gs_hshr.message);
+		g_cbCheck[3] = true;
 		return;
 	};
-	shrEvent2.run(sh2);
-	shrEvent.trigger(evl2, hshr);
-	while(Clock.currTime() - start < 1.seconds) 
+	gs_shrEvent2.run(sh2);
+	gs_shrEvent.trigger(evl2, gs_hshr);
+	while(Clock.currTime() - gs_start < 1.seconds) 
 		evl2.loop();
-	shrEvent.trigger(evl2, hshr);
-	while(Clock.currTime() - start < 4.seconds) 
+	gs_shrEvent.trigger(evl2, gs_hshr);
+	while(Clock.currTime() - gs_start < 4.seconds) 
 		evl2.loop();
 }
 
 void testOneshotTimer() {	
-	AsyncTimer at = new AsyncTimer(evl);
-	at.oneShot = true;
+	AsyncTimer g_timerOneShot = new AsyncTimer(g_evl);
+	g_timerOneShot.oneShot = true;
 	TimerHandler th;
 	th.fct = (AsyncTimer ctxt) {
-		assert(!cbCheck[4] && Clock.currTime() - start > 900.msecs && Clock.currTime() - start < 1100.msecs);
+		assert(!g_cbCheck[4] && Clock.currTime() - gs_start > 900.msecs && Clock.currTime() - gs_start < 1100.msecs);
 		assert(ctxt.id > 0);
-		cbCheck[4] = true;
+		g_cbCheck[4] = true;
 		
 	};
-	th.ctxt = at;
-	at.run(th, 1.seconds);
+	th.ctxt = g_timerOneShot;
+	g_timerOneShot.run(th, 1.seconds);
 }
 
 void testMultiTimer() {	
-	AsyncTimer at = new AsyncTimer(evl);
-	at.oneShot = false;
+	AsyncTimer g_timerMulti = new AsyncTimer(g_evl);
+	g_timerMulti.oneShot = false;
 	TimerHandler th;
 	th.fct = (AsyncTimer ctxt) {
-		assert(lastTimer !is SysTime.init && Clock.currTime() - lastTimer > 900.msecs && Clock.currTime() - lastTimer < 1100.msecs);
+		assert(g_lastTimer !is SysTime.init && Clock.currTime() - g_lastTimer > 900.msecs && Clock.currTime() - g_lastTimer < 1100.msecs);
 		assert(ctxt.id > 0);
 		assert(!ctxt.oneShot);
-		lastTimer = Clock.currTime();
-		cbTimerCnt++;
-		cbCheck[5] = true;
+		g_lastTimer = Clock.currTime();
+		g_cbTimerCnt++;
+		g_cbCheck[5] = true;
 	};
-	th.ctxt = at;
-	at.run(th, 1.seconds);
+	th.ctxt = g_timerMulti;
+	g_timerMulti.run(th, 1.seconds);
 }
 
 TCPEventHandler handler(void* ptr, AsyncTCPConnection conn) {
 	assert(ptr is null); // no context provided
 
-	cbCheck[6] = true;
+	g_cbCheck[6] = true;
 	TCPEventHandler evh;
 	evh.conn = conn;
 	evh.fct = &trafficHandler;
@@ -177,17 +189,17 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 				auto res = cast(string)bin[0..len];
 				//writeln(res);
 				if (res == "Client Hello")
-					cbCheck[7] = true;
+					g_cbCheck[7] = true;
 				if (res == "Client WRITEClient READ")
-					cbCheck[8] = true;
+					g_cbCheck[8] = true;
 				if (res == "Client READClient WRITEClient READClient WRITE") {
-					cbCheck[8] = true;
-					cbCheck[9] = true;
+					g_cbCheck[8] = true;
+					g_cbCheck[9] = true;
 				}
 				if (res == "Client READ")
-					cbCheck[9] = true;
+					g_cbCheck[9] = true;
 				if (res == "Client KILL")
-					cbCheck[10] = true;
+					g_cbCheck[10] = true;
 			}
 			if (len < bin.length)
 				break;
@@ -209,12 +221,12 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 			break;
 		case TCPEvent.WRITE:
 			// writeln("!!Server Write is ready");
-			cbCheck[11] = true;
+			g_cbCheck[11] = true;
 			if (conn.socket != 0)
 				conn.send(cast(ubyte[])"Server WRITE");
 			break;
 		case TCPEvent.CLOSE:
-			cbCheck[12] = true;
+			g_cbCheck[12] = true;
 			break;
 		case TCPEvent.ERROR:
 			// writeln("!!Server Error!");
@@ -225,16 +237,15 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 }
 
 void testTCPListen(string ip, ushort port) {
-	import event.memory;
-	listnr = new AsyncTCPListener(evl);
+	g_listnr = new AsyncTCPListener(g_evl);
 
-	auto addr = evl.resolveHost(ip, port);
+	auto addr = g_evl.resolveHost(ip, port);
 
 	TCPAcceptHandler ach;
 	ach.ctxt = null;
 	ach.fct = &handler;
 
-	auto success = listnr.run(ach, addr);
+	auto success = g_listnr.run(ach, addr);
 	assert(success);
 }
 
@@ -258,7 +269,7 @@ void testTCPConnect(string ip, ushort port) {
 				// writeln("!!Client Connected");
 				conn.setOption(TCPOption.QUICK_ACK, true);
 				conn.setOption(TCPOption.NODELAY, true);
-				cbCheck[14] = true;
+				g_cbCheck[14] = true;
 				if (conn.socket != 0)
 					conn.send(cast(ubyte[])"Client Hello");
 				assert(conn.socket > 0);
@@ -275,7 +286,7 @@ void testTCPConnect(string ip, ushort port) {
 						conn.send(cast(ubyte[])"Client KILL");
 					conn.kill();
 
-					cbCheck[13] = true;
+					g_cbCheck[13] = true;
 				}
 				else
 					if (conn.socket != 0)
@@ -300,14 +311,14 @@ void testTCPConnect(string ip, ushort port) {
 	};
 
 	import event.memory;
-	AsyncTCPConnection conn = new AsyncTCPConnection(evl);
+	g_tcpConnect = new AsyncTCPConnection(g_evl);
 
 	Context ctxt = new Context;
-	conn.setContext(ctxt);
-	evh.conn = conn;
-	conn.peer = evl.resolveHost(ip, port);
-	
-	auto success = conn.run(evh);
+	g_tcpConnect.setContext(ctxt);
+	evh.conn = g_tcpConnect;
+	g_tcpConnect.peer = g_evl.resolveHost(ip, port);
+
+	auto success = g_tcpConnect.run(evh);
 	assert(success);
 
 }
@@ -324,14 +335,14 @@ void testHTTPConnect() {
 					if (len < abin.length)
 						break;
 				}
-				cbCheck[15] = true;
+				g_cbCheck[15] = true;
 				conn.send(cast(ubyte[])"GET http://example.org/\nHost: example.org\nConnection: close");
 				break;
 			case TCPEvent.READ:
 				static ubyte[] bin = new ubyte[4092];
 				while (true) {
 					uint len = conn.recv(bin);
-					cbCheck[16] = true;
+					g_cbCheck[16] = true;
 					// writeln("!!Received " ~ len.to!string ~ " bytes");
 					if (len < bin.length)
 						break;
@@ -349,26 +360,18 @@ void testHTTPConnect() {
 		}
 		return;
 	};
-	AsyncTCPConnection conn = new AsyncTCPConnection(evl);
+	g_httpConnect = new AsyncTCPConnection(g_evl);
 	
-	evh.conn = conn;
-	conn.peer = evl.resolveHost("example.org", 80);
+	evh.conn = g_httpConnect;
+	g_httpConnect.peer = g_evl.resolveHost("example.org", 80);
 	
-	conn.run(evh);
+	g_httpConnect.run(evh);
 }
 
 class Context {
 	int writes;
 }
 
-EventLoop evl;
-AsyncTCPListener listnr;
-__gshared SysTime start;
-shared AsyncSignal tlsEvent;
-shared AsyncSignal shrEvent;
-shared AsyncSignal shrEvent2;
 struct Msg {
 	string message;
 }
-shared Msg* hshr = new shared Msg("Hello from Shared!");
-shared Msg* htls = new shared Msg("Hello from TLS!");

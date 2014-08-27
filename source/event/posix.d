@@ -3,29 +3,30 @@ module event.posix;
 version (Posix):
 
 import event.types;
-import core.thread : Fiber;
 import std.string : toStringz;
 import std.conv : to;
 import std.datetime : Duration, msecs, seconds;
 import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
-import std.utf : toUTFz;
 import core.stdc.errno;
 import event.events;
 import event.memory : FreeListObjectAlloc;
-import event.epoll;
-import event.kqueue;
 enum SOCKET_ERROR = -1;
 version(linux) enum RT_USER_SIGNAL = 34;
 alias fd_t = int;
 
-version(linux)
+version(linux) {
+	import event.epoll;
 	const EPOLL = true;
-version(OSX)
+}
+version(OSX) {
+	import event.kqueue;
 	const EPOLL = false;
-version(FreeBSD)
+}
+version(FreeBSD) {
+	import event.kqueue;
 	const EPOLL = false;
-
+}
 package struct EventLoopImpl {
 	static if (EPOLL) {
 		pragma(msg, "Using Linux EPOLL for events");

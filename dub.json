@@ -3,7 +3,7 @@
 	"description": "A cross-platform D event loop.",
 	"license": "MIT",
 	"authors": ["Etienne Cimon", "Sönke Ludwig"],
-	"targetType": "executable",
+	"targetType": "staticLibrary",
 	"targetPath": "build",
 	"workingDirectory": "build",
 	"sourcePaths": ["source/event"],
