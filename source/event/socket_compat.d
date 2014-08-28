@@ -13,12 +13,14 @@
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
 module event.socket_compat;
+
+
+version (Posix):
 public import std.c.linux.socket;
 private import core.sys.posix.config;
 public import core.sys.posix.sys.types; // for ssize_t, size_t
 public import core.sys.posix.sys.uio;   // for iovec
 
-version (Posix):
 extern (C) nothrow @nogc:
 
 //
