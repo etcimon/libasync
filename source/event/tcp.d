@@ -31,15 +31,13 @@ public:
 	@property bool inbound() const {
 		return m_inbound;
 	}
-	
-	@property void inbound(bool b) {
-		m_inbound = b;
-	}
 
 	@property void noDelay(bool b)
-	in { assert(m_socket != fd_t.init, "Method can only be used before connection"); }
-	body {
-		m_noDelay = true;
+	{
+		if (m_socket == fd_t.init)
+			m_noDelay = b;
+		else
+			setOption(TCPOption.NODELAY, true);
 	}
 
 	bool setOption(T)(TCPOption op, in T val) 
@@ -114,6 +112,10 @@ public:
 
 package:
 	version(Posix) mixin TCPConnectionMixins;
+
+	@property void inbound(bool b) {
+		m_inbound = b;
+	}
 
 	@property bool noDelay() const
 	{
