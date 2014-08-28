@@ -12,7 +12,7 @@
  *    (See accompanying file LICENSE or copy at
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
-module event.socket_compat;
+module event.internals.socket_compat;
 
 
 version (Posix):

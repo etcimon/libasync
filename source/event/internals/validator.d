@@ -1,4 +1,4 @@
-﻿module event.validator;
+﻿module event.internals.validator;
 
 debug:
 import std.regex : regex, Regex, matchAll;

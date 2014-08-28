@@ -2,7 +2,6 @@
 version(none):
 import event.types;
 import event.events;
-import event.stack;
 import core.thread : Thread, ThreadGroup;
 import core.sync.mutex;
 

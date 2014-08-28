@@ -3,11 +3,10 @@ module event.events;
 import std.stdio;
 
 import core.thread;
-import std.exception;
 import std.container : Array;
 import std.datetime : Duration;
 import std.typecons : Flag;
-import event.memory : FreeListObjectAlloc;
+import event.internals.memory : FreeListObjectAlloc;
 
 public import event.types;
 public import event.tcp;

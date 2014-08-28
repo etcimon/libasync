@@ -1,5 +1,4 @@
 ﻿module event.notifier;
-import std.traits;
 
 import event.types;
 import event.events;

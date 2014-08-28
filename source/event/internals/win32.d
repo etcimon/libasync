@@ -1,5 +1,5 @@
 /// [internal]
-module event.win32;
+module event.internals.win32;
 
 version(Windows):
 

@@ -310,7 +310,6 @@ void testTCPConnect(string ip, ushort port) {
 		return;
 	};
 
-	import event.memory;
 	g_tcpConnect = new AsyncTCPConnection(g_evl);
 
 	Context ctxt = new Context;

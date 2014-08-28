@@ -10,21 +10,21 @@ import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
 import core.stdc.errno;
 import event.events;
-import event.memory : FreeListObjectAlloc;
+import event.internals.memory : FreeListObjectAlloc;
 enum SOCKET_ERROR = -1;
 version(linux) enum RT_USER_SIGNAL = 34;
 alias fd_t = int;
 
 version(linux) {
-	import event.epoll;
+	import event.internals.epoll;
 	const EPOLL = true;
 }
 version(OSX) {
-	import event.kqueue;
+	import event.internals.kqueue;
 	const EPOLL = false;
 }
 version(FreeBSD) {
-	import event.kqueue;
+	import event.internals.kqueue;
 	const EPOLL = false;
 }
 package struct EventLoopImpl {
@@ -143,9 +143,8 @@ package:
 		}
 		else /* if KQUEUE */ 
 		{
-			import event.kqueue : kqueue;
+
 			m_kqueuefd = kqueue();
-			import event.kqueue;
 			import core.sys.posix.signal;
 			int err;
 			try {
@@ -156,7 +155,6 @@ package:
 				err = sigprocmask(SIG_BLOCK, &mask, null);
 			} catch {}
 
-			import event.kqueue;
 			EventType evtype = EventType.Signal;
 
 			// use GC because FreeListObjectAlloc fails at emplace for shared objects
@@ -207,7 +205,7 @@ package:
 	//in { assert(Fiber.getThis() is null); }
 	{
 
-		import event.memory;
+		import event.internals.memory;
 		bool success = true;
 		int num;
 
@@ -234,7 +232,6 @@ package:
 			
 		}
 		else /* if KQUEUE */ {
-			import event.kqueue;
 			import core.sys.posix.time : time_t;
 			import core.sys.posix.config : c_long;
 			static kevent_t[] events;
@@ -443,7 +440,7 @@ package:
 	in { assert(ctxt.socket == fd_t.init, "TCP Connection is active. Use another instance."); }
 	body {
 		m_status = StatusInfo.init;
-		import event.socket_compat : socket, SOCK_STREAM;
+		import event.internals.socket_compat : socket, SOCK_STREAM;
 		import core.sys.posix.unistd : close;
 
 		/*static if (!EPOLL) {
@@ -491,7 +488,7 @@ package:
 	}
 	body {
 		m_status = StatusInfo.init;
-		import event.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR;
+		import event.internals.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR;
 		import core.sys.posix.unistd : close;
 		/*static if (!EPOLL) {
 			gs_mutex.lock_nothrow();
@@ -550,7 +547,7 @@ package:
 	fd_t run(AsyncUDPSocket ctxt, UDPHandler del) {
 		m_status = StatusInfo.init;
 
-		import event.socket_compat;
+		import event.internals.socket_compat : socket, SOCK_DGRAM, IPPROTO_UDP;
 		import core.sys.posix.unistd;
 		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP);
 
@@ -835,8 +832,6 @@ package:
 		else /* if KQUEUE */
 		{
 			scope(exit) destroyIndex(ctxt);
-			
-			import event.kqueue;
 
 			if (ctxt.id == fd_t.init)
 				return false;
@@ -890,8 +885,6 @@ package:
 		}
 		else /* if KQUEUE */
 		{
-			import event.kqueue;
-
 			scope(exit) 
 				destroyIndex(ctxt);
 
@@ -922,7 +915,6 @@ package:
 
 		static if (!EPOLL)
 		{
-			import event.kqueue;
 			kevent_t[2] events;
 			EV_SET(&(events[0]), ctxt.socket, EVFILT_READ, EV_DELETE, 0, 0, null);
 			EV_SET(&(events[1]), ctxt.socket, EVFILT_WRITE, EV_DELETE, 0, 0, null);
@@ -946,8 +938,7 @@ package:
 		m_status = StatusInfo.init;
 		import std.traits : isIntegral;
 
-		import event.socket_compat : socklen_t, setsockopt, SO_KEEPALIVE, SO_RCVBUF, SO_SNDBUF, SO_RCVTIMEO, SO_SNDTIMEO, SO_LINGER, SOL_SOCKET;
-		import event.socket_compat : IPPROTO_TCP, TCP_NODELAY, TCP_QUICKACK, TCP_KEEPCNT, TCP_KEEPINTVL, TCP_KEEPIDLE, TCP_CONGESTION, TCP_CORK, TCP_DEFER_ACCEPT;
+		import event.internals.socket_compat : socklen_t, setsockopt, SO_KEEPALIVE, SO_RCVBUF, SO_SNDBUF, SO_RCVTIMEO, SO_SNDTIMEO, SO_LINGER, SOL_SOCKET, IPPROTO_TCP, TCP_NODELAY, TCP_QUICKACK, TCP_KEEPCNT, TCP_KEEPINTVL, TCP_KEEPIDLE, TCP_CONGESTION, TCP_CORK, TCP_DEFER_ACCEPT;
 		int err;
 		nothrow bool errorHandler() {
 			if (catchError!"setOption:"(err)) {
@@ -1130,7 +1121,7 @@ package:
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
 		m_status = StatusInfo.init;
-		import event.socket_compat : recv;
+		import event.internals.socket_compat : recv;
 		int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
 		
 		static if (LOG) log(".recv " ~ ret.to!string ~ " bytes of " ~ data.length.to!string ~ " @ " ~ fd.to!string);
@@ -1149,7 +1140,7 @@ package:
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		m_status = StatusInfo.init;
-		import event.socket_compat : send;
+		import event.internals.socket_compat : send;
 		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
 
 		if (catchError!"send"(ret)) { // ret == -1
@@ -1164,7 +1155,7 @@ package:
 
 	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
 	{
-		import event.socket_compat;
+		import event.internals.socket_compat : recvfrom, AF_INET6, AF_INET, socklen_t;
 
 		m_status = StatusInfo.init;
 
@@ -1190,7 +1181,7 @@ package:
 	
 	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
 	{
-		import event.socket_compat;
+		import event.internals.socket_compat : sendto;
 
 		m_status = StatusInfo.init;
 
@@ -1223,9 +1214,7 @@ package:
 			return true;
 		}
 		else /* if KQUEUE */
-		{
-			import event.kqueue;
-			
+		{			
 			kevent_t _event;
 			EV_SET(&_event, fd, EVFILT_USER, EV_ENABLE | EV_CLEAR, NOTE_TRIGGER | 0x1, 0, ctxt.evInfo);
 			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
@@ -1288,14 +1277,13 @@ package:
 		
 		int err;
 		log("shutdown");
-		import event.socket_compat : shutdown, SHUT_WR, SHUT_RDWR;
+		import event.internals.socket_compat : shutdown, SHUT_WR, SHUT_RDWR;
 		if (forced) 
 			err = shutdown(fd, SHUT_RDWR);
 		else
 			err = shutdown(fd, SHUT_WR);
 
 		static if (!EPOLL) {
-			import event.kqueue;
 			kevent_t[2] events;
 			try log("!!DISC delete events"); catch {}
 			EV_SET(&(events[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
@@ -1333,11 +1321,11 @@ package:
 	
 	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true) 
 	in {
-		import event.validator;
+		import event.internals.validator : validateIPv4, validateIPv6;
 		debug assert(validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
 	}
 	body {
-		import event.socket_compat : addrinfo, AI_NUMERICHOST, AI_NUMERICSERV;
+		import event.internals.socket_compat : addrinfo, AI_NUMERICHOST, AI_NUMERICSERV;
 		addrinfo hints;
 		hints.ai_flags |= AI_NUMERICHOST | AI_NUMERICSERV; // Specific to an IP resolver!
 
@@ -1347,11 +1335,11 @@ package:
 
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true)
 	in { 
-		import event.validator;	
+		import event.internals.validator : validateHost;
 		debug assert(validateHost(host), "Trying to connect to an invalid domain"); 
 	}
 	body {
-		import event.socket_compat : addrinfo;
+		import event.internals.socket_compat : addrinfo;
 		addrinfo hints;
 		return getAddressInfo(host, port, ipv6, tcp, hints);
 	}
@@ -1382,7 +1370,7 @@ private:
 	
 	bool onTCPAccept(fd_t fd, TCPAcceptHandler del, int events)
 	{
-		import event.socket_compat : AF_INET, AF_INET6, socklen_t, accept;
+		import event.internals.socket_compat : AF_INET, AF_INET6, socklen_t, accept;
 
 		static if (EPOLL) 
 		{
@@ -1392,7 +1380,6 @@ private:
 		}
 		else 
 		{
-			import event.kqueue;
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
 			const bool incoming = cast(bool)(kqueue_events & EVFILT_READ);
@@ -1485,7 +1472,7 @@ private:
 		if (error) { // socket failure
 			m_status.text = "listen socket error";
 			int err;
-			import event.socket_compat : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
+			import event.internals.socket_compat : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
 			socklen_t len = int.sizeof;
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
 			m_error = cast(error_t) err;
@@ -1513,7 +1500,6 @@ private:
 		}
 		else 
 		{
-			import event.kqueue;
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
 			const bool read = cast(bool) (kqueue_events & EVFILT_READ);
@@ -1545,7 +1531,7 @@ private:
 		if (error) // socket failure
 		{ 
 
-			import event.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
+			import event.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			import core.sys.posix.unistd : close;
 			int err;
 			socklen_t errlen = err.sizeof;
@@ -1572,7 +1558,6 @@ private:
 		}
 		else /* if KQUEUE */
 		{
-			import event.kqueue;
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
 			const bool connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !(*disconnecting) && !(*connected));
@@ -1647,7 +1632,7 @@ private:
 		
 		if (error) 
 		{
-			import event.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
+			import event.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			int err;
 			socklen_t errlen = err.sizeof;
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen);
@@ -1663,7 +1648,7 @@ private:
 	
 	bool initUDPSocket(fd_t fd, AsyncUDPSocket ctxt, UDPHandler del)
 	{
-		import event.socket_compat;
+		import event.internals.socket_compat : bind;
 		import core.sys.posix.unistd;
 
 		fd_t err;
@@ -1695,7 +1680,6 @@ private:
 		}
 		else /* if KQUEUE */
 		{
-			import event.kqueue;
 			kevent_t[2] _event;
 			EV_SET(&(_event[0]), fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, ev);
 			EV_SET(&(_event[1]), fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, ev);
@@ -1727,7 +1711,7 @@ private:
 		assert(ctxt.local !is NetworkAddress.init);
 	}
 	body {
-		import event.socket_compat : bind, listen, SOMAXCONN;
+		import event.internals.socket_compat : bind, listen, SOMAXCONN;
 		fd_t err;
 
 		/// Create callback object
@@ -1802,7 +1786,7 @@ private:
 		fd_t err;
 
 		/// Create callback object
-		import event.socket_compat : connect;
+		import event.internals.socket_compat : connect;
 		EventObject eo;
 		eo.tcpEvHandler = del;
 		EventInfo* ev;
@@ -1838,7 +1822,6 @@ private:
 		}
 		else /* if KQUEUE */
 		{
-			import event.kqueue;
 			kevent_t[2] events = void;
 			try log("Register event ptr " ~ ev.to!string); catch {}
 			assert(ev.evType == EventType.TCPTraffic, "Bad event type for TCP Connection");
@@ -1897,7 +1880,7 @@ private:
 	{
 		m_status.text = TRACE;
 		int err;
-		import event.socket_compat : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
+		import event.internals.socket_compat : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
 		socklen_t len = int.sizeof;
 		getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
 		m_error = cast(error_t) err;
@@ -2005,8 +1988,7 @@ private:
 	NetworkAddress getAddressInfo(addrinfo)(in string host, ushort port, bool ipv6, bool tcp, ref addrinfo hints) 
 	{
 		m_status = StatusInfo.init;
-		import event.socket_compat : AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM;
-		import event.socket_compat : IPPROTO_TCP, IPPROTO_UDP, freeaddrinfo, getaddrinfo;
+		import event.internals.socket_compat : AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, IPPROTO_TCP, IPPROTO_UDP, freeaddrinfo, getaddrinfo;
 
 		NetworkAddress addr;
 		addrinfo* infos;
@@ -2370,7 +2352,7 @@ struct EventInfo {
 		Represents a network/socket address. (taken from vibe.core.net)
 */
 public struct NetworkAddress {
-	import event.socket_compat : sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6;
+	import event.internals.socket_compat : sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6;
 	private union {
 		sockaddr addr;
 		sockaddr_in addr_ip4;

@@ -5,15 +5,13 @@ version (Windows):
 import core.atomic;
 import core.thread : Fiber;
 import event.types;
-import event.hashmap;
+import event.internals.hashmap;
 import std.container : Array;
 import std.string : toStringz;
 import std.conv : to;
 import std.datetime : Duration, msecs, seconds;
 import std.algorithm : min;
-import std.c.windows.windows;
-import std.c.windows.winsock;
-import event.win32;
+import event.internals.win32;
 import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
 import std.utf : toUTFz;
@@ -61,7 +59,7 @@ package:
 
 		m_status = StatusInfo.init;
 
-		import event.memory : manualAllocator, FreeListObjectAlloc;
+		import event.internals.memory : manualAllocator, FreeListObjectAlloc;
 		import core.thread;
 		try Thread.getThis().priority = Thread.PRIORITY_MAX;
 		catch (Exception e) { assert(false, "Could not set thread priority"); }
@@ -734,7 +732,7 @@ package:
 		try {
 			TCPEventHandler* evh = fd in *m_tcpHandlers;
 			if (evh && evh.conn.inbound) {
-				import event.memory : FreeListObjectAlloc;
+				import event.internals.memory : FreeListObjectAlloc;
 				try FreeListObjectAlloc!AsyncTCPConnection.free(evh.conn);
 				catch(Exception e) { assert(false, "Failed to free resources"); }
 				//log("Remove event handler for " ~ fd.to!string);
@@ -788,7 +786,7 @@ package:
 
 	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true)
 	in {
-		import event.validator;
+		import event.internals.validator : validateIPv4, validateIPv6;
 		debug assert( validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
 	}
 	body {
@@ -826,7 +824,7 @@ package:
 
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true, in bool force = true)
 	in { 
-		import event.validator;
+		import event.internals.validator : validateHost;
 		debug assert(validateHost(host), "Trying to connect to an invalid domain");
 	}
 	body {
@@ -1066,7 +1064,7 @@ private:
 					return false;
 				}
 				catchSocketError!"WSAAccept"(csock, INVALID_SOCKET);
-				import event.memory : FreeListObjectAlloc;
+				import event.internals.memory : FreeListObjectAlloc;
 				AsyncTCPConnection conn;
 				try conn = FreeListObjectAlloc!AsyncTCPConnection.alloc(m_evLoop);
 				catch (Exception e) { assert(false, "Failed allocation"); }
