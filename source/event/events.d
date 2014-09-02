@@ -42,6 +42,27 @@ public:
 		m_evLoop.exit();
 	}
 
+	NetworkAddress resolveIP(in string ip, ushort port = 0, isIPv6 ipv6 = isIPv6.no, isTCP tcp = isTCP.yes, isForced force = isForced.yes)
+	{
+		if (!force)
+			return m_evLoop.getAddressFromIP(ip, port, ipv6, tcp);
+		NetworkAddress addr = m_evLoop.getAddressFromIP(ip, port, ipv6, tcp);
+		if (status.code != Status.OK)
+			addr = m_evLoop.getAddressFromIP(ip, port, !ipv6, tcp);
+		return addr;
+	}
+	
+	/* Blocks until the hostname is resolved, unless it's invalid. */
+	NetworkAddress resolveHost(in string host, ushort port = 0, isIPv6 ipv6 = isIPv6.no, isTCP tcp = isTCP.yes, isForced force = isForced.yes)
+	{
+		if (!force)
+			return m_evLoop.getAddressFromDNS(host, port, ipv6, tcp);
+		NetworkAddress addr = m_evLoop.getAddressFromDNS(host, port, ipv6, tcp);
+		if (status.code != Status.OK)
+			addr = m_evLoop.getAddressFromDNS(host, port, !ipv6, tcp);
+		return addr;
+	}
+
 package:
 
 	@property StatusInfo status() const
@@ -135,27 +156,6 @@ package:
 		}
 	}
 
-	NetworkAddress resolveIP(in string ip, ushort port = 0, isIPv6 ipv6 = isIPv6.no, isTCP tcp = isTCP.yes, isForced force = isForced.yes)
-	{
-		if (!force)
-			return m_evLoop.getAddressFromIP(ip, port, ipv6, tcp);
-		NetworkAddress addr = m_evLoop.getAddressFromIP(ip, port, ipv6, tcp);
-		if (status.code != Status.OK)
-			addr = m_evLoop.getAddressFromIP(ip, port, !ipv6, tcp);
-		return addr;
-	}
-
-	/* Blocks until the hostname is resolved, unless it's invalid. */
-	NetworkAddress resolveHost(in string ip, ushort port = 0, isIPv6 ipv6 = isIPv6.no, isTCP tcp = isTCP.yes, isForced force = isForced.yes)
-	{
-		if (!force)
-			return m_evLoop.getAddressFromDNS(ip, port, ipv6, tcp);
-		NetworkAddress addr = m_evLoop.getAddressFromDNS(ip, port, ipv6, tcp);
-		if (status.code != Status.OK)
-			addr = m_evLoop.getAddressFromDNS(ip, port, !ipv6, tcp);
-		return addr;
-	}
-
 	bool closeSocket(fd_t fd, bool connected, bool listener = false)
 	{
 		return m_evLoop.closeSocket(fd, connected, listener);
@@ -212,7 +212,7 @@ package:
 	/**
 		Runs the event loop once and returns false if a an unrecoverable error occured
 	*/
-	public bool loop(Duration max_timeout = 1.seconds)
+	public bool loop(Duration max_timeout = 100.msecs)
 	{
 		if (!m_evLoop.loop(max_timeout) && m_evLoop.status.code == Status.EVLOOP_FAILURE)
 			return false;

@@ -12,9 +12,7 @@ private:
 	fd_t m_evId;
 	void* m_message;
 	void* m_ctxt;
-	version(Posix) static if (EPOLL) {
-		shared ushort m_owner;
-	}
+	version(Posix) static if (EPOLL) shared ushort m_owner;
 	
 public:	
 	this(EventLoop evl) 
@@ -55,6 +53,11 @@ public:
 	bool kill() 
 	{
 		return m_evLoop.kill(this);
+	}
+
+	bool trigger()
+	{		
+		return m_evLoop.notify(m_evId, this);
 	}
 
 	bool trigger(T)(T msg)

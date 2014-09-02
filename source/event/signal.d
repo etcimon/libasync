@@ -133,6 +133,10 @@ public:
 		return evl.notify(m_evId, this);
 	}
 
+	synchronized bool trigger(EventLoop evl) {
+		return evl.notify(m_evId, this);
+	}
+
 	bool trigger(T)(T msg)
 		if (isWeaklyIsolated!T)
 	in {
@@ -151,6 +155,9 @@ public:
 		return (cast(EventLoop)m_evLoop).notify(m_evId, this);
 	}
 
+	bool trigger() {
+		return (cast(EventLoop)m_evLoop).notify(m_evId, this);
+	}
 
 package:
 
