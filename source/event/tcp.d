@@ -51,14 +51,13 @@ public:
 		return m_peer;
 	}
 
-	typeof(this) peer(NetworkAddress addr)
+	@property void peer(NetworkAddress addr)
 	in { 
 		assert(m_socket == fd_t.init, "Cannot change remote address on a connected socket"); 
 		assert(addr != NetworkAddress.init);
 	}
 	body {
 		m_peer = addr;
-		return this;
 	}
 
 	typeof(this) host(string hostname, size_t port)
@@ -164,11 +163,10 @@ public:
 		return m_local;
 	}
 
-	typeof(this) local(NetworkAddress addr)
+	@property local(NetworkAddress addr)
 	in { assert(m_socket == fd_t.init, "Cannot rebind a listening socket"); }
 	body {
 		m_local = addr;
-		return this;
 	}
 
 	typeof(this) host(string hostname, size_t port)
