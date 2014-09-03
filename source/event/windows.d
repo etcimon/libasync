@@ -350,8 +350,12 @@ package:
 
 		log("Killing socket "~ fd.to!string);
 		try { 
-			if ((ctxt.socket in *m_tcpHandlers) !is null)
+			if ((ctxt.socket in *m_tcpHandlers) !is null){
+				auto cb = m_tcpHandlers[ctxt.socket];
+				*cb.conn.connected = false;
+				*cb.conn.connecting = false;
 				return closeSocket(fd, true, forced);
+			}
 		} catch (Exception e) {
 			setInternalError!"in m_tcpHandlers"(Status.ERROR, e.msg);
 			return false;
@@ -1081,7 +1085,8 @@ private:
 				try {
 					(*m_tcpHandlers)[csock] = cb;
 					log("ACCEPT&CONNECT FD#" ~ csock.to!string);
-					cb(TCPEvent.CONNECT);
+					*conn.connecting = true;
+					//cb(TCPEvent.CONNECT);
 				}
 				catch (Exception e) { 
 					setInternalError!"m_tcpHandlers.opIndexAssign"(Status.ABORT); 
@@ -1098,21 +1103,24 @@ private:
 					//log("CONNECT FD#" ~ sock.to!string);
 					cb = m_tcpHandlers.get(sock);
 					assert(cb != TCPEventHandler.init, "Socket " ~ sock.to!string ~ " could not yield a callback");
-					cb(TCPEvent.CONNECT);
+					*cb.conn.connecting = true;
 				} 
-				catch(Exception e) {	
+				catch(Exception e) {
 					setInternalError!"del@TCPEvent.CONNECT"(Status.ABORT);
 					return false;
 				}
 				break;
 			case FD_READ:
 				try {
-					log("READ FD#" ~ sock.to!string);
+					//log("READ FD#" ~ sock.to!string);
 					cb = m_tcpHandlers.get(sock);
 					assert(cb != TCPEventHandler.init, "Socket " ~ sock.to!string ~ " could not yield a callback");
-					if (cb.conn.socket == 0)
+					if (cb.conn.socket == 0){
+						//log("READ NO SOCKET!");
 						return true;
-					cb(TCPEvent.READ);
+					}
+					if (*cb.conn.connected)
+						cb(TCPEvent.READ);
 				}
 				catch (Exception e) {
 					setInternalError!"del@TCPEvent.READ"(Status.ABORT); 
@@ -1123,12 +1131,22 @@ private:
 				// todo: don't send the first write for consistency with epoll?
 
 				try {
-					//log("WRITE FD#" ~ sock.to!string);
+					//import std.stdio;
+					log("WRITE FD#" ~ sock.to!string);
 					cb = m_tcpHandlers.get(sock);
 					assert(cb != TCPEventHandler.init, "Socket " ~ sock.to!string ~ " could not yield a callback");
-					if (cb.conn.socket == 0)
+					if (cb.conn.socket == 0){
+						//log("WRITE NO SOCKET!");
 						return true;
-					cb(TCPEvent.WRITE);
+					}
+					if (*(cb.conn.connected) == false) {
+						*cb.conn.connecting = false;
+						*cb.conn.connected = true;
+						cb(TCPEvent.CONNECT);
+					}
+					else {
+						cb(TCPEvent.WRITE);
+					}
 				}
 				catch (Exception e) {
 					setInternalError!"del@TCPEvent.WRITE"(Status.ABORT); 
@@ -1141,8 +1159,12 @@ private:
 				bool connected = true;
 				try {
 					//log("CLOSE FD#" ~ sock.to!string);
-					if (sock in *m_tcpHandlers)
-						(*m_tcpHandlers)[sock](TCPEvent.CLOSE);
+					if (sock in *m_tcpHandlers) {
+						cb = m_tcpHandlers.get(sock);
+						*cb.conn.connecting = false;
+						*cb.conn.connected = false;
+						cb(TCPEvent.CLOSE);
+					}
 					else
 						connected = false;
 				}
@@ -1353,6 +1375,26 @@ private:
 	}
 
 }
+
+mixin template TCPConnectionMixins() {
+	
+	private CleanupData m_impl;
+	
+	struct CleanupData {
+		bool connected;
+		bool connecting;
+	}
+	
+	@property bool* connecting() {
+		return &m_impl.connecting;
+	}
+	
+	@property bool* connected() {
+		return &m_impl.connected;
+	}
+	
+}
+
 /**
 		Represents a network/socket address. (taken from vibe.core.net)
 */

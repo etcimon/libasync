@@ -187,7 +187,7 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 			// import std.file;
 			if (len > 0) {
 				auto res = cast(string)bin[0..len];
-				//writeln(res);
+				// writeln(res);
 				if (res == "Client Hello")
 					g_cbCheck[7] = true;
 				if (res == "Client WRITEClient READ")
@@ -198,8 +198,10 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 					g_cbCheck[8] = true;
 					g_cbCheck[9] = true;
 				}
-				if (res == "Client READ")
+				if (res == "Client READ") {
+					g_cbCheck[8] = true;
 					g_cbCheck[9] = true;
+				}
 				if (res == "Client KILL")
 					g_cbCheck[10] = true;
 			}
@@ -217,13 +219,13 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 			break;
 		case TCPEvent.READ:
 			// writeln("!!Server Read is ready");
+			g_cbCheck[11] = true;
 			if (conn.socket != 0)
 				conn.send(cast(ubyte[])"Server READ");
 			doRead();
 			break;
 		case TCPEvent.WRITE:
 			// writeln("!!Server Write is ready");
-			g_cbCheck[11] = true;
 			if (conn.socket != 0)
 				conn.send(cast(ubyte[])"Server WRITE");
 			break;

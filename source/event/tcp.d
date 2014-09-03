@@ -110,7 +110,7 @@ public:
 	}
 
 package:
-	version(Posix) mixin TCPConnectionMixins;
+	mixin TCPConnectionMixins;
 
 	@property void inbound(bool b) {
 		m_inbound = b;
