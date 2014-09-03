@@ -56,11 +56,11 @@ struct StatusInfo {
 }
 
 enum TCPEvent : char {
-	ERROR = 0,
-	CONNECT,
-	READ, 
-	WRITE,
-	CLOSE
+	ERROR = 0, // The connection will be forcefully closed, this is debugging information
+	CONNECT, // indicates write will not block, although recv may or may not have data
+	READ, // called once when new bytes are in the buffer
+	WRITE, // only called when send returned Status.ASYNC
+	CLOSE // The connection is being shutdown
 }
 
 enum UDPEvent : char {

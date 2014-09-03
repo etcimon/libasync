@@ -3,7 +3,6 @@ import std.traits : isPointer;
 import event.types;
 import event.events;
 
-
 final class AsyncTCPConnection
 {
 package:
@@ -87,6 +86,10 @@ public:
 	uint send(in ubyte[] ub)
 	in { assert(m_socket != fd_t.init, "No socket to operate on"); }
 	body {
+		version(Posix)
+			scope(exit)
+				if (m_evLoop.status.code == Status.ASYNC)
+					this.writeBlocked = true;
 		return m_evLoop.send(m_socket, ub);
 	}
 

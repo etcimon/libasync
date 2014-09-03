@@ -187,21 +187,17 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 			// import std.file;
 			if (len > 0) {
 				auto res = cast(string)bin[0..len];
-				// writeln(res);
-				if (res == "Client Hello")
+				//writeln(res);
+				if (res == "Client Hello") {
 					g_cbCheck[7] = true;
-				if (res == "Client WRITEClient READ")
 					g_cbCheck[8] = true;
-				if (res == "Client READClient WRITE")
-					g_cbCheck[8] = true;
-				if (res == "Client READClient WRITEClient READClient WRITE") {
-					g_cbCheck[8] = true;
-					g_cbCheck[9] = true;
 				}
-				if (res == "Client READ") {
-					g_cbCheck[8] = true;
+				if (res == "Client WRITE")
+					g_cbCheck[8] = false;
+
+				if (res == "Client READ") 
 					g_cbCheck[9] = true;
-				}
+
 				if (res == "Client KILL")
 					g_cbCheck[10] = true;
 			}
