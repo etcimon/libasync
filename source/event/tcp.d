@@ -50,6 +50,14 @@ public:
 		return m_peer;
 	}
 
+	@property NetworkAddress local()
+	in {
+		assert(m_socket != fd_t.init && m_peer != NetworkAddress.init, "Cannot get local address from a non-connected socket");
+	}
+	body {			
+		return m_evLoop.localAddr(m_socket, m_peer.ipv6);
+	}
+
 	@property void peer(NetworkAddress addr)
 	in { 
 		assert(m_socket == fd_t.init, "Cannot change remote address on a connected socket"); 

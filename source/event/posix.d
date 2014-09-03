@@ -1206,6 +1206,25 @@ package:
 		return cast(uint) ret;
 	}
 
+	NetworkAddress localAddr(in fd_t fd, bool ipv6) {
+		NetworkAddress ret;
+		import event.internals.socket_compat : getsockname, AF_INET, AF_INET6, socklen_t, sockaddr;
+
+		if (ipv6)
+			ret.family = AF_INET6;
+		else
+			ret.family = AF_INET;
+
+		socklen_t len = ret.sockAddrLen;
+		int err = getsockname(fd, ret.sockAddr, &len);
+		if (catchError!"getsockname"(err))
+			return NetworkAddress.init;
+		if (len > ret.sockAddrLen)
+			ret.family = AF_INET6;
+
+		return ret;
+	}
+
 	bool notify(in fd_t fd, AsyncNotifier ctxt)
 	{
 		static if (EPOLL)
@@ -2388,7 +2407,9 @@ public struct NetworkAddress {
 		sockaddr_in addr_ip4;
 		sockaddr_in6 addr_ip6;
 	}
-	
+
+	@property bool ipv6() const pure nothrow { return this.family == AF_INET6; }
+
 	/** Family (AF_) of the socket address.
 		*/
 	@property ushort family() const pure nothrow { return addr.sa_family; }

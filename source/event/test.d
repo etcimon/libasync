@@ -333,6 +333,8 @@ void testHTTPConnect() {
 						break;
 				}
 				g_cbCheck[15] = true;
+				writeln(conn.local.toString());
+				writeln(conn.peer.toString());
 				conn.send(cast(ubyte[])"GET http://example.org/\nHost: example.org\nConnection: close");
 				break;
 			case TCPEvent.READ:

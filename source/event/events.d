@@ -108,6 +108,10 @@ package:
 		return m_evLoop.write(fd, data);
 	}
 
+	NetworkAddress localAddr(in fd_t fd, bool ipv6 = false) {
+		return m_evLoop.localAddr(fd, ipv6);
+	}
+
 	bool notify(T)(in fd_t fd, T payload) 
 		if (is(T == shared AsyncSignal) || is(T == AsyncNotifier))
 	{
