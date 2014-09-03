@@ -11,6 +11,7 @@ import std.typecons : Tuple, tuple;
 import core.stdc.errno;
 import event.events;
 import event.internals.memory : FreeListObjectAlloc;
+import core.sys.posix.signal;
 enum SOCKET_ERROR = -1;
 version(linux) enum RT_USER_SIGNAL = 34;
 alias fd_t = int;
@@ -89,7 +90,6 @@ package:
 				return false;
 				
 			import core.sys.linux.sys.signalfd;
-			import core.sys.posix.signal;
 			import core.thread : getpid;
 
 			fd_t err;
@@ -145,7 +145,6 @@ package:
 		{
 
 			m_kqueuefd = kqueue();
-			import core.sys.posix.signal;
 			int err;
 			try {
 				sigset_t mask;
@@ -1256,7 +1255,6 @@ package:
 	{
 		static if (EPOLL) 
 		{
-			import core.sys.posix.signal;
 
 			sigval sigvl;
 			fd_t err;
@@ -1271,13 +1269,11 @@ package:
 		{
 
 			import core.thread : getpid;
-			import core.sys.posix.signal : kill;
 
 			addSignal(ctxt);
 
 			try {
 				log("Notified fd: " ~ fd.to!string ~ " of PID " ~ getpid().to!string); 
-				import core.sys.posix.signal : SIGUSR1;
 				int err = kill(getpid(), SIGUSR1);
 				if (catchError!"notify(signal)"(err))
 					assert(false, "Signal could not be raised");
