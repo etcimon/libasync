@@ -823,11 +823,11 @@ package:
 	}
 
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true, in bool force = true)
-	in { 
+	/*in { 
 		import event.internals.validator : validateHost;
 		debug assert(validateHost(host), "Trying to connect to an invalid domain");
 	}
-	body {
+	body */{
 		m_status = StatusInfo.init;
 		import std.conv : to;
 		NetworkAddress addr;

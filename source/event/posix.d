@@ -1334,11 +1334,11 @@ package:
 
 
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true)
-	in { 
+	/*in { 
 		import event.internals.validator : validateHost;
 		debug assert(validateHost(host), "Trying to connect to an invalid domain"); 
 	}
-	body {
+	body */{
 		import event.internals.socket_compat : addrinfo;
 		addrinfo hints;
 		return getAddressInfo(host, port, ipv6, tcp, hints);
@@ -1567,6 +1567,23 @@ private:
 			const bool close = cast(bool) (kqueue_flags & EV_EOF);
 		}
 
+		if (error) 
+		{
+			import event.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
+			int err;
+			socklen_t errlen = err.sizeof;
+			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen);
+			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t)err);
+			try 
+				del(TCPEvent.ERROR);
+			catch (Exception e)
+			{ 
+				setInternalError!"del@TCPEvent.ERROR"(Status.ABORT);
+				// ignore failure...
+			}
+			return false;
+		}
+
 		if (connect) 
 		{
 			try log("!connect"); catch {}
@@ -1628,19 +1645,6 @@ private:
 			}
 
 			return true;
-		}
-		
-		if (error) 
-		{
-			import event.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
-			int err;
-			socklen_t errlen = err.sizeof;
-			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen);
-			try log("ERROR was found! : "~ err.to!string); catch (Exception e){ assert(false, e.msg); }
-			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t)err);
-			
-			m_status.code = Status.ABORT;
-			closeSocket(fd, true, true);
 		}
 
 		return true;
