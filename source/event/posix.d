@@ -496,7 +496,6 @@ package:
 		}*/
 		/// Create the listening socket
 		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_STREAM, 0);
-
 		if (catchError!("run AsyncTCPAccept")(fd))
 			return 0;
 
@@ -507,26 +506,8 @@ package:
 		}
 
 		/// Allow multiple threads to listen on this address
-		{ 
-			int err;
-			int val = 1;
-			socklen_t len = val.sizeof;
-			err = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, len);
-			if (catchError!"SO_REUSEADDR"(err)) {
-				close(fd);
-				return 0;
-			}
-			// BSD systems have SO_REUSEPORT
-			static if (!EPOLL) {
-				import event.internals.socket_compat : SO_REUSEPORT;
-				err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
-				if (catchError!"SO_REUSEPORT"(err)) {
-					close(fd);
-					return 0;
-				}
-			}
-
-		}
+		if (!setOption(fd, TCPOption.REUSEADDR, true))
+			return 0;
 
 		// todo: defer accept
 
@@ -947,7 +928,7 @@ package:
 		m_status = StatusInfo.init;
 		import std.traits : isIntegral;
 
-		import event.internals.socket_compat : socklen_t, setsockopt, SO_KEEPALIVE, SO_RCVBUF, SO_SNDBUF, SO_RCVTIMEO, SO_SNDTIMEO, SO_LINGER, SOL_SOCKET, IPPROTO_TCP, TCP_NODELAY, TCP_QUICKACK, TCP_KEEPCNT, TCP_KEEPINTVL, TCP_KEEPIDLE, TCP_CONGESTION, TCP_CORK, TCP_DEFER_ACCEPT;
+		import event.internals.socket_compat : socklen_t, setsockopt, SO_REUSEADDR, SO_KEEPALIVE, SO_RCVBUF, SO_SNDBUF, SO_RCVTIMEO, SO_SNDTIMEO, SO_LINGER, SOL_SOCKET, IPPROTO_TCP, TCP_NODELAY, TCP_QUICKACK, TCP_KEEPCNT, TCP_KEEPINTVL, TCP_KEEPIDLE, TCP_CONGESTION, TCP_CORK, TCP_DEFER_ACCEPT;
 		int err;
 		nothrow bool errorHandler() {
 			if (catchError!"setOption:"(err)) {
@@ -966,6 +947,22 @@ package:
 					int val = value?1:0;
 					socklen_t len = val.sizeof;
 					err = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, len);
+					return errorHandler();
+				}
+			case TCPOption.REUSEADDR: // true/false
+				static if (!is(T == bool))
+					assert(false, "REUSEADDR value type must be bool, not " ~ T.stringof);
+				else {
+					int val = value?1:0;
+					socklen_t len = val.sizeof;
+					err = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, len);
+					if (!errorHandler())
+						return false;
+					// BSD systems have SO_REUSEPORT
+					static if (!EPOLL) {
+						import event.internals.socket_compat : SO_REUSEPORT;
+						err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
+					}
 					return errorHandler();
 				}
 			case TCPOption.QUICK_ACK:
@@ -1121,6 +1118,7 @@ package:
 						err = setsockopt(fd, SOL_SOCKET, SO_ACCEPTFILTER, &val, len);
 						return errorHandler();
 						*/
+						assert(false, "TCPOption.DEFER_ACCEPT is not implemented");
 					}
 				}
 		}

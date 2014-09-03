@@ -17,15 +17,16 @@ import std.typecons : Tuple, tuple;
 import std.utf : toUTFz;
 import event.events;
 pragma(lib, "ws2_32");
-pragma(lib, "ole32.lib");
+pragma(lib, "ole32");
 alias fd_t = SIZE_T;
 alias error_t = EWIN;
+//todo :  see if new connections with SO_REUSEADDR are evenly distributed between threads
 
 package struct EventLoopImpl {
 	pragma(msg, "Using Windows IOCP for events");
 
 private:
-	HashMap!(fd_t, TCPAcceptHandler)* m_connHandlers;
+	HashMap!(fd_t, TCPAcceptHandler)* m_connHandlers; // todo: Change this to an array
 	HashMap!(fd_t, TCPEventHandler)* m_tcpHandlers;
 	HashMap!(fd_t, TimerHandler)* m_timerHandlers;
 	HashMap!(fd_t, UDPHandler)* m_udpHandlers;
@@ -179,14 +180,10 @@ package:
 		if (catchSocketError!("run AsyncTCPConnection")(fd, INVALID_SOCKET))
 			return 0;
 
-		{
-			BOOL on = true;
-			int err = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, on.sizeof); // allows multi-threading workers
-			if (catchSocketError!"SO_REUSEADDR"(err))
-				return false;
-		}
+		if (!setOption(fd, TCPOption.REUSEADDR, true))
+			return 0;
 
-		// todo: defer accept
+		// todo: defer accept?
 
 		if (ctxt.noDelay) {
 			if (!setOption(fd, TCPOption.NODELAY, true))
@@ -463,6 +460,16 @@ package:
 					err = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, len);
 					return errorHandler();
 				}
+			case TCPOption.REUSEADDR: // true/false
+				static if (!is(T == bool))
+					assert(false, "REUSEADDR value type must be bool, not " ~ T.stringof);
+				else
+				{
+					BOOL val = value?1:0;
+					socklen_t len = val.sizeof;
+					err = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, len);
+					return errorHandler();
+				}
 			case TCPOption.QUICK_ACK:
 				static if (!is(T == bool))
 					assert(false, "QUICK_ACK value type must be bool, not " ~ T.stringof);
@@ -605,7 +612,6 @@ package:
 					err = setsockopt(fd, SOL_SOCKET, SO_CONDITIONAL_ACCEPT, &val, len);
 					return errorHandler();
 				}
-
 		}
 
 	}
