@@ -1561,7 +1561,7 @@ private:
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
 			const bool connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !conn.disconnecting && !conn.connected);
-			const bool read = cast(bool) (kqueue_events & EVFILT_READ);
+			const bool read = cast(bool) (kqueue_events & EVFILT_READ) && !connect;
 			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
 			const bool close = cast(bool) (kqueue_flags & EV_EOF);
