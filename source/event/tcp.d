@@ -238,4 +238,28 @@ struct TCPAcceptHandler {
 	}
 }
 
+enum TCPEvent : char {
+	ERROR = 0, // The connection will be forcefully closed, this is debugging information
+	CONNECT, // indicates write will not block, although recv may or may not have data
+	READ, // called once when new bytes are in the buffer
+	WRITE, // only called when send returned Status.ASYNC
+	CLOSE // The connection is being shutdown
+}
 
+enum TCPOption : char {
+	NODELAY = 0,		// Don't delay send to coalesce packets
+	CORK,
+	LINGER,
+	BUFFER_RECV,
+	BUFFER_SEND,
+	TIMEOUT_RECV,
+	TIMEOUT_SEND,
+	TIMEOUT_HALFOPEN,
+	KEEPALIVE_ENABLE,
+	KEEPALIVE_DEFER,	// Start keeplives after this period
+	KEEPALIVE_COUNT,	// Number of keepalives before death
+	KEEPALIVE_INTERVAL,	// Interval between keepalives
+	DEFER_ACCEPT,
+	QUICK_ACK,			// Bock/reenable quick ACKs.
+	CONGESTION
+}

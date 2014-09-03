@@ -516,6 +516,14 @@ package:
 				close(fd);
 				return 0;
 			}
+			// BSD systems have SO_REUSEPORT
+			static if (!EPOLL) {
+				err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
+				if (catchError!"SO_REUSEPORT"(err)) {
+					close(fd);
+					return 0;
+				}
+			}
 
 		}
 

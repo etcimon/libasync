@@ -350,8 +350,8 @@ package:
 
 		log("Killing socket "~ fd.to!string);
 		try { 
-			if ((ctxt.socket in *m_tcpHandlers) !is null){
-				auto cb = (*m_tcpHandlers).get(ctxt.socket);
+			auto cb = (*m_tcpHandlers).get(ctxt.socket);
+			if (cb != TCPEventHandler.init){
 				*cb.conn.connected = false;
 				*cb.conn.connecting = false;
 				return closeSocket(fd, true, forced);
