@@ -1343,7 +1343,7 @@ package:
 	
 	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true) 
 	in {
-		import event.internals.validator : validateIPv4, validateIPv6;
+		debug import event.internals.validator : validateIPv4, validateIPv6;
 		debug assert(validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
 	}
 	body {
@@ -1357,7 +1357,7 @@ package:
 
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true)
 	/*in { 
-		import event.internals.validator : validateHost;
+		debug import event.internals.validator : validateHost;
 		debug assert(validateHost(host), "Trying to connect to an invalid domain"); 
 	}
 	body */{
