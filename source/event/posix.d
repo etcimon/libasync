@@ -518,6 +518,7 @@ package:
 			}
 			// BSD systems have SO_REUSEPORT
 			static if (!EPOLL) {
+				import event.internals.socket_compat : SO_REUSEPORT;
 				err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
 				if (catchError!"SO_REUSEPORT"(err)) {
 					close(fd);
