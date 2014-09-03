@@ -387,13 +387,13 @@ package:
 				case EventType.TCPTraffic:
 					assert(info.evObj.tcpEvHandler.conn !is null, "TCP Connection invalid");
 
-					success = onTCPTraffic(info.fd, info.evObj.tcpEvHandler, event_flags, info.evObj.tcpEvHandler.conn.connected, info.evObj.tcpEvHandler.conn.disconnecting);
+					success = onTCPTraffic(info.fd, info.evObj.tcpEvHandler, event_flags, info.evObj.tcpEvHandler.conn);
 
 					nothrow void abortTCPHandler(bool graceful) {
 
 						nothrow void closeAll() {
 							try log("closeAll()"); catch {}
-							if (*info.evObj.tcpEvHandler.conn.connected)
+							if (info.evObj.tcpEvHandler.conn.connected)
 								closeSocket(info.fd, true, true);
 							
 							info.evObj.tcpEvHandler.conn.socket = 0;
@@ -786,11 +786,11 @@ package:
 		fd_t fd = ctxt.socket;
 		scope(exit) {
 			if (forced) {
-				*ctxt.connected = false;
+				ctxt.connected = false;
 			}
-			*ctxt.disconnecting = true;
+			ctxt.disconnecting = true;
 		}
-		if (*ctxt.connected)
+		if (ctxt.connected)
 			return closeSocket(fd, true, forced);
 		else {
 			return true;
@@ -1455,7 +1455,7 @@ private:
 			// Announce connection state to the connection handler
 			try {
 				log("Connected to: " ~ addr.toString());
-				*evh.conn.connected = true;
+				evh.conn.connected = true;
 				evh(TCPEvent.CONNECT);
 			}
 			catch (Exception e) {
@@ -1543,14 +1543,14 @@ private:
 		return true;
 	}
 
-	bool onTCPTraffic(fd_t fd, TCPEventHandler del, int events, bool* connected, bool* disconnecting) 
+	bool onTCPTraffic(fd_t fd, TCPEventHandler del, int events, AsyncTCPConnection conn) 
 	{
 		log("TCP Traffic at FD#" ~ fd.to!string);
 
 		static if (EPOLL) 
 		{
 			const uint epoll_events = cast(uint) events;
-			const bool connect = ((cast(bool) (epoll_events & EPOLLIN)) || (cast(bool) (epoll_events & EPOLLOUT))) && !(*disconnecting) && !(*connected);
+			const bool connect = ((cast(bool) (epoll_events & EPOLLIN)) || (cast(bool) (epoll_events & EPOLLOUT))) && !conn.disconnecting && !conn.connected;
 			const bool read = cast(bool) (epoll_events & EPOLLIN);
 			const bool write = cast(bool) (epoll_events & EPOLLOUT);
 			const bool error = cast(bool) (epoll_events & EPOLLERR);
@@ -1560,7 +1560,7 @@ private:
 		{
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
-			const bool connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !(*disconnecting) && !(*connected));
+			const bool connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !conn.disconnecting && !conn.connected);
 			const bool read = cast(bool) (kqueue_events & EVFILT_READ);
 			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
@@ -1587,7 +1587,7 @@ private:
 		if (connect) 
 		{
 			try log("!connect"); catch {}
-			*connected = true;
+			conn.connected = true;
 			try del(TCPEvent.CONNECT);
 			catch (Exception e) {
 				setInternalError!"del@TCPEvent.CONNECT"(Status.ABORT);
@@ -1596,7 +1596,7 @@ private:
 			return true;
 		}
 
-		if (read && *connected && !*disconnecting)
+		if (read && conn.connected && !conn.disconnecting)
 		{
 			try log("!read"); catch {}
 			try del(TCPEvent.READ);
@@ -1606,8 +1606,9 @@ private:
 			}
 		}
 
-		if (write && *connected && !*disconnecting) 
+		if (write && conn.connected && !conn.disconnecting && conn.writeBlocked) 
 		{
+			conn.writeBlocked = false;
 			try log("!write"); catch {}
 			try del(TCPEvent.WRITE);
 			catch (Exception e) {
@@ -1616,11 +1617,11 @@ private:
 			}
 		}
 		
-		if (close && *connected && !*disconnecting) 
+		if (close && conn.connected && !conn.disconnecting) 
 		{
 			try log("!close"); catch {}
 			// todo: See if this hack is still necessary
-			if (!*connected && *disconnecting)
+			if (!conn.connected && conn.disconnecting)
 				return true;
 
 			try del(TCPEvent.CLOSE);
@@ -1628,11 +1629,12 @@ private:
 				setInternalError!"del@TCPEvent.CLOSE"(Status.ABORT);
 				return false;
 			}
-			closeSocket(fd, !*disconnecting, *connected);
+			closeSocket(fd, !conn.disconnecting, conn.connected);
 
 			m_status.code = Status.ABORT;
-			*disconnecting = true;
-			*connected = false;
+			conn.disconnecting = true;
+			conn.connected = false;
+			conn.writeBlocked = true;
 			del.conn.socket = 0;
 
 			try FreeListObjectAlloc!EventInfo.free(del.conn.evInfo);
@@ -2289,14 +2291,31 @@ mixin template TCPConnectionMixins() {
 		EventInfo* evInfo;
 		bool connected;
 		bool disconnecting;
+		bool writeBlocked;
 	}
 	
-	@property bool* disconnecting() {
-		return &m_impl.disconnecting;
+	@property bool disconnecting() const {
+		return m_impl.disconnecting;
+	}
+
+	@property void disconnecting(bool b) {
+		m_impl.disconnecting = b;
 	}
 	
-	@property bool* connected() {
-		return &m_impl.connected;
+	@property bool connected() const {
+		return m_impl.connected;
+	}
+
+	@property void connected(bool b) {
+		m_impl.connected = b;
+	}
+
+	@property bool writeBlocked() const {
+		return m_impl.writeBlocked;
+	}
+
+	@property void writeBlocked(bool b) {
+		m_impl.writeBlocked = b;
 	}
 
 	@property EventInfo* evInfo() {
