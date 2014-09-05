@@ -442,11 +442,6 @@ package:
 		import event.internals.socket_compat : socket, SOCK_STREAM;
 		import core.sys.posix.unistd : close;
 
-		/*static if (!EPOLL) {
-			gs_mutex.lock_nothrow();
-			scope(exit) gs_mutex.unlock_nothrow();
-		}*/
-
 		fd_t fd = socket(cast(int)ctxt.peer.family, SOCK_STREAM, 0);
 
 		if (catchError!("run AsyncTCPConnection")(fd)) 
@@ -472,10 +467,7 @@ package:
 			close(fd);
 			return 0;
 		}
-		/*
-		static if (!EPOLL) {
-			gs_fdPool.insert(fd);
-		}*/
+
 		return fd;
 		
 	}
@@ -489,10 +481,7 @@ package:
 		m_status = StatusInfo.init;
 		import event.internals.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR;
 		import core.sys.posix.unistd : close;
-		/*static if (!EPOLL) {
-			gs_mutex.lock_nothrow();
-			scope(exit) gs_mutex.unlock_nothrow();
-		}*/
+
 		/// Create the listening socket
 		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_STREAM, 0);
 		if (catchError!("run AsyncTCPAccept")(fd))
@@ -524,11 +513,7 @@ package:
 			close(fd);
 			return 0;
 		}
-		/*
-		static if (!EPOLL) {
-			gs_fdPool.insert(fd);
-		}
-*/
+
 		return fd;
 		
 	}
@@ -2095,7 +2080,7 @@ nothrow:
 	// called on run
 	size_t createIndex() {
 		size_t idx;
-		import std.algorithm : min;
+		import std.algorithm : max;
 		try {
 			
 			size_t getIdx() {
@@ -2111,8 +2096,8 @@ nothrow:
 			idx = getIdx();
 			if (idx == 0) {
 				import std.range : iota;
-				g_evIdxAvailable.insert( iota(g_evIdxCapacity, min(32, g_evIdxCapacity * 2), 1) );
-				g_evIdxCapacity = min(32, g_evIdxCapacity * 2);
+				g_evIdxAvailable.insert( iota(g_evIdxCapacity, max(32, g_evIdxCapacity * 2), 1) );
+				g_evIdxCapacity = max(32, g_evIdxCapacity * 2);
 				idx = getIdx();
 			}
 			

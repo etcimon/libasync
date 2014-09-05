@@ -55,13 +55,6 @@ struct StatusInfo {
 	string text;
 }
 
-enum UDPEvent : char {
-	ERROR = 0,
-	READ, 
-	WRITE,
-	CLOSE
-}
-
 enum Status : char {
 	OK					=	0,
 	ASYNC				=	1,

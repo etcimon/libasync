@@ -434,184 +434,191 @@ package:
 	}
 
 	bool setOption(T)(fd_t fd, TCPOption option, in T value) {
+		import event.internals.memory : defaultAllocator;
 		m_status = StatusInfo.init;
 		int err;
-		nothrow bool errorHandler() {
-			if (catchSocketError!"setOption:"(err)) {
-				try m_status.text ~= option.to!string;
-				catch (Exception e){ assert(false, "to!string conversion failure"); }
-				return false;
+		try {
+			nothrow bool errorHandler() {
+				if (catchSocketError!"setOption:"(err)) {
+					try m_status.text ~= option.to!string;
+					catch (Exception e){ assert(false, "to!string conversion failure"); }
+					return false;
+				}
+				
+				return true;
 			}
-			
-			return true;
+
+
+			static HashMap!(fd_t, tcp_keepalive)* kcache;
+
+			final switch (option) {
+
+				case TCPOption.NODELAY: // true/false
+					static if (!is(T == bool))
+						assert(false, "NODELAY value type must be bool, not " ~ T.stringof);
+					else {
+						BOOL val = value?1:0;
+						socklen_t len = val.sizeof;
+						err = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, len);
+						return errorHandler();
+					}
+				case TCPOption.REUSEADDR: // true/false
+					static if (!is(T == bool))
+						assert(false, "REUSEADDR value type must be bool, not " ~ T.stringof);
+					else
+					{
+						BOOL val = value?1:0;
+						socklen_t len = val.sizeof;
+						err = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, len);
+						return errorHandler();
+					}
+				case TCPOption.QUICK_ACK:
+					static if (!is(T == bool))
+						assert(false, "QUICK_ACK value type must be bool, not " ~ T.stringof);
+					else {
+						m_status.code = Status.NOT_IMPLEMENTED;
+						return false; // quick ack is not implemented
+					}
+				case TCPOption.KEEPALIVE_ENABLE: // true/false
+					static if (!is(T == bool))
+						assert(false, "KEEPALIVE_ENABLE value type must be bool, not " ~ T.stringof);
+					else
+					{
+						BOOL val = value?1:0;
+						socklen_t len = val.sizeof;
+						err = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &val, len);
+						return errorHandler();
+					}
+				case TCPOption.KEEPALIVE_COUNT: // retransmit 10 times before dropping half-open conn
+					static if (!isIntegral!T)
+						assert(false, "KEEPALIVE_COUNT value type must be integral, not " ~ T.stringof);
+					else {
+						m_status.code = Status.NOT_IMPLEMENTED;
+						return false;
+					}
+				case TCPOption.KEEPALIVE_INTERVAL: // wait ## seconds between each keepalive packets
+					static if (!is(T == Duration))
+						assert(false, "KEEPALIVE_INTERVAL value type must be Duration, not " ~ T.stringof);
+					else {
+
+						if (!kcache)
+							kcache = new HashMap!(fd_t, tcp_keepalive)(defaultAllocator());
+
+						tcp_keepalive kaSettings = kcache.get(fd, tcp_keepalive.init);
+						tcp_keepalive sReturned;
+						DWORD dwBytes;
+						kaSettings.onoff = ULONG(1);
+						if (kaSettings.keepalivetime == ULONG.init) {
+							kaSettings.keepalivetime = 1000;
+						}
+						kaSettings.keepaliveinterval = value.total!"msecs".to!ULONG;
+						(*kcache)[fd] = kaSettings;
+						err = WSAIoctl(fd, SIO_KEEPALIVE_VALS, &kaSettings, tcp_keepalive.sizeof, &sReturned, tcp_keepalive.sizeof, &dwBytes, null, null);
+
+						return errorHandler();
+					}
+				case TCPOption.KEEPALIVE_DEFER: // wait ## seconds until start
+					static if (!is(T == Duration))
+						assert(false, "KEEPALIVE_DEFER value type must be Duration, not " ~ T.stringof);
+					else {
+
+						if (!kcache)
+							kcache = new HashMap!(fd_t, tcp_keepalive)(defaultAllocator());
+
+						tcp_keepalive kaSettings = kcache.get(fd, tcp_keepalive.init);
+						tcp_keepalive sReturned;
+						DWORD dwBytes;
+						kaSettings.onoff = ULONG(1);
+						if (kaSettings.keepaliveinterval == ULONG.init) {
+							kaSettings.keepaliveinterval = 75*1000;
+						}
+						kaSettings.keepalivetime = value.total!"msecs".to!ULONG;
+
+						(*kcache)[fd] = kaSettings;
+						err = WSAIoctl(fd, SIO_KEEPALIVE_VALS, &kaSettings, tcp_keepalive.sizeof, &sReturned, tcp_keepalive.sizeof, &dwBytes, null, null);
+
+						return errorHandler();
+					}
+				case TCPOption.BUFFER_RECV: // bytes
+					static if (!isIntegral!T)
+						assert(false, "BUFFER_RECV value type must be integral, not " ~ T.stringof);
+					else {
+						int val = value.to!int;
+						socklen_t len = val.sizeof;
+						err = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &val, len);
+						return errorHandler();
+					}
+				case TCPOption.BUFFER_SEND: // bytes
+					static if (!isIntegral!T)
+						assert(false, "BUFFER_SEND value type must be integral, not " ~ T.stringof);
+					else {
+						int val = value.to!int;
+						socklen_t len = val.sizeof;
+						err = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &val, len);
+						return errorHandler();
+					}
+				case TCPOption.TIMEOUT_RECV:
+					static if (!is(T == Duration))
+						assert(false, "TIMEOUT_RECV value type must be Duration, not " ~ T.stringof);
+					else {
+						DWORD val = value.total!"msecs".to!DWORD;
+						socklen_t len = val.sizeof;
+						err = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &val, len);
+						return errorHandler();
+					}
+				case TCPOption.TIMEOUT_SEND:
+					static if (!is(T == Duration))
+						assert(false, "TIMEOUT_SEND value type must be Duration, not " ~ T.stringof);
+					else {
+						DWORD val = value.total!"msecs".to!DWORD;
+						socklen_t len = val.sizeof;
+						err = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &val, len);
+						return errorHandler();
+					}
+				case TCPOption.TIMEOUT_HALFOPEN:
+					static if (!is(T == Duration))
+						assert(false, "TIMEOUT_SEND value type must be Duration, not " ~ T.stringof);
+					else {
+						m_status.code = Status.NOT_IMPLEMENTED;
+						return false;
+					}
+				case TCPOption.LINGER: // bool onOff, int seconds
+					static if (!is(T == Tuple!(bool, int)))
+						assert(false, "LINGER value type must be Tuple!(bool, int), not " ~ T.stringof);
+					else {
+						linger l = linger(val[0]?1:0, val[1].to!USHORT);
+						socklen_t llen = l.sizeof;
+						err = setsockopt(fd, SOL_SOCKET, SO_LINGER, &l, llen);
+						return errorHandler();
+					}
+				case TCPOption.CONGESTION:
+					static if (!isIntegral!T)
+						assert(false, "CONGESTION value type must be integral, not " ~ T.stringof);
+					else {
+						m_status.code = Status.NOT_IMPLEMENTED;
+						return false;
+					}
+				case TCPOption.CORK:
+					static if (!isIntegral!T)
+						assert(false, "CORK value type must be int, not " ~ T.stringof);
+					else {
+						m_status.code = Status.NOT_IMPLEMENTED;
+						return false;
+					}
+				case TCPOption.DEFER_ACCEPT: // seconds
+					static if (!isIntegral!T)
+						assert(false, "DEFER_ACCEPT value type must be integral, not " ~ T.stringof);
+					else {
+						int val = value.to!int;
+						socklen_t len = val.sizeof;
+						err = setsockopt(fd, SOL_SOCKET, SO_CONDITIONAL_ACCEPT, &val, len);
+						return errorHandler();
+					}
+			}
+
 		}
-
-
-		static HashMap!(fd_t, tcp_keepalive)* kcache;
-
-		final switch (option) {
-
-			case TCPOption.NODELAY: // true/false
-				static if (!is(T == bool))
-					assert(false, "NODELAY value type must be bool, not " ~ T.stringof);
-				else {
-					BOOL val = value?1:0;
-					socklen_t len = val.sizeof;
-					err = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, len);
-					return errorHandler();
-				}
-			case TCPOption.REUSEADDR: // true/false
-				static if (!is(T == bool))
-					assert(false, "REUSEADDR value type must be bool, not " ~ T.stringof);
-				else
-				{
-					BOOL val = value?1:0;
-					socklen_t len = val.sizeof;
-					err = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, len);
-					return errorHandler();
-				}
-			case TCPOption.QUICK_ACK:
-				static if (!is(T == bool))
-					assert(false, "QUICK_ACK value type must be bool, not " ~ T.stringof);
-				else {
-					m_status.code = Status.NOT_IMPLEMENTED;
-					return false; // quick ack is not implemented
-				}
-			case TCPOption.KEEPALIVE_ENABLE: // true/false
-				static if (!is(T == bool))
-					assert(false, "KEEPALIVE_ENABLE value type must be bool, not " ~ T.stringof);
-				else
-				{
-					BOOL val = value?1:0;
-					socklen_t len = val.sizeof;
-					err = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &val, len);
-					return errorHandler();
-				}
-			case TCPOption.KEEPALIVE_COUNT: // retransmit 10 times before dropping half-open conn
-				static if (!isIntegral!T)
-					assert(false, "KEEPALIVE_COUNT value type must be integral, not " ~ T.stringof);
-				else {
-					m_status.code = Status.NOT_IMPLEMENTED;
-					return false;
-				}
-			case TCPOption.KEEPALIVE_INTERVAL: // wait ## seconds between each keepalive packets
-				static if (!is(T == Duration))
-					assert(false, "KEEPALIVE_INTERVAL value type must be Duration, not " ~ T.stringof);
-				else {
-
-					if (!kcache)
-						kcache = new typeof(kcache)(defaultAllocator());
-
-					tcp_keepalive kaSettings = kcache.get(fd, tcp_keepalive.init);
-					tcp_keepalive sReturned;
-					DWORD dwBytes;
-					kaSettings.onoff = ULONG(1);
-					if (kaSettings.keepalivetime == ULONG.init) {
-						kaSettings.keepalivetime = 1000;
-					}
-					kaSettings.keepaliveinterval = value.total!"msecs".to!ULONG;
-					kcache[fd] = kaSettings;
-					err = WSAIoctl(fd, SIO_KEEPALIVE_VALS, &kaSettings, sizeof(tcp_keepalive), &sReturned, sizeof(sReturned), &dwBytes, NULL, NULL);
-
-					return errorHandler();
-				}
-			case TCPOption.KEEPALIVE_DEFER: // wait ## seconds until start
-				static if (!is(T == Duration))
-					assert(false, "KEEPALIVE_DEFER value type must be Duration, not " ~ T.stringof);
-				else {
-
-					if (!kcache)
-						kcache = new typeof(kcache)(defaultAllocator());
-
-					tcp_keepalive kaSettings = kcache.get(fd, tcp_keepalive.init);
-					tcp_keepalive sReturned;
-					DWORD dwBytes;
-					kaSettings.onoff = ULONG(1);
-					if (kaSettings.keepaliveinterval == ULONG.init) {
-						kaSettings.keepaliveinterval = 75*1000;
-					}
-					kaSettings.keepalivetime = value.total!"msecs".to!ULONG;
-
-					kcache[fd] = kaSettings;
-					err = WSAIoctl(fd, SIO_KEEPALIVE_VALS, &kaSettings, sizeof(tcp_keepalive), &sReturned, sizeof(sReturned), &dwBytes, NULL, NULL);
-
-					return errorHandler();
-				}
-			case TCPOption.BUFFER_RECV: // bytes
-				static if (!isIntegral!T)
-					assert(false, "BUFFER_RECV value type must be integral, not " ~ T.stringof);
-				else {
-					int val = value.to!int;
-					socklen_t len = val.sizeof;
-					err = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &val, len);
-					return errorHandler();
-				}
-			case TCPOption.BUFFER_SEND: // bytes
-				static if (!isIntegral!T)
-					assert(false, "BUFFER_SEND value type must be integral, not " ~ T.stringof);
-				else {
-					int val = value.to!int;
-					socklen_t len = val.sizeof;
-					err = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &val, len);
-					return errorHandler();
-				}
-			case TCPOption.TIMEOUT_RECV:
-				static if (!is(T == Duration))
-					assert(false, "TIMEOUT_RECV value type must be Duration, not " ~ T.stringof);
-				else {
-					DWORD val = value.total!"msecs".to!DWORD;
-					socklen_t len = val.sizeof;
-					err = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &val, len);
-					return errorHandler();
-				}
-			case TCPOption.TIMEOUT_SEND:
-				static if (!is(T == Duration))
-					assert(false, "TIMEOUT_SEND value type must be Duration, not " ~ T.stringof);
-				else {
-					DWORD val = value.total!"msecs".to!DWORD;
-					socklen_t len = val.sizeof;
-					err = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &val, len);
-					return errorHandler();
-				}
-			case TCPOption.TIMEOUT_HALFOPEN:
-				static if (!is(T == Duration))
-					assert(false, "TIMEOUT_SEND value type must be Duration, not " ~ T.stringof);
-				else {
-					m_status.code = Status.NOT_IMPLEMENTED;
-					return false;
-				}
-			case TCPOption.LINGER: // bool onOff, int seconds
-				static if (!is(T == Tuple!(bool, int)))
-					assert(false, "LINGER value type must be Tuple!(bool, int), not " ~ T.stringof);
-				else {
-					linger l = linger(val[0]?1:0, val[1].to!USHORT);
-					socklen_t llen = l.sizeof;
-					err = setsockopt(fd, SOL_SOCKET, SO_LINGER, &l, llen);
-					return errorHandler();
-				}
-			case TCPOption.CONGESTION:
-				static if (!isIntegral!T)
-					assert(false, "CONGESTION value type must be integral, not " ~ T.stringof);
-				else {
-					m_status.code = Status.NOT_IMPLEMENTED;
-					return false;
-				}
-			case TCPOption.CORK:
-				static if (!isIntegral!T)
-					assert(false, "CORK value type must be int, not " ~ T.stringof);
-				else {
-					m_status.code = Status.NOT_IMPLEMENTED;
-					return false;
-				}
-			case TCPOption.DEFER_ACCEPT: // seconds
-				static if (!isIntegral!T)
-					assert(false, "DEFER_ACCEPT value type must be integral, not " ~ T.stringof);
-				else {
-					int val = value.to!int;
-					socklen_t len = val.sizeof;
-					err = setsockopt(fd, SOL_SOCKET, SO_CONDITIONAL_ACCEPT, &val, len);
-					return errorHandler();
-				}
+		catch (Exception e) {
+			return false;
 		}
 
 	}
@@ -686,7 +693,7 @@ package:
 		int val = b?1:0;
 		socklen_t len = val.sizeof;
 		int err = setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &val, len);
-		if (catchError!"setsockopt"(err))
+		if (catchSocketError!"setsockopt"(err))
 			return false;
 		
 		return true;
@@ -1025,12 +1032,16 @@ private:
 				return false;
 		}	catch {}
 		if (sock == 0) { // highly unlikely...
-			setInternalError!"onUDPEvent"(Status.EVLOOP_FAILURE, "no socket defined");
+			setInternalError!"onUDPEvent"(Status.ERROR, "no socket defined");
 			return false;
 		}
 		if (err) {
-			setInternalError!"onUDPEvent"(Status.EVLOOP_FAILURE, string.init, cast(error_t)err);
-			// todo: figure out how to send this in the callbacks without operating on the socket
+			setInternalError!"onUDPEvent"(Status.ERROR, string.init, cast(error_t)err);
+			try {
+				//log("CLOSE FD#" ~ sock.to!string);
+				(*m_udpHandlers)[sock](UDPEvent.ERROR);
+			} catch { // can't do anything about this...
+			}
 			return false;
 		}
 		
@@ -1562,7 +1573,7 @@ Array!size_t g_idxAvailable;
 // called on run
 size_t createIndex() {
 	size_t idx;
-	import std.algorithm : min;
+	import std.algorithm : max;
 	import std.range : iota;
 	try {
 		
@@ -1579,8 +1590,9 @@ size_t createIndex() {
 		idx = getIdx();
 		if (idx == 0) {
 			import std.range : iota;
-			g_idxAvailable.insert( iota(g_idxCapacity, min(32, g_idxCapacity * 2), 1) );
-			g_idxCapacity = min(32, g_idxCapacity * 2);
+			// todo: not sure about this
+			g_idxAvailable.insert( iota(g_idxCapacity, max(32, g_idxCapacity * 2), 1) );
+			g_idxCapacity = max(32, g_idxCapacity * 2);
 			idx = getIdx();
 		}
 		

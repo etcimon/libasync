@@ -19,7 +19,7 @@ private:
 	version(Posix) EventInfo* m_evInfo;
 	fd_t m_evId;
 	void* m_message;
-	void* m_context;
+	void* m_ctxt;
 
 public:
 

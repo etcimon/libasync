@@ -178,7 +178,7 @@ public:
 		return m_local;
 	}
 
-	@property local(NetworkAddress addr)
+	@property void local(NetworkAddress addr)
 	in { assert(m_socket == fd_t.init, "Cannot rebind a listening socket"); }
 	body {
 		m_local = addr;
