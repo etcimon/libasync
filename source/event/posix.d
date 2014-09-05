@@ -240,7 +240,7 @@ package:
 			}
 			time_t secs = timeout.split!("seconds", "nsecs")().seconds;
 			c_long ns = timeout.split!("seconds", "nsecs")().nsecs;
-			timespec tspec = timespec(secs, ns);
+			auto tspec = event.internals.kqueue.timespec(secs, ns);
 
 			num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, &tspec);
 
@@ -1274,7 +1274,7 @@ package:
 
 			try {
 				log("Notified fd: " ~ fd.to!string ~ " of PID " ~ getpid().to!string); 
-				int err = kill(getpid(), SIGUSR1);
+				int err = core.sys.posix.signal.kill(getpid(), SIGUSR1);
 				if (catchError!"notify(signal)"(err))
 					assert(false, "Signal could not be raised");
 			} catch {}
@@ -1298,7 +1298,7 @@ package:
 	bool broadcast(in fd_t fd, bool b) {
 		m_status = StatusInfo.init;
 
-		import event.internals.socket_compat : socklen_t, setsockopt, SO_BROADCAST;
+		import event.internals.socket_compat : socklen_t, setsockopt, SO_BROADCAST, SOL_SOCKET;
 
 		int val = b?1:0;
 		socklen_t len = val.sizeof;
@@ -1732,7 +1732,7 @@ private:
 			nothrow void deregisterEvent() {
 				EV_SET(&(_event[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
 				EV_SET(&(_event[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
-				kevent(m_kqueuefd, &(_event[0]), 2, null, 0, cast(timespec*) null);
+				kevent(m_kqueuefd, &(_event[0]), 2, null, 0, cast(event.internals.kqueue.timespec*) null);
 			}
 
 		}

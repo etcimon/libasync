@@ -27,7 +27,7 @@ public:
 
 	mixin ContextMgr;
 
-	@property bool connected() const {
+	@property bool isConnected() const {
 		return m_socket != fd_t.init;
 	}
 
