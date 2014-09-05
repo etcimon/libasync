@@ -682,6 +682,17 @@ package:
 		return cast(uint) ret;
 	}
 
+	bool broadcast(in fd_t fd, bool b) {
+		int val = b?1:0;
+		socklen_t len = val.sizeof;
+		int err = setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &val, len);
+		if (catchError!"setsockopt"(err))
+			return false;
+		
+		return true;
+
+	}
+
 	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
@@ -707,10 +718,13 @@ package:
 	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
-		try log("SENDTO " ~ data.length.to!string ~ "B");
-		catch{}
-		int ret = .sendto(fd, cast(void*) data.ptr, cast(INT) data.length, 0, addr.sockAddr, addr.sockAddrLen);
-		
+		try log("SENDTO " ~ data.length.to!string ~ "B"); catch{}
+		int ret;
+		if (addr != NetworkAddress.init)
+			ret = .sendto(fd, cast(void*) data.ptr, cast(INT) data.length, 0, addr.sockAddr, addr.sockAddrLen);
+		else
+			ret = .send(fd, cast(void*) data.ptr, cast(INT) data.length, 0);
+
 		if (catchSocketError!".sendTo"(ret)) { // ret == -1
 			if (m_error == WSAEWOULDBLOCK)
 				m_status.code = Status.ASYNC;

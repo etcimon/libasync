@@ -27,6 +27,10 @@ public:
 
 	mixin ContextMgr;
 
+	@property bool connected() const {
+		return m_socket != fd_t.init;
+	}
+
 	@property bool inbound() const {
 		return m_inbound;
 	}
@@ -40,7 +44,7 @@ public:
 	}
 
 	bool setOption(T)(TCPOption op, in T val) 
-	in { assert(m_socket != fd_t.init, "No socket to operate on"); }
+	in { assert(connected, "No socket to operate on"); }
 	body {
 		return m_evLoop.setOption(m_socket, op, val);
 	}
@@ -52,7 +56,7 @@ public:
 
 	@property NetworkAddress local()
 	in {
-		assert(m_socket != fd_t.init && m_peer != NetworkAddress.init, "Cannot get local address from a non-connected socket");
+		assert(connected && m_peer != NetworkAddress.init, "Cannot get local address from a non-connected socket");
 	}
 	body {			
 		return m_evLoop.localAddr(m_socket, m_peer.ipv6);
@@ -60,7 +64,7 @@ public:
 
 	@property void peer(NetworkAddress addr)
 	in { 
-		assert(m_socket == fd_t.init, "Cannot change remote address on a connected socket"); 
+		assert(!connected, "Cannot change remote address on a connected socket"); 
 		assert(addr != NetworkAddress.init);
 	}
 	body {
@@ -69,7 +73,7 @@ public:
 
 	typeof(this) host(string hostname, size_t port)
 	in { 
-		assert(m_socket == fd_t.init, "Cannot change remote address on a connected socket"); 
+		assert(!connected, "Cannot change remote address on a connected socket"); 
 	}
 	body {
 		m_peer = m_evLoop.resolveHost(hostname, cast(ushort) port);
@@ -78,7 +82,7 @@ public:
 
 	typeof(this) ip(string ip, size_t port)
 	in { 
-		assert(m_socket == fd_t.init, "Cannot change remote address on a connected socket"); 
+		assert(!connected, "Cannot change remote address on a connected socket"); 
 	}
 	body {
 		m_peer = m_evLoop.resolveIP(ip, cast(ushort) port);
@@ -86,13 +90,13 @@ public:
 	}
 
 	uint recv(ref ubyte[] ub)
-	in { assert(m_socket != fd_t.init, "No socket to operate on"); }
+	in { assert(connected, "No socket to operate on"); }
 	body {
 		return m_evLoop.recv(m_socket, ub);
 	}
 
 	uint send(in ubyte[] ub)
-	in { assert(m_socket != fd_t.init, "No socket to operate on"); }
+	in { assert(connected, "No socket to operate on"); }
 	body {
 		version(Posix)
 			scope(exit)
@@ -102,7 +106,7 @@ public:
 	}
 
 	bool run(TCPEventHandler del)
-	in { assert(m_socket == fd_t.init); }
+	in { assert(!connected); }
 	body {
 		m_socket = m_evLoop.run(this, del);
 		if (m_socket == 0)
@@ -113,7 +117,7 @@ public:
 	}
 
 	bool kill(bool forced = false)
-	in { assert(m_socket != fd_t.init); }
+	in { assert(connected); }
 	body {
 		bool ret = m_evLoop.kill(this, forced);
 		scope(exit) m_socket = 0;

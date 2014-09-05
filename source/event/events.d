@@ -108,6 +108,11 @@ package:
 		return m_evLoop.write(fd, data);
 	}
 
+	bool broadcast(in fd_t fd, bool b)
+	{
+		return m_evLoop.broadcast(fd, b);
+	}
+
 	NetworkAddress localAddr(in fd_t fd, bool ipv6 = false) {
 		return m_evLoop.localAddr(fd, ipv6);
 	}

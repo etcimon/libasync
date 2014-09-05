@@ -22,6 +22,12 @@ public:
 
 	mixin ContextMgr;
 
+	bool broadcast(bool b) 
+	in { assert(m_socket == fd_t.init, "Cannot change state on unbound UDP socket"); }	
+	body {
+		return m_evLoop.broadcast(m_socket, b);
+	}
+
 	uint recvFrom(ref ubyte[] data, ref NetworkAddress addr) {
 		return m_evLoop.recvFrom(m_socket, data, addr);
 	}

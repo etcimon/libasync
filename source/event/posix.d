@@ -1295,6 +1295,20 @@ package:
 		return 0;
 	}
 
+	bool broadcast(in fd_t fd, bool b) {
+		m_status = StatusInfo.init;
+
+		import event.internals.socket_compat : socklen_t, setsockopt, SO_BROADCAST;
+
+		int val = b?1:0;
+		socklen_t len = val.sizeof;
+		int err = setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &val, len);
+		if (catchError!"setsockopt"(err))
+			return false;
+
+		return true;
+	}
+
 	private bool closeRemoteSocket(fd_t fd, bool forced) {
 		
 		int err;
