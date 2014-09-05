@@ -1,6 +1,6 @@
 ﻿module event.types;
 package:
-enum LOG = false;
+enum LOG = true;
 
 import std.typecons: Flag;
 alias isIPv6 = Flag!"IPv6";
