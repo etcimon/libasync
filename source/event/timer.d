@@ -35,6 +35,7 @@ public:
 
 	bool rearm(Duration timeout) {
 		m_timerId = m_evLoop.run(this, m_evh, timeout);
+		m_timeout = timeout;
 		if (m_timerId == 0)
 			return false;
 		else
@@ -43,8 +44,8 @@ public:
 
 	bool run(TimerHandler cb, Duration timeout) {
 		m_evh = cb;
-		import std.stdio;
 		m_timerId = m_evLoop.run(this, cb, timeout);
+		m_timeout = timeout;
 		// try writeln("Timer starting", m_timerId); catch {}
 		if (m_timerId == 0)
 			return false;

@@ -98,7 +98,7 @@ package:
 			sigset_t mask;
 
 			try {
-				foreach (j; 0 .. 32) {
+				foreach (j; 0 .. 32 - m_instanceId) {
 					sigemptyset(&mask);
 					sigaddset(&mask, RT_USER_SIGNAL + m_instanceId + j);
 					err = pthread_sigmask(SIG_BLOCK, &mask, null);
@@ -181,10 +181,11 @@ package:
 	void exit() {
 		import core.sys.posix.unistd : close;
 		static if (EPOLL) {
-			close(m_epollfd);
+			close(m_epollfd); // not necessary?
 
-			try FreeListObjectAlloc!EventInfo.free(m_evSignal);
-			catch (Exception e) { assert(false, "Failed to free resources"); }
+			// not necessary:
+			//try FreeListObjectAlloc!EventInfo.free(m_evSignal);
+			//catch (Exception e) { assert(false, "Failed to free resources"); }
 
 		}
 		else
@@ -246,7 +247,7 @@ package:
 
 		}
 
-		auto errors = [	tuple(EINTR, Status.EVLOOP_TIMEOUT) ];
+		auto errors = [	tuple(EINTR, Status.EVLOOP_FAILURE) ];
 		
 		if (catchEvLoopErrors!"event_poll'ing"(num, errors)) 
 			return false;
@@ -629,26 +630,25 @@ package:
 
 		static if (EPOLL)
 		{
-			import core.sys.posix.time;
+			import core.sys.posix.time : itimerspec, CLOCK_REALTIME;
 
-			fd_t fd;
+			fd_t fd = ctxt.id;
 			itimerspec its;
-			
+
 			its.it_value.tv_sec = timeout.split!("seconds", "nsecs")().seconds;
 			its.it_value.tv_nsec = timeout.split!("seconds", "nsecs")().nsecs;
 			if (!ctxt.oneShot)
 			{
 				its.it_interval.tv_sec = its.it_value.tv_sec;
 				its.it_interval.tv_nsec = its.it_value.tv_nsec;
-			}
-			import std.stdio;
-			if (ctxt.id == fd_t.init) {
 
+			}
+
+			if (fd == fd_t.init) {
 				fd = timerfd_create(CLOCK_REALTIME, 0);
 				if (catchError!"timer_create"(fd))
 					return 0;
 			}
-
 			int err = timerfd_settime(fd, 0, &its, null);
 
 			if (catchError!"timer_settime"(err))
@@ -681,6 +681,8 @@ package:
 				
 				ctxt.evInfo = evinfo;
 			}
+			else
+				evinfo = ctxt.evInfo;
 
 			_event.events |= EPOLLIN | EPOLLET;
 			_event.data.ptr = evinfo;
@@ -731,7 +733,10 @@ package:
 
 			// www.khmere.com/freebsd_book/html/ch06.html - EV_CLEAR set internally
 
-			EV_SET(&_event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
+			if (ctxt.id != 0) 
+				EV_SET(&_event, fd, EVFILT_TIMER, EV_ENABLE, 0, msecs, cast(void*) evinfo);
+			else
+				EV_SET(&_event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
 
 			if (ctxt.oneShot)
 				_event.flags |= EV_ONESHOT;
@@ -978,7 +983,8 @@ package:
 				static if (!is(T == Duration))
 					assert(false, "KEEPALIVE_INTERVAL value type must be Duration, not " ~ T.stringof);
 				else {
-					int val = value.total!"seconds".to!uint;
+					int val;
+					try val = value.total!"seconds".to!uint; catch { return false; }
 					socklen_t len = val.sizeof;
 					err = setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &val, len);
 					return errorHandler();
@@ -987,7 +993,8 @@ package:
 				static if (!is(T == Duration))
 					assert(false, "KEEPALIVE_DEFER value type must be Duration, not " ~ T.stringof);
 				else {
-					int val = value.total!"seconds".to!uint;
+					int val;
+					try val = value.total!"seconds".to!uint; catch { return false; }
 					socklen_t len = val.sizeof;
 					err = setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &val, len);
 					return errorHandler();
@@ -1014,6 +1021,7 @@ package:
 				static if (!is(T == Duration))
 					assert(false, "TIMEOUT_RECV value type must be Duration, not " ~ T.stringof);
 				else {
+					import core.sys.posix.sys.time : timeval;
 					time_t secs = value.split!("seconds", "usecs")().seconds;
 					suseconds_t us = value.split!("seconds", "usecs")().usecs.to!suseconds_t;
 					timeval t = timeval(secs, us);
@@ -1025,6 +1033,7 @@ package:
 				static if (!is(T == Duration))
 					assert(false, "TIMEOUT_SEND value type must be Duration, not " ~ T.stringof);
 				else {
+					import core.sys.posix.sys.time : timeval;
 					time_t secs = value.split!("seconds", "usecs")().seconds;
 					suseconds_t us = value.split!("seconds", "usecs")().usecs.to!suseconds_t;
 					timeval t = timeval(secs, us);
@@ -1036,7 +1045,10 @@ package:
 				static if (!is(T == Duration))
 					assert(false, "TIMEOUT_SEND value type must be Duration, not " ~ T.stringof);
 				else {
-					uint val = value.total!"msecs".to!uint;
+					uint val;
+					try val = value.total!"msecs".to!uint; catch {
+						return false;
+					}
 					socklen_t len = val.sizeof;
 					err = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &val, len);
 					return errorHandler();
