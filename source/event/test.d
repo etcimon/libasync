@@ -48,7 +48,7 @@ unittest {
 		i++;
 	}
 	writeln("Callback triggers were successful, run time: ", Clock.currTime - gs_start);
-	assert(g_cbTimerCnt == 4); // MultiTimer expired 4 times
+	assert(g_cbTimerCnt > 3); // MultiTimer expired 3-4 times
 
 	g_listnr.kill();
 }

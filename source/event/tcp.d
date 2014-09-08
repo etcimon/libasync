@@ -44,7 +44,7 @@ public:
 	}
 
 	bool setOption(T)(TCPOption op, in T val) 
-	in { assert(connected, "No socket to operate on"); }
+	in { assert(isConnected, "No socket to operate on"); }
 	body {
 		return m_evLoop.setOption(m_socket, op, val);
 	}
@@ -56,7 +56,7 @@ public:
 
 	@property NetworkAddress local()
 	in {
-		assert(connected && m_peer != NetworkAddress.init, "Cannot get local address from a non-connected socket");
+		assert(isConnected && m_peer != NetworkAddress.init, "Cannot get local address from a non-connected socket");
 	}
 	body {			
 		return m_evLoop.localAddr(m_socket, m_peer.ipv6);
@@ -64,7 +64,7 @@ public:
 
 	@property void peer(NetworkAddress addr)
 	in { 
-		assert(!connected, "Cannot change remote address on a connected socket"); 
+		assert(!isConnected, "Cannot change remote address on a connected socket"); 
 		assert(addr != NetworkAddress.init);
 	}
 	body {
@@ -73,7 +73,7 @@ public:
 
 	typeof(this) host(string hostname, size_t port)
 	in { 
-		assert(!connected, "Cannot change remote address on a connected socket"); 
+		assert(!isConnected, "Cannot change remote address on a connected socket"); 
 	}
 	body {
 		m_peer = m_evLoop.resolveHost(hostname, cast(ushort) port);
@@ -82,7 +82,7 @@ public:
 
 	typeof(this) ip(string ip, size_t port)
 	in { 
-		assert(!connected, "Cannot change remote address on a connected socket"); 
+		assert(!isConnected, "Cannot change remote address on a connected socket"); 
 	}
 	body {
 		m_peer = m_evLoop.resolveIP(ip, cast(ushort) port);
@@ -90,13 +90,13 @@ public:
 	}
 
 	uint recv(ref ubyte[] ub)
-	in { assert(connected, "No socket to operate on"); }
+	in { assert(isConnected, "No socket to operate on"); }
 	body {
 		return m_evLoop.recv(m_socket, ub);
 	}
 
 	uint send(in ubyte[] ub)
-	in { assert(connected, "No socket to operate on"); }
+	in { assert(isConnected, "No socket to operate on"); }
 	body {
 		version(Posix)
 			scope(exit)
@@ -106,7 +106,7 @@ public:
 	}
 
 	bool run(TCPEventHandler del)
-	in { assert(!connected); }
+	in { assert(!isConnected); }
 	body {
 		m_socket = m_evLoop.run(this, del);
 		if (m_socket == 0)
@@ -117,7 +117,7 @@ public:
 	}
 
 	bool kill(bool forced = false)
-	in { assert(connected); }
+	in { assert(isConnected); }
 	body {
 		bool ret = m_evLoop.kill(this, forced);
 		scope(exit) m_socket = 0;

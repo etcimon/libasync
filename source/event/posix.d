@@ -359,18 +359,10 @@ package:
 
 					nothrow void abortHandler(bool graceful) {
 
-						if (graceful) {
-							try info.evObj.udpHandler(UDPEvent.CLOSE);
-							catch (Exception e) { }
-							close(info.fd);
-							info.evObj.udpHandler.conn.socket = 0;
-						}
-						else {
-							close(info.fd);
-							info.evObj.udpHandler.conn.socket = 0;
-							try info.evObj.udpHandler(UDPEvent.ERROR);
-							catch (Exception e) { }
-						}
+						close(info.fd);
+						info.evObj.udpHandler.conn.socket = 0;
+						try info.evObj.udpHandler(UDPEvent.ERROR);
+						catch (Exception e) { }
 						try FreeListObjectAlloc!EventInfo.free(info);
 						catch (Exception e){ assert(false, "Error freeing resources"); }
 					}
