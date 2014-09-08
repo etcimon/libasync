@@ -155,8 +155,10 @@ package:
 		);
 
 		auto errors = 
-			[	tuple(WAIT_TIMEOUT, Status.EVLOOP_TIMEOUT),		/* WAIT_TIMEOUT: Timeout was hit */
-				tuple(WAIT_FAILED, Status.EVLOOP_FAILURE) ];	/* WAIT_FAILED: Failed to call MsgWait..() */
+			[ tuple(WAIT_FAILED, Status.EVLOOP_FAILURE) ];	/* WAIT_FAILED: Failed to call MsgWait..() */
+
+		if (signal == WAIT_TIMEOUT)
+			return true;
 
 		if (catchErrors!"MsgWaitForMultipleObjectsEx"(signal, errors))
 			return false; 
