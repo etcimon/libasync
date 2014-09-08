@@ -168,8 +168,10 @@ package:
 			m_status = StatusInfo.init;
 			TranslateMessage(&msg);
 			DispatchMessageW(&msg);
-			if (m_status.code == Status.ERROR)
+			if (m_status.code == Status.ERROR) {
+				log(m_status.text);
 				return false;
+			}
 		}
 		return true;
 	}
@@ -298,12 +300,15 @@ package:
 	}
 		
 	fd_t run(AsyncTimer ctxt, TimerHandler del, Duration timeout) {
+		if (timeout < 0.seconds)
+			timeout = 0.seconds;
+		timeout += 2.msecs(); // round up to the next 2 msecs to avoid premature timer events
 		m_status = StatusInfo.init;
 		fd_t timer_id = ctxt.id;
 		if (timer_id == fd_t.init) {
 			timer_id = createIndex();
 		}
-		try log("Timer created: " ~ timer_id.to!string); catch {}
+		try log("Timer created: " ~ timer_id.to!string ~ " with timeout: " ~ timeout.total!"msecs".to!string ~ " msecs"); catch {}
 
 		BOOL err;
 		try err = SetTimer(m_hwnd, timer_id, timeout.total!"msecs".to!uint, null);
@@ -390,6 +395,7 @@ package:
 	bool kill(AsyncTimer ctxt) {
 		m_status = StatusInfo.init;
 
+		log("Kill timer");
 
 		BOOL err = KillTimer(m_hwnd, ctxt.id);
 		if (err == 0)
@@ -403,10 +409,11 @@ package:
 		destroyIndex(ctxt);
 
 		if (m_timer.fd == ctxt.id) {
+			ctxt.id = 0;
 			m_timer = TimerCache.init;
 		} else {
 			try {
-				m_timerHandlers.remove(ctxt.id);
+				(*m_timerHandlers).remove(ctxt.id);
 			}
 			catch (Exception e) {
 				setInternalError!"HashMap remove"(Status.ERROR);
@@ -974,17 +981,20 @@ private:
 				}
 				break;
 			case WM_TIMER:
+				log("Timer callback");
 				TimerHandler cb;
 				bool cached = (m_timer.fd == cast(fd_t)msg.wParam);
 				try {
 					if (cached)
 						cb = m_timer.cb;
 					else
-						cb = m_timerHandlers.get(cast(fd_t)msg.wParam);
+						cb = (*m_timerHandlers).get(cast(fd_t)msg.wParam);
  
+					cb.ctxt.rearmed = false;
+
 					cb();
 
-					if (cb.ctxt.oneShot)
+					if (cb.ctxt.oneShot && !cb.ctxt.rearmed)
 						kill(cb.ctxt);
 				}
 				catch (Exception e) {

@@ -15,6 +15,7 @@ private:
 	void* m_ctxt;
 	TimerHandler m_evh;
 	Duration m_timeout;
+	bool m_rearmed = false;
 
 public:
 	this(EventLoop evl)
@@ -34,8 +35,11 @@ public:
 	}
 
 	bool rearm(Duration timeout) {
+		m_rearmed = true;
+
 		m_timerId = m_evLoop.run(this, m_evh, timeout);
 		m_timeout = timeout;
+
 		if (m_timerId == 0)
 			return false;
 		else
@@ -44,6 +48,7 @@ public:
 
 	bool run(TimerHandler cb, Duration timeout) {
 		m_evh = cb;
+		m_rearmed = false;
 		m_timerId = m_evLoop.run(this, cb, timeout);
 		m_timeout = timeout;
 		// try writeln("Timer starting", m_timerId); catch {}
@@ -64,9 +69,21 @@ package:
 	@property bool oneShot() const {
 		return m_oneshot;
 	}
-
+	
 	@property fd_t id() {
 		return m_timerId;
+	}
+	
+	@property void id(fd_t fd) {
+		m_timerId = fd;
+	}
+
+	@property void rearmed(bool b) {
+		m_rearmed = b;
+	}
+
+	@property bool rearmed() {
+		return m_rearmed;
 	}
 
 	void handler() {
