@@ -1023,7 +1023,8 @@ package:
 				else {
 					import core.sys.posix.sys.time : timeval;
 					time_t secs = value.split!("seconds", "usecs")().seconds;
-					suseconds_t us = value.split!("seconds", "usecs")().usecs.to!suseconds_t;
+					suseconds_t us;
+					try us = value.split!("seconds", "usecs")().usecs.to!suseconds_t; catch {}
 					timeval t = timeval(secs, us);
 					socklen_t len = t.sizeof;
 					err = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &t, len);
@@ -1035,7 +1036,8 @@ package:
 				else {
 					import core.sys.posix.sys.time : timeval;
 					time_t secs = value.split!("seconds", "usecs")().seconds;
-					suseconds_t us = value.split!("seconds", "usecs")().usecs.to!suseconds_t;
+					suseconds_t us;
+					try us = value.split!("seconds", "usecs")().usecs.to!suseconds_t; catch {}
 					timeval t = timeval(secs, us);
 					socklen_t len = t.sizeof;
 					err = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &t, len);
