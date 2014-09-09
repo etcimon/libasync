@@ -252,7 +252,8 @@ package:
 		if (catchEvLoopErrors!"event_poll'ing"(num, errors)) 
 			return false;
 
-		log("Got " ~ num.to!string ~ " event(s)");
+		if (num > 0)
+			log("Got " ~ num.to!string ~ " event(s)");
 
 		foreach(i; 0 .. num) {
 			success = false;
@@ -261,30 +262,22 @@ package:
 			{
 				epoll_event _event = events[i];
 				try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch {}
+				EventInfo* info = cast(EventInfo*) _event.data.ptr;
+				int event_flags = cast(int) _event.events;
 			}
 			else /* if KQUEUE */
 			{
 				kevent_t _event = events[i];
-			}
-
-
-			static if (EPOLL) {
-				// prevent some issues with loopback...
-				if (_event.events == 0 || _event.events & EPOLLWRBAND || _event.events & EPOLLRDBAND) {
-					assert(false, "loopback error");
-				}
-				EventInfo* info = cast(EventInfo*) _event.data.ptr;
-				int event_flags = cast(int) _event.events;
-
-			}
-			else /* if KQUEUE */
-			{
 				EventInfo* info = cast(EventInfo*) _event.udata;
+				//log("Got info");
 				int event_flags = (_event.filter << 16) | (_event.flags & 0xffff);
+				//log("event flags");
 			}
 
-			assert(info.owner == m_instanceId, "Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
-				
+			//if (info.owner != m_instanceId)
+			//	try log("Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
+			//	catch{}
+			//log("owner");
 			final switch (info.evType) {
 				case EventType.TCPAccept:
 					if (info.fd == 0)
@@ -306,6 +299,13 @@ package:
 						static long val;
 						import core.sys.posix.unistd : read;
 						read(info.evObj.timerHandler.ctxt.id, &val, long.sizeof);
+					}
+					else /* if KQUEUE */
+					{
+						if (info.evObj.timerHandler.ctxt.oneShot) {
+							destroyIndex(info.evObj.timerHandler.ctxt);
+							info.evObj.timerHandler.ctxt.id = 0;
+						}
 					}
 					try info.evObj.timerHandler();
 					catch (Exception e) {
@@ -727,6 +727,8 @@ package:
 
 				ctxt.evInfo = evinfo;
 			}
+			else
+				evinfo = ctxt.evInfo;
 			kevent_t _event;
 
 			int msecs = cast(int) timeout.total!"msecs";

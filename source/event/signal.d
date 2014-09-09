@@ -159,8 +159,11 @@ public:
 		return (cast(EventLoop)m_evLoop).notify(m_evId, this);
 	}
 
-package:
+	synchronized @property Thread owner() const {
+		return cast(Thread) m_owner;
+	}
 
+package:
 	synchronized @property size_t threadId() {
 		return cast(size_t) *m_owner_id;
 	}
