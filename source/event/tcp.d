@@ -234,7 +234,7 @@ struct TCPEventHandler {
 	/// allows the EventLoop implementation to create and pass a new object, which is necessary for listeners.
 	void function(AsyncTCPConnection, TCPEvent) fct;
 	void opCall(TCPEvent code){
-		assert(conn !is null);
+		assert(conn !is null, "Connection was disposed before shutdown could be completed");
 		fct(conn, code);
 		assert(conn !is null);
 		return;

@@ -160,8 +160,10 @@ package:
 		if (signal == WAIT_TIMEOUT)
 			return true;
 
-		if (catchErrors!"MsgWaitForMultipleObjectsEx"(signal, errors))
+		if (catchErrors!"MsgWaitForMultipleObjectsEx"(signal, errors)) {
+			log("Event Loop Exiting because of error");
 			return false; 
+		}
 		
 		MSG msg;
 		while (PeekMessageW(&msg, null, 0, 0, PM_REMOVE)) {
@@ -302,7 +304,7 @@ package:
 	fd_t run(AsyncTimer ctxt, TimerHandler del, Duration timeout) {
 		if (timeout < 0.seconds)
 			timeout = 0.seconds;
-		timeout += 2.msecs(); // round up to the next 2 msecs to avoid premature timer events
+		timeout += 35.msecs(); // round up to the next 35 msecs to avoid premature timer events
 		m_status = StatusInfo.init;
 		fd_t timer_id = ctxt.id;
 		if (timer_id == fd_t.init) {
@@ -645,7 +647,6 @@ package:
 	bool notify(T)(in fd_t fd, in T payload) 
 	if (is(T == shared AsyncSignal) || is(T == AsyncNotifier))
 	{
-
 		m_status = StatusInfo.init;
 		import std.conv;
 		ubyte[4] ubwparam = ((cast(ubyte*)&payload)[0 .. 4]);
