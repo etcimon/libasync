@@ -11,7 +11,7 @@ private:
 	EventLoop m_evLoop;
 	fd_t m_socket;
 	NetworkAddress m_local;
-	void* m_context;
+	void* m_ctxt;
 
 public:
 	this(EventLoop evl)
@@ -93,4 +93,10 @@ struct UDPHandler {
 		assert(conn !is null);
 		return;
 	}
+}
+
+enum UDPEvent : char {
+	ERROR = 0,
+	READ, 
+	WRITE
 }

@@ -98,7 +98,7 @@ package:
 			sigset_t mask;
 
 			try {
-				foreach (j; 0 .. 32) {
+				foreach (j; 0 .. 32 - m_instanceId) {
 					sigemptyset(&mask);
 					sigaddset(&mask, RT_USER_SIGNAL + m_instanceId + j);
 					err = pthread_sigmask(SIG_BLOCK, &mask, null);
@@ -181,10 +181,11 @@ package:
 	void exit() {
 		import core.sys.posix.unistd : close;
 		static if (EPOLL) {
-			close(m_epollfd);
+			close(m_epollfd); // not necessary?
 
-			try FreeListObjectAlloc!EventInfo.free(m_evSignal);
-			catch (Exception e) { assert(false, "Failed to free resources"); }
+			// not necessary:
+			//try FreeListObjectAlloc!EventInfo.free(m_evSignal);
+			//catch (Exception e) { assert(false, "Failed to free resources"); }
 
 		}
 		else
@@ -359,18 +360,10 @@ package:
 
 					nothrow void abortHandler(bool graceful) {
 
-						if (graceful) {
-							try info.evObj.udpHandler(UDPEvent.CLOSE);
-							catch (Exception e) { }
-							close(info.fd);
-							info.evObj.udpHandler.conn.socket = 0;
-						}
-						else {
-							close(info.fd);
-							info.evObj.udpHandler.conn.socket = 0;
-							try info.evObj.udpHandler(UDPEvent.ERROR);
-							catch (Exception e) { }
-						}
+						close(info.fd);
+						info.evObj.udpHandler.conn.socket = 0;
+						try info.evObj.udpHandler(UDPEvent.ERROR);
+						catch (Exception e) { }
 						try FreeListObjectAlloc!EventInfo.free(info);
 						catch (Exception e){ assert(false, "Error freeing resources"); }
 					}
@@ -442,11 +435,6 @@ package:
 		import event.internals.socket_compat : socket, SOCK_STREAM;
 		import core.sys.posix.unistd : close;
 
-		/*static if (!EPOLL) {
-			gs_mutex.lock_nothrow();
-			scope(exit) gs_mutex.unlock_nothrow();
-		}*/
-
 		fd_t fd = socket(cast(int)ctxt.peer.family, SOCK_STREAM, 0);
 
 		if (catchError!("run AsyncTCPConnection")(fd)) 
@@ -472,10 +460,7 @@ package:
 			close(fd);
 			return 0;
 		}
-		/*
-		static if (!EPOLL) {
-			gs_fdPool.insert(fd);
-		}*/
+
 		return fd;
 		
 	}
@@ -489,10 +474,7 @@ package:
 		m_status = StatusInfo.init;
 		import event.internals.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR;
 		import core.sys.posix.unistd : close;
-		/*static if (!EPOLL) {
-			gs_mutex.lock_nothrow();
-			scope(exit) gs_mutex.unlock_nothrow();
-		}*/
+
 		/// Create the listening socket
 		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_STREAM, 0);
 		if (catchError!("run AsyncTCPAccept")(fd))
@@ -524,11 +506,7 @@ package:
 			close(fd);
 			return 0;
 		}
-		/*
-		static if (!EPOLL) {
-			gs_fdPool.insert(fd);
-		}
-*/
+
 		return fd;
 		
 	}
@@ -652,26 +630,25 @@ package:
 
 		static if (EPOLL)
 		{
-			import core.sys.posix.time;
+			import core.sys.posix.time : itimerspec, CLOCK_REALTIME;
 
-			fd_t fd;
+			fd_t fd = ctxt.id;
 			itimerspec its;
-			
+
 			its.it_value.tv_sec = timeout.split!("seconds", "nsecs")().seconds;
 			its.it_value.tv_nsec = timeout.split!("seconds", "nsecs")().nsecs;
 			if (!ctxt.oneShot)
 			{
 				its.it_interval.tv_sec = its.it_value.tv_sec;
 				its.it_interval.tv_nsec = its.it_value.tv_nsec;
-			}
-			import std.stdio;
-			if (ctxt.id == fd_t.init) {
 
+			}
+
+			if (fd == fd_t.init) {
 				fd = timerfd_create(CLOCK_REALTIME, 0);
 				if (catchError!"timer_create"(fd))
 					return 0;
 			}
-
 			int err = timerfd_settime(fd, 0, &its, null);
 
 			if (catchError!"timer_settime"(err))
@@ -704,6 +681,8 @@ package:
 				
 				ctxt.evInfo = evinfo;
 			}
+			else
+				evinfo = ctxt.evInfo;
 
 			_event.events |= EPOLLIN | EPOLLET;
 			_event.data.ptr = evinfo;
@@ -754,7 +733,10 @@ package:
 
 			// www.khmere.com/freebsd_book/html/ch06.html - EV_CLEAR set internally
 
-			EV_SET(&_event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
+			if (ctxt.id != 0) 
+				EV_SET(&_event, fd, EVFILT_TIMER, EV_ENABLE, 0, msecs, cast(void*) evinfo);
+			else
+				EV_SET(&_event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
 
 			if (ctxt.oneShot)
 				_event.flags |= EV_ONESHOT;
@@ -1001,7 +983,8 @@ package:
 				static if (!is(T == Duration))
 					assert(false, "KEEPALIVE_INTERVAL value type must be Duration, not " ~ T.stringof);
 				else {
-					int val = value.total!"seconds".to!uint;
+					int val;
+					try val = value.total!"seconds".to!uint; catch { return false; }
 					socklen_t len = val.sizeof;
 					err = setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &val, len);
 					return errorHandler();
@@ -1010,7 +993,8 @@ package:
 				static if (!is(T == Duration))
 					assert(false, "KEEPALIVE_DEFER value type must be Duration, not " ~ T.stringof);
 				else {
-					int val = value.total!"seconds".to!uint;
+					int val;
+					try val = value.total!"seconds".to!uint; catch { return false; }
 					socklen_t len = val.sizeof;
 					err = setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &val, len);
 					return errorHandler();
@@ -1037,6 +1021,7 @@ package:
 				static if (!is(T == Duration))
 					assert(false, "TIMEOUT_RECV value type must be Duration, not " ~ T.stringof);
 				else {
+					import core.sys.posix.sys.time : timeval;
 					time_t secs = value.split!("seconds", "usecs")().seconds;
 					suseconds_t us = value.split!("seconds", "usecs")().usecs.to!suseconds_t;
 					timeval t = timeval(secs, us);
@@ -1048,6 +1033,7 @@ package:
 				static if (!is(T == Duration))
 					assert(false, "TIMEOUT_SEND value type must be Duration, not " ~ T.stringof);
 				else {
+					import core.sys.posix.sys.time : timeval;
 					time_t secs = value.split!("seconds", "usecs")().seconds;
 					suseconds_t us = value.split!("seconds", "usecs")().usecs.to!suseconds_t;
 					timeval t = timeval(secs, us);
@@ -1059,7 +1045,10 @@ package:
 				static if (!is(T == Duration))
 					assert(false, "TIMEOUT_SEND value type must be Duration, not " ~ T.stringof);
 				else {
-					uint val = value.total!"msecs".to!uint;
+					uint val;
+					try val = value.total!"msecs".to!uint; catch {
+						return false;
+					}
 					socklen_t len = val.sizeof;
 					err = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &val, len);
 					return errorHandler();
@@ -2095,7 +2084,7 @@ nothrow:
 	// called on run
 	size_t createIndex() {
 		size_t idx;
-		import std.algorithm : min;
+		import std.algorithm : max;
 		try {
 			
 			size_t getIdx() {
@@ -2111,8 +2100,8 @@ nothrow:
 			idx = getIdx();
 			if (idx == 0) {
 				import std.range : iota;
-				g_evIdxAvailable.insert( iota(g_evIdxCapacity, min(32, g_evIdxCapacity * 2), 1) );
-				g_evIdxCapacity = min(32, g_evIdxCapacity * 2);
+				g_evIdxAvailable.insert( iota(g_evIdxCapacity, max(32, g_evIdxCapacity * 2), 1) );
+				g_evIdxCapacity = max(32, g_evIdxCapacity * 2);
 				idx = getIdx();
 			}
 			
