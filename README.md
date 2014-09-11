@@ -33,7 +33,7 @@ Some or all of these limitations are possibly being implemented currently and ma
 - **DNS resolver** - Currently only a thread-blocking DNS resolver is offered
 - **File Watcher** - No file watcher is currently implemented
 - **Async File I/O** - 50% completed
-- **Signal** - An upper limit of 32 `AsyncSignal` instances can be `run()`ing per process on Linux
+- **Signal** - An upper limit of 32 `EventLoop` instances can be `run()`ing per process on Linux before `AsyncSignal` starves
 - **Futures and Promises** - Call chaining is not supported yet
 - **Manual error management** - The entire library is `nothrow` and error management must be built on top of it.
 
