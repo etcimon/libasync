@@ -35,6 +35,9 @@ version(linux) {
 			}
 		} catch {}
 	}
+	static this() {
+		blockSignals();
+	}
 
 }
 version(OSX) {
@@ -100,7 +103,6 @@ package:
 
 		static if (EPOLL)
 		{
-			blockSignals();
 			assert(m_instanceId <= __libc_current_sigrtmax(), "An additional event loop is unsupported due to SIGRTMAX restrictions in Linux Kernel");
 			m_epollfd = epoll_create1(0);
 
@@ -757,6 +759,20 @@ package:
 
 			return fd;
 
+		}
+	}
+
+	fd_t run(AsyncDirectoryWatcher ctxt, DWFileEventHandler cb) {
+		m_core = core;
+		enum IN_NONBLOCK = 0x800; // value in core.sys.linux.sys.inotify is incorrect
+		m_handle = inotify_init1(IN_NONBLOCK);
+		errnoEnforce(m_handle != -1, "Failed to initialize inotify.");
+		auto spath = m_path.toString();
+		addWatch(spath);
+		if (recursive && spath.isDir)
+		{
+			foreach (de; spath.dirEntries(SpanMode.shallow))
+				if (de.isDir) addWatch(de.name);
 		}
 	}
 

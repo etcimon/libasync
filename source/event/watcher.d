@@ -1,5 +1,5 @@
 ﻿module event.watcher;
-version(none):
+
 import event.types;
 
 import event.events;
@@ -9,8 +9,10 @@ final nothrow class AsyncDirectoryWatcher
 nothrow:
 private:
 	EventLoop m_evLoop;
-	fd_t m_socket;
-	NetworkAddress m_local;
+	DWFileEvent m_watching;
+	string m_path;
+	bool m_recursive;
+	fd_t m_fd;
 	void* m_ctxt;
 	
 public:
@@ -21,34 +23,7 @@ public:
 	mixin DefStatus;
 	
 	mixin ContextMgr;
-	
-	bool broadcast(bool b) 
-	in { assert(m_socket == fd_t.init, "Cannot change state on unbound UDP socket"); }	
-	body {
-		return m_evLoop.broadcast(m_socket, b);
-	}
-	
-	uint recvFrom(ref ubyte[] data, ref NetworkAddress addr) {
-		return m_evLoop.recvFrom(m_socket, data, addr);
-	}
-	
-	uint sendTo(in ubyte[] data, in NetworkAddress addr) {
-		return m_evLoop.sendTo(m_socket, data, addr);
-	}
-	
-	@property void host(string hostname, size_t port)
-	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
-	body
-	{
-		m_local = m_evLoop.resolveHost(hostname, cast(ushort) port);
-	}
-	
-	@property void ip(string ip, size_t port)
-	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
-	body {
-		m_local = m_evLoop.resolveIP(ip, cast(ushort) port);
-	}
-	
+
 	bool run(UDPHandler del, NetworkAddress addr)
 	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
 	body {
@@ -84,19 +59,22 @@ package:
 	
 }
 
-struct UDPHandler {
-	AsyncUDPSocket conn;
-	void function(AsyncUDPSocket, UDPEvent) fct;
-	void opCall(UDPEvent code){
+struct DWFileEventHandler {
+	AsyncDirectoryWatcher conn;
+	void function(AsyncDirectoryWatcher, DWFileEvent, string) fct;
+	void opCall(DWFileEvent code, string file){
 		assert(conn !is null);
-		fct(conn, code);
+		fct(conn, code, file);
 		assert(conn !is null);
 		return;
 	}
 }
 
-enum UDPEvent : char {
+enum DWFileEvent : int {
 	ERROR = 0,
-	READ, 
-	WRITE
+	MODIFIED = 0x00000002,
+	MOVED_FROM = 0x00000040,
+	MOVED_TO = 0x00000080,
+	CREATED = 0x00000100, 
+	DELETED = 0x00000200
 }

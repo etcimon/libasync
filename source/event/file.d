@@ -309,7 +309,6 @@ private:
 
 	void run()
 	{
-		blockSignals();
 		m_evLoop = new EventLoop;
 		m_waiter = new shared AsyncSignal(m_evLoop);
 		m_waiter.setContext(this);
