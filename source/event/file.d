@@ -54,7 +54,6 @@ public:
 		return m_status;
 	}
 
-	/// todo: define custom errors
 	@property string error() const
 	{
 		return status.text;
@@ -356,6 +355,8 @@ private:
 }
 
 shared static this() {
+	import std.stdio : writeln;
+	writeln("shared static this (file.d");
 	gs_tlock = new Mutex;
 	gs_wlock = new Mutex;
 	gs_threads = new ThreadGroup;
@@ -365,6 +366,8 @@ shared static this() {
 		Thread thr = new FileCmdProcessor;
 		thr.start();
 		gs_threads.add(thr);
+		synchronized(gs_wlock)
+			gs_started.wait(1.seconds);
 	}
 	gs_threadCnt = cast(int) 4;
 }
