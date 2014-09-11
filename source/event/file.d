@@ -323,8 +323,7 @@ private:
 		} catch {}
 
 		while(m_evLoop.loop()){
-			synchronized(this) if (m_stop)
-				break;
+			try synchronized(this) if (m_stop) break; catch {}
 			continue;
 		}
 	}

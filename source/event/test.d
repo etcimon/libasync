@@ -223,16 +223,17 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 			if (len > 0) {
 				auto res = cast(string)bin[0..len];
 				//writeln(res);
-				if (res == "Client Hello") {
+				import std.algorithm : canFind;
+				if (res.canFind("Client Hello"))
 					g_cbCheck[8] = true;
-				}
-				if (res == "Client WRITE")
+
+				if (res.canFind("Client WRITE"))
 					g_cbCheck[8] = false;
 
-				if (res == "Client READ") 
+				if (res.canFind("Client READ"))
 					g_cbCheck[9] = true;
 
-				if (res == "Client KILL")
+				if (res.canFind("Client KILL"))
 					g_cbCheck[10] = true;
 			}
 			if (len < bin.length)

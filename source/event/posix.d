@@ -307,16 +307,15 @@ package:
 						import core.sys.posix.unistd : read;
 						read(info.evObj.timerHandler.ctxt.id, &val, long.sizeof);
 					}
-					else /* if KQUEUE */
-					{
-						if (info.evObj.timerHandler.ctxt.oneShot) {
-							destroyIndex(info.evObj.timerHandler.ctxt);
-							info.evObj.timerHandler.ctxt.id = 0;
-						}
-					}
 					try info.evObj.timerHandler();
 					catch (Exception e) {
 						setInternalError!"signalEvHandler"(Status.ERROR);
+					}
+					static if (!EPOLL) {
+						if (info.evObj.timerHandler.ctxt.oneShot && !info.evObj.timerHandler.ctxt.rearmed) {
+							destroyIndex(info.evObj.timerHandler.ctxt);
+							info.evObj.timerHandler.ctxt.id = 0;
+						}
 					}
 					break;
 
