@@ -22,7 +22,7 @@ version(linux) {
 		int __libc_current_sigrtmin();
 		int __libc_current_sigrtmax();
 	}
-	static this() {
+	package nothrow void blockSignals() {
 		try {
 			/// Block signals to reserve SIGRTMIN .. " +30 for AsyncSignal
 			sigset_t mask;
@@ -100,6 +100,7 @@ package:
 
 		static if (EPOLL)
 		{
+			blockSignals();
 			assert(m_instanceId <= __libc_current_sigrtmax(), "An additional event loop is unsupported due to SIGRTMAX restrictions in Linux Kernel");
 			m_epollfd = epoll_create1(0);
 
