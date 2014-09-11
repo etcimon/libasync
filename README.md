@@ -13,6 +13,8 @@ The following capabilities are now being tested and should not be used in any ci
 
 - **Asynchroneous TCP listener** - delivers a new connection to the delegate of your choice
 
+- **AsyncFile** - Executes a file read/write/append command in a thread pool and sends a shared buffer to your handler
+
 - **UDP connection** - receives or sends packets from/to multiple peers
 
 - **Timer** - sets a periodic or one-shot timer with high-precision (μs) to call a select delegate
