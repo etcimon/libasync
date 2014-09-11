@@ -3,7 +3,7 @@
 About
 -----
 
-The event.d asynchroneous library (beta) is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchroneous tasks. It embeds naturally to D projects (version > 2.066.0), compiles statically with your project and has an open source license (MIT).
+The event.d asynchroneous library (beta) is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchroneous tasks. It embeds naturally to D projects (version >= 2.066.0), compiles statically with your project and has an open source license (MIT).
 
 ### Features
 
