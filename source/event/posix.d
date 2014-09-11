@@ -13,12 +13,29 @@ import event.events;
 import event.internals.memory : FreeListObjectAlloc;
 import core.sys.posix.signal;
 enum SOCKET_ERROR = -1;
-version(linux) enum RT_USER_SIGNAL = 34;
 alias fd_t = int;
 
 version(linux) {
 	import event.internals.epoll;
 	const EPOLL = true;
+	extern(C) nothrow @nogc {
+		int __libc_current_sigrtmin();
+		int __libc_current_sigrtmax();
+	}
+	static this() {
+		try {
+			/// Block signals to reserve SIGRTMIN .. " +30 for AsyncSignal
+			sigset_t mask;
+			foreach (j; __libc_current_sigrtmin() .. __libc_current_sigrtmax() + 1) {
+				//import std.stdio : writeln; 
+				//try writeln("Blocked signal " ~ (__libc_current_sigrtmin() + j).to!string ~ " in instance " ~ m_instanceId.to!string); catch {}
+				sigemptyset(&mask);
+				sigaddset(&mask, cast(int) j);
+				pthread_sigmask(SIG_BLOCK, &mask, null);
+			}
+		} catch {}
+	}
+
 }
 version(OSX) {
 	import event.internals.kqueue;
@@ -83,7 +100,7 @@ package:
 
 		static if (EPOLL)
 		{
-
+			assert(m_instanceId <= __libc_current_sigrtmax(), "An additional event loop is unsupported due to SIGRTMAX restrictions in Linux Kernel");
 			m_epollfd = epoll_create1(0);
 
 			if (catchError!"epoll_create1"(m_epollfd))
@@ -98,18 +115,8 @@ package:
 			sigset_t mask;
 
 			try {
-				foreach (j; 0 .. 32 - m_instanceId) {
-					sigemptyset(&mask);
-					sigaddset(&mask, RT_USER_SIGNAL + m_instanceId + j);
-					err = pthread_sigmask(SIG_BLOCK, &mask, null);
-					if (catchError!"sigprocmask"(err))
-					{
-						return false;
-					}
-				}
 				sigemptyset(&mask);
-				sigaddset(&mask, RT_USER_SIGNAL + m_instanceId);
-
+				sigaddset(&mask, __libc_current_sigrtmin() + m_instanceId);
 				err = pthread_sigmask(SIG_BLOCK, &mask, null);
 				if (catchError!"sigprocmask"(err))
 				{
@@ -149,7 +156,7 @@ package:
 			try {
 				sigset_t mask;
 				sigemptyset(&mask);
-				sigaddset(&mask, SIGUSR1);
+				sigaddset(&mask, SIGXCPU);
 				
 				err = sigprocmask(SIG_BLOCK, &mask, null);
 			} catch {}
@@ -158,7 +165,7 @@ package:
 
 			// use GC because FreeListObjectAlloc fails at emplace for shared objects
 			try 
-				m_evSignal = FreeListObjectAlloc!EventInfo.alloc(SIGUSR1, evtype, EventObject.init, m_instanceId);
+				m_evSignal = FreeListObjectAlloc!EventInfo.alloc(SIGXCPU, evtype, EventObject.init, m_instanceId);
 			catch (Exception e) {
 				assert(false, "Failed to allocate resources");
 			}
@@ -167,10 +174,10 @@ package:
 				return 0;
 
 			kevent_t _event;
-			EV_SET(&_event, SIGUSR1, EVFILT_SIGNAL, EV_ADD | EV_ENABLE, 0, 0, m_evSignal);
+			EV_SET(&_event, SIGXCPU, EVFILT_SIGNAL, EV_ADD | EV_ENABLE, 0, 0, m_evSignal);
 			err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
-			if (catchError!"kevent_add(SIGUSR1)"(err))
-				assert(false, "Add SIGUSR1 failed at kevent call");
+			if (catchError!"kevent_add(SIGXCPU)"(err))
+				assert(false, "Add SIGXCPU failed at kevent call");
 		}
 
 		log("init");
@@ -613,7 +620,7 @@ package:
 
 			ctxt.evInfo = cast(shared) m_evSignal;
 
-			return cast(fd_t) (RT_USER_SIGNAL + m_instanceId);
+			return cast(fd_t) (__libc_current_sigrtmin() + m_instanceId);
 		}
 		else
 		{
@@ -1267,7 +1274,7 @@ package:
 
 			try {
 				log("Notified fd: " ~ fd.to!string ~ " of PID " ~ getpid().to!string); 
-				int err = core.sys.posix.signal.kill(getpid(), SIGUSR1);
+				int err = core.sys.posix.signal.kill(getpid(), SIGXCPU);
 				if (catchError!"notify(signal)"(err))
 					assert(false, "Signal could not be raised");
 			} catch {}

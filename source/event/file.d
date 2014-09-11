@@ -184,7 +184,7 @@ private:
 		}
 		assert(cmd_handler);
 		m_cmdInfo.waiter = cmd_handler;
-		cmd_handler.trigger(cast(EventLoop)m_evLoop, cast(shared void*)this);
+		cmd_handler.trigger!(shared void*)(cast(EventLoop)m_evLoop, cast(shared void*)this);
 		return true;
 	}
 
@@ -322,7 +322,16 @@ private:
 			gs_started.notifyAll();
 		} catch {}
 
-		while(!m_stop && m_evLoop.loop()) continue;
+		while(m_evLoop.loop()){
+			synchronized(this) if (m_stop)
+				break;
+			continue;
+		}
+	}
+
+	synchronized void stop()
+	{
+		m_stop = true;
 	}
 
 	SignalHandler makeHandler(shared AsyncSignal waiter) {
@@ -361,20 +370,8 @@ shared static this() {
 }
 
 void destroyFileThreads() {
-	try while (core.atomic.atomicLoad(gs_threadCnt) > 0) {
-		synchronized (gs_wlock) {
-			foreach (void* sig; gs_waiters[]) {
-				shared AsyncSignal signal = cast(shared AsyncSignal) sig;
-				signal.trigger();
-				core.atomic.atomicOp!"-="(gs_threadCnt, cast(int) 1);
-
-			}
-			gs_waiters.clear();
-		}
-		Thread.sleep(10.usecs);
-	} catch (Throwable e) {
-		import std.stdio : writeln;
-		writeln(e.toString());
+	foreach (thr; gs_threads) {
+		FileCmdProcessor thread = cast(FileCmdProcessor)thr;
+		(cast(shared)thread).stop();
 	}
-
 }
