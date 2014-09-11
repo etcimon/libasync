@@ -3,6 +3,7 @@ version(unittest):
 import event.events;
 import std.stdio;
 import std.datetime;
+import event.file;
 
 AsyncTimer g_timerOneShot;
 AsyncTimer g_timerMulti;
@@ -22,12 +23,15 @@ shared bool g_cbCheck[];
 int g_cbTimerCnt;
 SysTime g_lastTimer;
 
+shared AsyncFile gs_file;
+
 unittest {
 	g_cbCheck = new shared bool[17];
 	g_lastTimer = Clock.currTime();
 	gs_start = Clock.currTime();
 	g_evl = new EventLoop;
 	writeln("Loading objects...");
+	testFile();
 	testOneshotTimer();
 	testMultiTimer();
 	gs_tlsEvent = new shared AsyncSignal(g_evl);
@@ -38,7 +42,7 @@ unittest {
 	writeln("Loaded. Running event loop...");
 
 	testTCPConnect("localhost", 8081);
-
+	
 	while(Clock.currTime() - gs_start < 4.seconds) 
 		g_evl.loop(100.msecs);
 		
@@ -48,10 +52,41 @@ unittest {
 		i++;
 	}
 	writeln("Callback triggers were successful, run time: ", Clock.currTime - gs_start);
-	assert(g_cbTimerCnt > 3); // MultiTimer expired 3-4 times
+
+	assert(g_cbTimerCnt >= 3, "Multitimer expired only " ~ g_cbTimerCnt.to!string ~ " times"); // MultiTimer expired 3-4 times
 
 	g_listnr.kill();
+	destroyFileThreads();
 }
+
+void testFile() {
+	FileReadyHandler handler;
+	handler.fct = (shared AsyncFile file) {
+		if (file.status.code == Status.ERROR)
+			writeln(file.status.text);
+		import std.algorithm;
+		if ((cast(string)file.buffer).startsWith("This is the file content."))
+			g_cbCheck[7] = true;
+		else {
+			import std.stdio : writeln;
+			writeln(cast(string)file.buffer);
+		}
+		import std.file : remove;
+		remove("test.txt");
+	};
+	gs_file = new shared AsyncFile(g_evl);
+
+	handler.ctxt = gs_file;
+
+	{
+		File file = File("test.txt", "w");
+		file.rawWrite("This is the file content.");
+	}
+	gs_file.run(handler);
+	gs_file.read("test.txt");
+
+}
+
 
 void testSignal() {
 	NotifierHandler sh;
@@ -189,7 +224,6 @@ void trafficHandler(AsyncTCPConnection conn, TCPEvent ev){
 				auto res = cast(string)bin[0..len];
 				//writeln(res);
 				if (res == "Client Hello") {
-					g_cbCheck[7] = true;
 					g_cbCheck[8] = true;
 				}
 				if (res == "Client WRITE")

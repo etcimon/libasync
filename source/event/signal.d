@@ -137,7 +137,7 @@ public:
 		return evl.notify(m_evId, this);
 	}
 
-	bool trigger(T)(T msg)
+	synchronized bool trigger(T)(T msg)
 		if (isWeaklyIsolated!T)
 	in {
 		assert(Thread.getThis() is cast(Thread) m_owner);
@@ -155,7 +155,8 @@ public:
 		return (cast(EventLoop)m_evLoop).notify(m_evId, this);
 	}
 
-	bool trigger() {
+	synchronized bool trigger() {
+		m_message = null;
 		return (cast(EventLoop)m_evLoop).notify(m_evId, this);
 	}
 

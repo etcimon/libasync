@@ -1,167 +1,225 @@
 ﻿module event.file;
-version(none):
 import event.types;
 import event.events;
 import core.thread : Thread, ThreadGroup;
 import core.sync.mutex;
+import core.sync.condition;
+import std.stdio : File;
+import core.atomic;
 
-nothrow:
+nothrow {
 
-__gshared Mutex gs_wlock;
-__gshared Stack!(shared AsyncEvent) gs_waiters;
+	__gshared Mutex gs_wlock;
+	__gshared Array!(void*) gs_waiters; // Array!(shared AsyncSignal)
+	__gshared Condition gs_started;
 
-__gshared Mutex gs_tlock;
-__gshared ThreadGroup gs_threads;
+	__gshared Mutex gs_tlock;
+	__gshared ThreadGroup gs_threads; // daemon threads
+	shared(int) gs_threadCnt;
 
-final class AsyncFile
+}
+struct FileCmdInfo
+{
+	FileCmd command;
+	string filePath;
+	ubyte[] buffer;
+	shared AsyncSignal waiter;
+	shared AsyncFile file;
+	Mutex mtx; // for buffer writing
+}
+
+shared final class AsyncFile
 {
 nothrow:
 private:
 	EventLoop m_evLoop;
-	string m_filePath;
 	FileReadyHandler m_handler;
-	bool m_open;
 	bool m_busy;
-	void* m_context;
+	bool m_error;
+	FileCmdInfo m_cmdInfo;
+	StatusInfo m_status;
+	size_t m_cursorOffset;
+	void* m_ctxt;
+	Thread m_owner;
 
 public:
 	this(EventLoop evl) {
-		m_evLoop = evl;
+		m_evLoop = cast(shared) evl;
+		m_owner = cast(shared)Thread.getThis();
+		try m_cmdInfo.mtx = cast(shared) new Mutex; catch {}
 	}
 
-	// todo: define custom status
-	@property StatusInfo status() const
+	synchronized @property StatusInfo status() const
 	{
-		return StatusInfo.init;
+		return m_status;
+	}
+
+	/// todo: define custom errors
+	@property string error() const
+	{
+		return status.text;
+	}
+
+	@property bool waiting() const {
+		return m_busy;
+	}
+
+	synchronized T getContext(T)() 
+	if (isPointer!T)
+	{
+		return cast(T*) m_ctxt;
 	}
 	
-	/// todo: define custom errors
-	@property string error() const 
+	synchronized T getContext(T)() 
+		if (is(T == class))
 	{
-		return "";
+		return cast(T) m_ctxt;
 	}
 
-	mixin ContextMgr;
+	synchronized void setContext(T)(T ctxt)
+		if (isPointer!T || is(T == class))
+	{
+		m_ctxt = cast(shared(void*)) ctxt;
+	}
 
-	bool run(FileReadyHandler del)
-	in { assert(!m_open); }
+	synchronized @property size_t offset() const {
+		return m_cursorOffset;
+	}
+
+	synchronized bool run(FileReadyHandler del)
 	body {
 		m_handler = del;
 		return true;
 	}
 
-	bool open(string file_path) 
-	in { assert(!m_busy); }
-	body {
-		m_filePath = file_path;
-		m_open = true;
-		return true;
+	shared(ubyte[]) buffer() {
+		try synchronized(m_cmdInfo.mtx)
+			return m_cmdInfo.buffer;
+		catch {}
+		return null;
 	}
 
-	bool read(shared ubyte[] buffer, long offset = -1) 
-	in { assert(!m_busy && m_open); }
-	body {
-
-		shared FileCmdInfo cmd_info = new shared FileCmdInfo;
-		cmd_info.command = FileCmd.READ;
-		cmd_info.buffer = buffer;
-		cmd_info.offset = offset;
-		cmd_info.replyReady = reply_ready;
-		return sendCommand(cmd_info);
+	bool read(string file_path, size_t len = 128, size_t off = -1) {
+		return read(file_path, new shared ubyte[len], off);
 	}
 
-	bool write(shared ubyte[] buffer, long offset = -1) 
-	in { assert(!m_busy && m_open); }
+	bool read(string file_path, shared ubyte[] buffer, size_t off = -1) 
+	in { assert(!m_busy, "File is busy or closed"); }
 	body {
-		shared FileCmdInfo cmd_info = new shared FileCmdInfo;
-		cmd_info.command = FileCmd.WRITE;
-		cmd_info.buffer = buffer;
-		cmd_info.offset = offset;
-		cmd_info.replyReady = reply_ready;
-		return sendCommand(cmd_info);
+		try synchronized(m_cmdInfo.mtx) { 
+			m_cmdInfo.buffer = buffer;
+			m_cmdInfo.command = FileCmd.READ;
+		} catch {}
+		filePath = file_path;
+		offset = off;
+		return sendCommand();
+	}
+
+	bool write(string file_path, shared ubyte[] buffer, size_t off = -1) 
+	in { assert(!m_busy, "File is busy or closed"); }
+	body {
+		try synchronized(m_cmdInfo.mtx) { 
+			m_cmdInfo.buffer = buffer;
+			m_cmdInfo.command = FileCmd.WRITE;
+		} catch {}
+		filePath = file_path;
+		offset = off;
+		return sendCommand();
 
 	}
 
-	bool append(shared ubyte[] buffer, long offset = -1)
-	in { assert(!m_busy && m_open); }
+	bool append(string file_path, shared ubyte[] buffer)
+	in { assert(!m_busy, "File is busy or closed"); }
 	body {
-		shared FileCmdInfo cmd_info = new shared FileCmdInfo;
-		cmd_info.command = FileCmd.APPEND;
-		cmd_info.buffer = buffer;
-		cmd_info.offset = offset;
-		cmd_info.replyReady = reply_ready;
-		return sendCommand(cmd_info);
+		try synchronized(m_cmdInfo.mtx) { 
+			m_cmdInfo.command = FileCmd.APPEND;
+			m_cmdInfo.buffer = buffer;
+		} catch {}
+		filePath = file_path;
+		return sendCommand();
 	}
 
 private:
-	bool sendCommand(shared FileCmdInfo cmd) 
-	in { assert(!m_busy && m_open); }
+	// chooses a thread or starts it if necessary
+	bool sendCommand() 
+	in { assert(!m_busy, "File is busy or closed"); }
 	body {
 		m_busy = true;
+		m_status = StatusInfo.init;
 
-		shared AsyncEvent reply_ready = new shared AsyncEvent;
-		shared EventHandler reply_ready_ev;
-		
-		reply_ready.setContext(this);
+		shared AsyncSignal cmd_handler;
+		try {
+			bool start_thread;
+			do {
+				if (start_thread) {
+					Thread thr = new FileCmdProcessor;
+					thr.start();
 
-		reply_ready_ev.ctxt = reply_ready;
-		reply_ready_ev.fct = (AsyncEvent ev) {
-			AsyncFile this_ = ev.getContext!AsyncFile();
-			shared FileReplyInfo reply = ev.getMessage!(shared FileReplyInfo)();
-			this_.m_busy = false;
-			synchronized(gs_wlock) {
-				gs_waiters.push(reply.waiter);
-			}
-			this_.handler();
-			
-		};
+					core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
+					gs_threads.add(thr);
+				}
 
-		shared AsyncEvent cmd_handler;
-		bool start_thread;
-		synchronized(gs_wlock) {
-			try cmd_handler = gs_waiters.pop();
-			catch (Exception e) {
-				start_thread = true;
-			}
+				synchronized(gs_wlock) {
+					if (start_thread && !gs_started.wait(5.seconds))
+						continue;
+
+					try {
+						if (!cmd_handler && !gs_waiters.empty) {
+							cmd_handler = cast(shared AsyncSignal) gs_waiters.back;
+							gs_waiters.removeBack();
+						}
+						else if (core.atomic.atomicLoad(gs_threadCnt) < 16) {
+							start_thread = true;
+						}
+						else {
+							Thread.sleep(50.usecs);
+						}
+					} catch {}
+				}
+			} while(!cmd_handler);
+		} catch (Throwable e) {
+			import std.stdio;
+			try writeln(e.toString()); catch {}
+
 		}
-
-		if (start_thread) {
-			Thread thr = new FileCmdProcessor;
-			thr.start();
-			gs_threads.add(thr);
-		}
-		// todo: find a better way out of this...
-		while(start_thread && !cmd_handler) {
-			import std.datetime : usecs;
-			Thread.sleep(1.usecs);
-
-			synchronized(gs_wlock) {
-				try cmd_handler = gs_waiters.pop();
-				catch {}
-			}
-		}
-
 		assert(cmd_handler);
-
-		cmd.waiter = cmd_handler;
-
-		reply_ready.run(reply_ready_ev);
-		cmd_handler.trigger(m_evLoop, cmd);
+		m_cmdInfo.waiter = cmd_handler;
+		cmd_handler.trigger(cast(EventLoop)m_evLoop, cast(shared void*)this);
 		return true;
 	}
 
-	@property FileReadyHandler handler() {
-		return m_handler;
+	synchronized void handler() {
+		try m_handler();
+		catch (Throwable e) {
+			import std.stdio : writeln;
+			try writeln("Failed to send command. ", e.toString()); catch {}
+		}
+	}
+
+	synchronized @property string filePath() {
+		return m_cmdInfo.filePath;
+	}
+
+	synchronized @property void filePath(string file_path) {
+		m_cmdInfo.filePath = file_path;
+	}
+
+	synchronized @property void status(StatusInfo stat) {
+		m_status = stat;
+	}
+	
+	synchronized @property void offset(size_t val) {
+		m_cursorOffset = val;
 	}
 }
 
 shared struct FileReadyHandler {
-	shared AsyncFile ctxt;
-	void function(shared AsyncFile ctxt, long offset) fct;
+	AsyncFile ctxt;
+	void function(shared AsyncFile ctxt) fct;
 	
-	void opCall(long offset) {
+	void opCall() {
 		assert(ctxt !is null);
-		fct(ctxt, offset);
+		fct(ctxt);
 		return;
 	}
 }
@@ -172,113 +230,115 @@ enum FileCmd {
 	APPEND
 }
 
-shared final class FileCmdInfo
-{
-	string fileName;
-	FileCmd command;
-	ubyte[] buffer;
-	long startOffset;
-	AsyncEvent replyReady;
-	AsyncEvent waiter;
-}
-
-shared final class FileReplyInfo {
-	bool error;
-	string error_msg;
-	long cursorOffset;
-	AsyncEvent waiter;
-}
-
 final class FileCmdProcessor : Thread 
 {
 nothrow:
 private:
 	EventLoop m_evLoop;
+	shared AsyncSignal m_waiter;
+	bool m_stop;
 
 	this() {
-		super(&run);
+		try super(&run);
+		catch (Throwable e) {
+			import std.stdio;
+			try writeln("Failed to run thread ... ", e.toString()); catch {}
+		}
 	}
 
-	void process(shared FileCmdInfo cmd) {
-		shared FileReplyInfo reply = new shared FileReplyInfo;
-		reply.waiter = cmd.waiter;
+	void process(shared AsyncFile ctxt) {
+		auto mutex = ctxt.m_cmdInfo.mtx;
+		FileCmd cmd;
+		shared AsyncSignal waiter;
+		try synchronized(mutex) {
+			cmd = ctxt.m_cmdInfo.command; 
+			waiter = ctxt.m_cmdInfo.waiter;
+		} catch {}
 
-		import std.stdio : File;
+		import std.stdio;
 
-		final switch (cmd)
+		try writeln("Processing command: ", cmd); catch {}
+		assert(m_waiter is waiter, "File processor is handling a command from the wrong thread");
+
+
+		try final switch (cmd)
 		{
 			case FileCmd.READ:
-				try {
-					File file = File(cmd.fileName, "r");
-					file.seek(cmd.startOffset);
-					auto res = file.rawRead(cmd.buffer);
-					if (res)
-						reply.cursorOffset = res.length;
-
-				}
-				catch (Exception e) {
-					reply.error = true;
-					reply.error_msg = e.msg;
-				}
+				File file = File(ctxt.filePath, "r");
+				if (ctxt.offset != -1)
+					file.seek(ctxt.offset);
+				ubyte[] res;
+				synchronized(mutex) res = file.rawRead(cast(ubyte[])ctxt.buffer);
+				if (res)
+					ctxt.offset = cast(size_t) (ctxt.offset + res.length);
 
 				break;
 
 			case FileCmd.WRITE:
-				try {
-					File file = File(cmd.fileName, "w");
-					file.seek(cmd.startOffset);
-					file.rawWrite(cmd.buffer);
-					reply.cursorOffset = cmd.startOffset + cmd.buffer.length;
-				}
-				catch (Exception e) {
-					reply.error = true;
-					reply.error_msg = e.msg;
-				}
-
+				File file = File(ctxt.filePath, "w");
+				if (ctxt.offset != -1)
+					file.seek(ctxt.offset);
+				synchronized(mutex) file.rawWrite(cast(ubyte[])ctxt.buffer);
+				ctxt.offset = cast(size_t) (ctxt.offset + ctxt.buffer.length);
 				break;
 
 			case FileCmd.APPEND:
 
-				try {
-					File file = File(cmd.fileName, "a");
-					file.seek(cmd.startOffset);
-					file.rawWrite(cmd.buffer);
-					reply.cursorOffset = cmd.startOffset + cmd.buffer.length;
-				}
-				catch (Exception e) {
-					reply.error = true;
-					reply.error_msg = e.msg;
-				}
-
+				File file = File(ctxt.filePath, "a");
+				synchronized(mutex) file.rawWrite(cast(ubyte[]) ctxt.buffer);
+				ctxt.offset = cast(size_t) file.size();
 				break;
+		} catch (Throwable e) {
+			auto status = StatusInfo.init;
+			status.code = Status.ERROR;
+			try status.text = e.toString(); catch {}
+			ctxt.status = status;
 		}
 
-		cmd.replyReady.trigger(m_evLoop, reply);
+		ctxt.handler();
+
+		try {
+			synchronized(gs_wlock)
+				gs_waiters.insertBack(cast(void*) m_waiter);
+			gs_started.notifyAll(); // saves some waiting on a new thread
+		}
+		catch (Throwable e) {
+			ctxt.m_status.code = Status.ERROR;
+			try ctxt.m_status.text = e.toString(); catch {}
+		}
 	}
 
 	void run()
 	{
 		m_evLoop = new EventLoop;
-		shared AsyncEvent job_watcher = new shared AsyncEvent(m_evLoop);
-		job_watcher.setContext(this);
-		job_watcher.run(makeHandler(job_watcher));
+		m_waiter = new shared AsyncSignal(m_evLoop);
+		m_waiter.setContext(this);
+		m_waiter.run(makeHandler(m_waiter));
+		try {
+			synchronized(gs_wlock) {
+				gs_waiters.insertBack(cast(void*)m_waiter);
+			}
 
-		synchronized(gs_wlock) {
-			gs_waiters.add(job_watcher);
-		}
+			gs_started.notifyAll();
+		} catch {}
 
-		while(true) {
-			m_evLoop.loop();
-		}
+		while(!m_stop && m_evLoop.loop()) continue;
 	}
 
-	EventHandler makeHandler(shared AsyncEvent ctxt) {
-		EventHandler eh;
-		eh.ctxt = ctxt;
-		eh.fct = (AsyncEvent ev) {
-			shared FileCmdInfo cmd_info = ev.getMessage!(shared FileCmdInfo)();
+	SignalHandler makeHandler(shared AsyncSignal waiter) {
+		SignalHandler eh;
+		eh.ctxt = waiter;
+		eh.fct = (shared AsyncSignal ev) {
 			FileCmdProcessor this_ = ev.getContext!FileCmdProcessor();
-			this_.process(cmd_info);
+			shared AsyncFile ctxt = ev.getMessage!(shared AsyncFile)();
+
+			if (ctxt is null)
+			{
+				this_.m_stop = true;
+				return;
+			}
+
+			this_.process(ctxt);
 			return;
 		};
 		
@@ -287,10 +347,34 @@ private:
 }
 
 shared static this() {
+	gs_tlock = new Mutex;
+	gs_wlock = new Mutex;
+	gs_threads = new ThreadGroup;
+	gs_started = new Condition(gs_wlock);
+
 	foreach (i; 0 .. 4) {
 		Thread thr = new FileCmdProcessor;
 		thr.start();
 		gs_threads.add(thr);
+	}
+	gs_threadCnt = cast(int) 4;
+}
+
+void destroyFileThreads() {
+	try while (core.atomic.atomicLoad(gs_threadCnt) > 0) {
+		synchronized (gs_wlock) {
+			foreach (void* sig; gs_waiters[]) {
+				shared AsyncSignal signal = cast(shared AsyncSignal) sig;
+				signal.trigger();
+				core.atomic.atomicOp!"-="(gs_threadCnt, cast(int) 1);
+
+			}
+			gs_waiters.clear();
+		}
+		Thread.sleep(10.usecs);
+	} catch (Throwable e) {
+		import std.stdio : writeln;
+		writeln(e.toString());
 	}
 
 }
