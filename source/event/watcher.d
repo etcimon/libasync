@@ -24,8 +24,8 @@ public:
 	
 	mixin ContextMgr;
 
-	bool run(UDPHandler del, NetworkAddress addr)
-	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
+	bool run(DWFileEventHandler del)
+	in { assert(m_fd == fd_t.init, "Cannot rebind"); }
 	body {
 		m_local = addr;
 		m_socket = m_evLoop.run(this, del);
@@ -41,20 +41,15 @@ public:
 		return m_evLoop.kill(this);
 	}
 	
-	@property NetworkAddress local() const
-	{
-		return m_local;
-	}
-	
 package:
 	version(Posix) mixin EvInfoMixins;
 	
-	@property fd_t socket() const {
-		return m_socket;
+	@property fd_t fd() const {
+		return m_fd;
 	}
 	
-	@property void socket(fd_t val) {
-		m_socket = val;
+	@property void fd(fd_t val) {
+		m_fd = val;
 	}
 	
 }
