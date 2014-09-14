@@ -11,7 +11,6 @@ private:
 	EventLoop m_evLoop;
 	fd_t m_socket;
 	NetworkAddress m_local;
-	void* m_ctxt;
 
 public:
 	this(EventLoop evl)
@@ -19,8 +18,6 @@ public:
 	body { m_evLoop = evl; }
 
 	mixin DefStatus;
-
-	mixin ContextMgr;
 
 	bool broadcast(bool b) 
 	in { assert(m_socket == fd_t.init, "Cannot change state on unbound UDP socket"); }	
@@ -36,23 +33,32 @@ public:
 		return m_evLoop.sendTo(m_socket, data, addr);
 	}
 
-	@property void host(string hostname, size_t port)
+	typeof(this) host(string hostname, size_t port)
 	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
 	body
 	{
 		m_local = m_evLoop.resolveHost(hostname, cast(ushort) port);
+		return this;
 	}
 
-	@property void ip(string ip, size_t port)
+	typeof(this) ip(string ip, size_t port)
 	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
 	body {
 		m_local = m_evLoop.resolveIP(ip, cast(ushort) port);
+		return this;
 	}
 
-	bool run(UDPHandler del, NetworkAddress addr)
-	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
+	bool run(void delegate(UDPEvent) del) 
+	{
+		UDPHandler handler;
+		handler.del = del;
+		handler.conn = this;
+		return run(handler);
+	}
+
+	private bool run(UDPHandler del)
+	in { assert(m_local != NetworkAddress.init) && m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
 	body {
-		m_local = addr;
 		m_socket = m_evLoop.run(this, del);
 		if (m_socket == fd_t.init)
 			return false;
@@ -84,12 +90,12 @@ package:
 
 }
 
-struct UDPHandler {
+package struct UDPHandler {
 	AsyncUDPSocket conn;
-	void function(AsyncUDPSocket, UDPEvent) fct;
+	void delegate(UDPEvent) fct;
 	void opCall(UDPEvent code){
 		assert(conn !is null);
-		fct(conn, code);
+		del(code);
 		assert(conn !is null);
 		return;
 	}

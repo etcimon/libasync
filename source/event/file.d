@@ -9,14 +9,10 @@ import core.atomic;
 public import event.internals.path;
 import event.threads;
 
-struct FileCmdInfo
-{
-	FileCmd command;
-	Path filePath;
-	ubyte[] buffer;
-	shared AsyncSignal waiter;
-	shared AsyncFile file;
-	Mutex mtx; // for buffer writing
+enum FileCmd {
+	READ,
+	WRITE,
+	APPEND
 }
 
 shared final class AsyncFile
@@ -24,13 +20,12 @@ shared final class AsyncFile
 nothrow:
 private:
 	EventLoop m_evLoop;
-	FileReadyHandler m_handler;
 	bool m_busy;
 	bool m_error;
+	FileReadyHandler m_handler;
 	FileCmdInfo m_cmdInfo;
 	StatusInfo m_status;
 	size_t m_cursorOffset;
-	void* m_ctxt;
 	Thread m_owner;
 
 public:
@@ -42,7 +37,7 @@ public:
 
 	synchronized @property StatusInfo status() const
 	{
-		return m_status;
+		return cast(StatusInfo) m_status;
 	}
 
 	@property string error() const
@@ -50,35 +45,23 @@ public:
 		return status.text;
 	}
 
-	@property bool waiting() const {
-		return m_busy;
-	}
-
-	synchronized T getContext(T)() 
-	if (isPointer!T)
-	{
-		return cast(T*) m_ctxt;
-	}
-	
-	synchronized T getContext(T)() 
-		if (is(T == class))
-	{
-		return cast(T) m_ctxt;
-	}
-
-	synchronized void setContext(T)(T ctxt)
-		if (isPointer!T || is(T == class))
-	{
-		m_ctxt = cast(shared(void*)) ctxt;
+	synchronized @property bool waiting() const {
+		return cast(bool) m_busy;
 	}
 
 	synchronized @property size_t offset() const {
-		return m_cursorOffset;
+		return cast(size_t) m_cursorOffset;
 	}
 
-	synchronized bool run(FileReadyHandler del)
-	body {
-		m_handler = del;
+	bool run(void delegate() del) {
+		shared FileReadyHandler handler;
+		handler.del = del;
+		handler.ctxt = this;
+		synchronized(this) m_handler = handler;
+		return true;
+	}
+
+	bool kill() {
 		return true;
 	}
 
@@ -94,7 +77,10 @@ public:
 	}
 
 	bool read(Path file_path, shared ubyte[] buffer, size_t off = -1) 
-	in { assert(!m_busy, "File is busy or closed"); }
+	in { 
+		assert(!m_busy, "File is busy or closed");
+		assert(m_handler != FileReadyHandler.init, "AsyncFile must be run before being operated on.");
+	}
 	body {
 		try synchronized(m_cmdInfo.mtx) { 
 			m_cmdInfo.buffer = buffer;
@@ -106,7 +92,10 @@ public:
 	}
 
 	bool write(Path file_path, shared ubyte[] buffer, size_t off = -1) 
-	in { assert(!m_busy, "File is busy or closed"); }
+	in { 
+		assert(!m_busy, "File is busy or closed"); 
+		assert(m_handler != FileReadyHandler.init, "AsyncFile must be run before being operated on.");
+	}
 	body {
 		try synchronized(m_cmdInfo.mtx) { 
 			m_cmdInfo.buffer = buffer;
@@ -119,7 +108,10 @@ public:
 	}
 
 	bool append(Path file_path, shared ubyte[] buffer)
-	in { assert(!m_busy, "File is busy or closed"); }
+	in {
+		assert(!m_busy, "File is busy or closed");
+		assert(m_handler != FileReadyHandler.init, "AsyncFile must be run before being operated on.");
+	}
 	body {
 		try synchronized(m_cmdInfo.mtx) { 
 			m_cmdInfo.command = FileCmd.APPEND;
@@ -131,11 +123,12 @@ public:
 
 private:
 	// chooses a thread or starts it if necessary
-	bool sendCommand() 
-	in { assert(!m_busy, "File is busy or closed"); }
+	void sendCommand() 
+	in { assert(!waiting, "File is busy or closed"); }
 	body {
-		m_busy = true;
-		m_status = StatusInfo.init;
+		waiting = true;
+		m_error = false;
+		status = StatusInfo.init;
 
 		shared AsyncSignal cmd_handler;
 		try {
@@ -169,12 +162,18 @@ private:
 			} while(!cmd_handler);
 		} catch (Throwable e) {
 			import std.stdio;
-			try writeln(e.toString()); catch {}
+			try {
+				status = StatusInfo(Status.ERROR, e.toString());
+				m_error = true;
+			} catch {}
+
+			return false;
 
 		}
 		assert(cmd_handler);
 		m_cmdInfo.waiter = cmd_handler;
-		cmd_handler.trigger!(shared void*)(cast(EventLoop)m_evLoop, cast(shared void*)this);
+		synchronized(gs_wlock) gs_jobs.insert(CommandInfo(CmdInfoType.FILE, cast(void*) m_cmdInfo));
+		cmd_handler.trigger(cast(EventLoop)m_evLoop);
 		return true;
 	}
 
@@ -187,29 +186,43 @@ private:
 	}
 
 	synchronized @property Path filePath() {
-		return m_cmdInfo.filePath;
+		return cast(Path) m_cmdInfo.filePath;
 	}
 
 	synchronized @property void filePath(Path file_path) {
-		m_cmdInfo.filePath = file_path;
+		m_cmdInfo.filePath = cast(shared) file_path;
 	}
 
 	synchronized @property void status(StatusInfo stat) {
-		m_status = stat;
+		m_status = cast(shared) stat;
 	}
 	
 	synchronized @property void offset(size_t val) {
-		m_cursorOffset = val;
+		m_cursorOffset = cast(shared) val;
+	}
+
+	synchronized @property void waiting(bool b) {
+		m_busy = cast(shared) b;
 	}
 }
 
-shared struct FileReadyHandler {
+package shared struct FileCmdInfo
+{
+	FileCmd command;
+	Path filePath;
+	ubyte[] buffer;
+	AsyncSignal waiter;
+	AsyncFile file;
+	Mutex mtx; // for buffer writing
+}
+
+package shared struct FileReadyHandler {
 	AsyncFile ctxt;
-	void function(shared AsyncFile ctxt) fct;
+	void delegate() del;
 	
 	void opCall() {
 		assert(ctxt !is null);
-		fct(ctxt);
+		del();
 		return;
 	}
 }

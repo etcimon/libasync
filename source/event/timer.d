@@ -12,7 +12,6 @@ private:
 	bool m_oneshot = true;
 	fd_t m_timerId;
 	EventLoop m_evLoop;
-	void* m_ctxt;
 	TimerHandler m_evh;
 	Duration m_timeout;
 	bool m_rearmed = false;
@@ -22,19 +21,24 @@ public:
 	in { assert(evl !is null); }
 	body { m_evLoop = evl; }
 
-	mixin ContextMgr;
-
 	mixin DefStatus;
 
 	@property Duration timeout() const {
 		return m_timeout;
 	}
 
-	@property oneShot(bool b) {
+	@property void oneShot(bool b) {
 		m_oneshot = b;
 	}
 
-	bool rearm(Duration timeout) {
+	typeof(this) duration(Duration dur) {
+		m_timeout = dur;
+		return this;
+	}
+
+	bool rearm(Duration timeout)
+	in { assert(timeout > 0.seconds); }
+	body {
 		m_rearmed = true;
 
 		m_timerId = m_evLoop.run(this, m_evh, timeout);
@@ -46,11 +50,20 @@ public:
 			return true;
 	}
 
-	bool run(TimerHandler cb, Duration timeout) {
+	bool run(void delegate() del) 
+	in { assert(timeout > 0.seconds); }
+	body {
+		TimerHandler handler;
+		handler.del = del;
+		handler.ctxt = this;
+
+		return run(del);
+	}
+
+	private bool run(TimerHandler cb) {
 		m_evh = cb;
 		m_rearmed = false;
-		m_timerId = m_evLoop.run(this, cb, timeout);
-		m_timeout = timeout;
+		m_timerId = m_evLoop.run(this, cb, m_timeout);
 		// try writeln("Timer starting", m_timerId); catch {}
 		if (m_timerId == 0)
 			return false;
@@ -86,19 +99,19 @@ package:
 		return m_rearmed;
 	}
 
-	void handler() {
+	/*void handler() {
 		try m_evh();
 		catch {}
 		return;
-	}
+	}*/
 }
 
-struct TimerHandler {
+package struct TimerHandler {
 	AsyncTimer ctxt;
-	void function(AsyncTimer ctxt) fct;
+	void delegate() del;
 	void opCall() {
 		assert(ctxt !is null);
-		fct(ctxt);
+		del();
 		return;
 	}
 }

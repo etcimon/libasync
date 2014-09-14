@@ -60,8 +60,15 @@ unittest {
 }
 
 void testFile() {
-	FileReadyHandler handler;
-	handler.fct = (shared AsyncFile file) {
+
+	gs_file = new shared AsyncFile(g_evl);
+
+	{
+		File file = File("test.txt", "w");
+		file.rawWrite("This is the file content.");
+	}
+	gs_file.run({
+		auto file = gs_file;
 		if (file.status.code == Status.ERROR)
 			writeln(file.status.text);
 		import std.algorithm;
@@ -73,47 +80,26 @@ void testFile() {
 		}
 		import std.file : remove;
 		remove("test.txt");
-	};
-	gs_file = new shared AsyncFile(g_evl);
-
-	handler.ctxt = gs_file;
-
-	{
-		File file = File("test.txt", "w");
-		file.rawWrite("This is the file content.");
-	}
-	gs_file.run(handler);
+	});
 	gs_file.read("test.txt");
 
 }
 
 
 void testSignal() {
-	NotifierHandler sh;
 	g_notifier = new AsyncNotifier(g_evl);
-	class StructCtxtTest {
-		string title = "This is my title";
-	}
-	g_notifier.setContext(new StructCtxtTest);
-	sh.ctxt = g_notifier;
+	auto title = "This is my title";
 
-	sh.fct = (AsyncNotifier signal) {
+	auto del = {
 		import std.stdio;
-		auto ctxt = signal.getContext!(StructCtxtTest)();
-		auto msg = *signal.getMessage!(string*)();
-		static assert(is(typeof(ctxt) == StructCtxtTest));
-		assert(ctxt.title == "This is my title");
-		static assert(is(typeof(msg) == string));
-		assert(msg == "Some message here");
-
+		assert(title == "This is my title");
 		g_cbCheck[0] = true;
 
 		return;
 	};
 
-	g_notifier.run(sh);
-
-	g_notifier.trigger(&g_message);
+	g_notifier.run(del);
+	g_notifier.trigger();
 }
 
 void testEvents() {

@@ -1,0 +1,565 @@
+﻿module event.posix2;
+
+// workaround for IDE indent bug on too big files
+mixin template RunKill()
+{
+
+	fd_t run(AsyncTCPConnection ctxt, TCPEventHandler del)
+	in { assert(ctxt.socket == fd_t.init, "TCP Connection is active. Use another instance."); }
+	body {
+		m_status = StatusInfo.init;
+		import event.internals.socket_compat : socket, SOCK_STREAM;
+		import core.sys.posix.unistd : close;
+		
+		fd_t fd = socket(cast(int)ctxt.peer.family, SOCK_STREAM, 0);
+		
+		if (catchError!("run AsyncTCPConnection")(fd)) 
+			return 0;
+		
+		/// Make sure the socket doesn't block on recv/send
+		if (!setNonBlock(fd)) {
+			close(fd);
+			return 0;
+		}
+		
+		/// Enable Nagel's algorithm if specified
+		if (ctxt.noDelay) {
+			if (!setOption(fd, TCPOption.NODELAY, true)) {
+				try log("Closing connection"); catch {}
+				close(fd);
+				return 0;
+			}
+		}
+		
+		/// Trigger the connection setup instructions
+		if (!initTCPConnection(fd, ctxt, del)) {
+			close(fd);
+			return 0;
+		}
+		
+		return fd;
+		
+	}
+	
+	fd_t run(AsyncTCPListener ctxt, TCPAcceptHandler del)
+	in { 
+		assert(ctxt.socket == fd_t.init, "TCP Listener already bound. Please run another instance."); 
+		assert(ctxt.local.addr !is typeof(ctxt.local.addr).init, "No locally binding address specified. Use AsyncTCPListener.local = EventLoop.resolve*"); 
+	}
+	body {
+		m_status = StatusInfo.init;
+		import event.internals.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR;
+		import core.sys.posix.unistd : close;
+		
+		/// Create the listening socket
+		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_STREAM, 0);
+		if (catchError!("run AsyncTCPAccept")(fd))
+			return 0;
+		
+		/// Make sure the socket returns instantly when calling listen()
+		if (!setNonBlock(fd)) {
+			close(fd);
+			return 0;
+		}
+		
+		/// Allow multiple threads to listen on this address
+		if (!setOption(fd, TCPOption.REUSEADDR, true))
+			return 0;
+		
+		// todo: defer accept
+		
+		/// Automatically starts connections with noDelay if specified
+		if (ctxt.noDelay) {
+			if (!setOption(fd, TCPOption.NODELAY, true)) {
+				try log("Closing connection"); catch {}
+				close(fd);
+				return 0;
+			}
+		}
+		
+		/// Setup the listening mechanism
+		if (!initTCPListener(fd, ctxt, del)) {
+			close(fd);
+			return 0;
+		}
+		
+		return fd;
+		
+	}
+	
+	fd_t run(AsyncUDPSocket ctxt, UDPHandler del) {
+		m_status = StatusInfo.init;
+		
+		import event.internals.socket_compat : socket, SOCK_DGRAM, IPPROTO_UDP;
+		import core.sys.posix.unistd;
+		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP);
+		
+		if (catchSocketError!("run AsyncUDPSocket")(fd))
+			return 0;
+		
+		if (!setNonBlock(fd))
+			return 0;
+		
+		if (!initUDPSocket(fd, ctxt, del))
+			return 0;
+		
+		try log("UDP Socket started FD#" ~ fd.to!string);
+		catch{}
+		/*
+		static if (!EPOLL) {
+			gs_fdPool.insert(fd);
+		}*/
+		
+		return fd;
+	}
+	
+	fd_t run(AsyncNotifier ctxt)
+	{
+		
+		m_status = StatusInfo.init;
+		
+		fd_t err;
+		static if (EPOLL) {
+			fd_t fd = eventfd(0, EFD_NONBLOCK);
+			
+			if (catchSocketError!("run AsyncNotifier")(fd))
+				return 0;
+			
+			epoll_event _event;
+			_event.events = EPOLLIN | EPOLLET;
+		}	
+		else /* if KQUEUE */
+		{
+			kevent_t _event;
+			fd_t fd = cast(fd_t)createIndex();
+		}
+		EventType evtype = EventType.Notifier;
+		NotifierHandler evh;
+		evh.ctxt = ctxt;
+		
+		evh.fct = (AsyncNotifier ctxt) {
+			try {
+				ctxt.handler();
+			} catch (Exception e) {
+				//setInternalError!"AsyncTimer handler"(Status.ERROR);
+			}
+		};
+		
+		EventObject eobj;
+		eobj.notifierHandler = evh;
+		
+		EventInfo* evinfo;
+		
+		if (!ctxt.evInfo) {
+			try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
+			catch (Exception e) {
+				assert(false, "Failed to allocate resources: " ~ e.msg);
+			}
+			
+			ctxt.evInfo = evinfo;
+		}
+		
+		static if (EPOLL) {
+			_event.data.ptr = cast(void*) evinfo;
+			
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event);
+			if (catchSocketError!("epoll_add(eventfd)")(err))
+				return fd_t.init;
+		}
+		else /* if KQUEUE */
+		{
+			EV_SET(&_event, fd, EVFILT_USER, EV_ADD | EV_CLEAR, NOTE_FFCOPY, 0, evinfo);
+			
+			err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
+			
+			if (catchError!"kevent_addSignal"(err))
+				return fd_t.init;
+		}
+		
+		return fd;
+		
+		
+	}
+	
+	fd_t run(shared AsyncSignal ctxt) 
+	{
+		static if (EPOLL) {
+			
+			m_status = StatusInfo.init;
+			
+			ctxt.evInfo = cast(shared) m_evSignal;
+			
+			return cast(fd_t) (__libc_current_sigrtmin() + m_instanceId);
+		}
+		else
+		{
+			m_status = StatusInfo.init;
+			
+			ctxt.evInfo = cast(shared) m_evSignal;
+			return cast(fd_t) createIndex(ctxt);
+			
+		}
+	}
+	
+	fd_t run(AsyncTimer ctxt, TimerHandler del, Duration timeout) {
+		m_status = StatusInfo.init;
+		
+		static if (EPOLL)
+		{
+			import core.sys.posix.time : itimerspec, CLOCK_REALTIME;
+			
+			fd_t fd = ctxt.id;
+			itimerspec its;
+			
+			its.it_value.tv_sec = timeout.split!("seconds", "nsecs")().seconds;
+			its.it_value.tv_nsec = timeout.split!("seconds", "nsecs")().nsecs;
+			if (!ctxt.oneShot)
+			{
+				its.it_interval.tv_sec = its.it_value.tv_sec;
+				its.it_interval.tv_nsec = its.it_value.tv_nsec;
+				
+			}
+			
+			if (fd == fd_t.init) {
+				fd = timerfd_create(CLOCK_REALTIME, 0);
+				if (catchError!"timer_create"(fd))
+					return 0;
+			}
+			int err = timerfd_settime(fd, 0, &its, null);
+			
+			if (catchError!"timer_settime"(err))
+				return 0;
+			epoll_event _event;
+
+			EventType evtype;			
+			evtype = EventType.Timer;
+			EventObject eobj;
+			eobj.timerHandler = del;
+			
+			EventInfo* evinfo;
+			
+			if (!ctxt.evInfo) {
+				try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
+				catch (Exception e) {
+					assert(false, "Failed to allocate resources: " ~ e.msg);
+				}
+				
+				ctxt.evInfo = evinfo;
+			}
+			else
+				evinfo = ctxt.evInfo;
+			
+			_event.events |= EPOLLIN | EPOLLET;
+			_event.data.ptr = evinfo;
+			if (ctxt.id > 0) {
+				err = epoll_ctl(m_epollfd, EPOLL_CTL_DEL, ctxt.id, null); 
+				
+				if (catchError!"epoll_ctl"(err))
+					return fd_t.init;
+			}
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event); 
+			
+			if (catchError!"timer_epoll_add"(err))
+				return 0;
+			return fd;
+		}
+		else /* if KQUEUE */
+		{
+			fd_t fd = ctxt.id;
+			
+			if (ctxt.id == 0)
+				fd = cast(fd_t) createIndex();
+			EventType evtype;			
+			evtype = EventType.Timer;
+			
+			EventObject eobj;
+			eobj.timerHandler = del;
+			
+			EventInfo* evinfo;
+			
+			if (!ctxt.evInfo) {
+				try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
+				catch (Exception e) {
+					assert(false, "Failed to allocate resources: " ~ e.msg);
+				}
+				
+				ctxt.evInfo = evinfo;
+			}
+			else
+				evinfo = ctxt.evInfo;
+			kevent_t _event;
+			
+			int msecs = cast(int) timeout.total!"msecs";
+			
+			// www.khmere.com/freebsd_book/html/ch06.html - EV_CLEAR set internally
+			
+			if (ctxt.id != 0) 
+				EV_SET(&_event, fd, EVFILT_TIMER, EV_ENABLE, 0, msecs, cast(void*) evinfo);
+			else
+				EV_SET(&_event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
+			
+			if (ctxt.oneShot)
+				_event.flags |= EV_ONESHOT;
+			
+			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
+			
+			if (catchError!"kevent_timer_add"(err))
+				return 0;
+			
+			return fd;
+			
+		}
+		
+	}
+	
+	fd_t run(AsyncDirectoryWatcher ctxt, DWHandler del) {
+		import core.sys.linux.sys.inotify;
+		enum IN_NONBLOCK = 0x800; // value in core.sys.linux.sys.inotify is incorrect
+		assert(ctxt.fd == fd_t.init);
+		int fd = inotify_init1(IN_NONBLOCK);	
+		if (catchError!"inotify_init1"(fd)) {
+			return fd_t.init;
+		}
+
+		static if (EPOLL) 
+		{
+			epoll_event _event;
+			
+			EventType evtype;
+			
+			evtype = EventType.DirectoryWatcher;
+			EventObject eobj;
+			eobj.dwHandler = del;
+			
+			EventInfo* evinfo;
+			
+			assert (!ctxt.evInfo);
+			
+			try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
+			catch (Exception e) {
+				assert(false, "Failed to allocate resources: " ~ e.msg);
+			}
+			
+			ctxt.evInfo = evinfo;
+			
+			_event.events |= EPOLLIN;
+			_event.data.ptr = evinfo;
+			
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event); 
+			
+			if (catchError!"epoll_ctl"(err))
+				return fd_t.init;
+		} 
+		else {
+
+			epoll_event _event;
+			EventType evtype;
+
+			evtype = EventType.DirectoryWatcher;
+			EventObject eobj;
+			eobj.dwHandler = del;
+
+			EventInfo* evinfo;
+			
+			assert (!ctxt.evInfo);
+			
+			try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
+			catch (Exception e) {
+				assert(false, "Failed to allocate resources: " ~ e.msg);
+			}
+
+			ctxt.evInfo = evinfo;
+			kevent_t _event;
+
+			uint events;
+
+			import event.watcher;
+			if (info.events & DWFileEvent.CREATED)
+				events |= NOTE_LINK | NOTE_WRITE;
+			if (info.events & DWFileEvent.DELETED)
+				events |= NOTE_DELETE;
+			if (info.events & DWFileEvent.MODIFIED)
+				events |= NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE;
+			if (info.events & DWFileEvent.MOVED_FROM)
+				events |= NOTE_RENAME;
+			if (info.events & DWFileEvent.MOVED_TO)
+				events |= NOTE_RENAME;
+
+			//NOTE_DELETE     = 0x0001, /* vnode was removed */
+			//NOTE_WRITE      = 0x0002, /* data contents changed */
+			//NOTE_EXTEND     = 0x0004, /* size increased */
+			//NOTE_ATTRIB     = 0x0008, /* attributes changed */
+			//NOTE_LINK       = 0x0010, /* link count changed */
+			//NOTE_RENAME     = 0x0020, /* vnode was renamed */
+			//NOTE_REVOKE     = 0x0040, /* vnode access was revoked */
+			EV_SET(&_event, fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, events, 0, cast(void*) evinfo);
+
+			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
+			
+			if (catchError!"kevent_timer_add"(err))
+				return 0;
+
+		}
+		
+		return fd;
+	}
+	
+	bool kill(AsyncDirectoryWatcher ctxt) {
+		import core.sys.posix.unistd : close;
+		close(ctxt.fd);
+	}
+	
+bool kill(AsyncTCPConnection ctxt, bool forced = false)
+{
+	m_status = StatusInfo.init;
+		fd_t fd = ctxt.socket;
+			scope(exit) {
+				if (forced) {
+				ctxt.connected = false;
+		}
+		ctxt.disconnecting = true;
+	}
+	if (ctxt.connected)
+		return closeSocket(fd, true, forced);
+	else {
+		return true;
+	}
+}
+
+bool kill(AsyncTCPListener ctxt)
+{
+	m_status = StatusInfo.init;
+	nothrow void cleanup() {
+		try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+			catch { assert(false, "Failed to free resources"); }
+		}
+		
+		scope(exit) {
+			cleanup();
+		}
+		
+		fd_t fd = ctxt.socket;
+		
+		return closeSocket(fd, false, true);
+	}
+	
+	bool kill(AsyncNotifier ctxt)
+	{
+		static if (EPOLL)
+		{
+			import core.sys.posix.unistd : close;
+			fd_t err = close(ctxt.id);
+			
+			if (catchError!"close(eventfd)"(err))
+				return false;
+			
+			try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+			catch (Exception e){ assert(false, "Error freeing resources"); }
+			
+			return true;
+		}
+		else /* if KQUEUE */
+		{
+			scope(exit) destroyIndex(ctxt);
+			
+			if (ctxt.id == fd_t.init)
+				return false;
+			
+			kevent_t _event;
+			EV_SET(&_event, ctxt.id, EVFILT_USER, EV_DELETE | EV_DISABLE, 0, 0, null);
+			
+			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
+			
+			try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+			catch (Exception e){ assert(false, "Error freeing resources"); }
+			
+			if (catchError!"kevent_del(notifier)"(err)) {
+				return false;
+			}
+			return true;
+		}
+		
+	}
+	
+	bool kill(shared AsyncSignal ctxt)
+	{
+		
+		static if (EPOLL) {
+			ctxt.evInfo = null;
+		}
+		else 
+		{
+			m_status = StatusInfo.init;
+			destroyIndex(ctxt);
+		}
+		return true;
+	}
+	
+	bool kill(AsyncTimer ctxt) {
+		import core.sys.posix.time;
+		m_status = StatusInfo.init;
+		
+		static if (EPOLL)
+		{
+			import core.sys.posix.unistd : close;
+			fd_t err = close(ctxt.id);
+			if (catchError!"timer_kill"(err))
+				return false;
+			
+			if (ctxt.evInfo) {
+				try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+				catch (Exception e) { assert(false, "Failed to free resources: " ~ e.msg); }
+			}
+			
+		}
+		else /* if KQUEUE */
+		{
+			scope(exit) 
+				destroyIndex(ctxt);
+			
+			if (ctxt.evInfo) {
+				try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+				catch (Exception e) { assert(false, "Failed to free resources: " ~ e.msg); }
+			}
+			kevent_t _event;
+			EV_SET(&_event, ctxt.id, EVFILT_TIMER, EV_DELETE, 0, 0, null);
+			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
+			if (catchError!"kevent_del(timer)"(err))
+				return false;
+		}
+		return true;
+	}
+	
+	bool kill(AsyncUDPSocket ctxt) {
+		import core.sys.posix.unistd : close;
+		
+		
+		m_status = StatusInfo.init;
+		
+		fd_t fd = ctxt.socket;
+		fd_t err = close(fd);
+		
+		if (catchError!"udp close"(err)) 
+			return false;
+		
+		static if (!EPOLL)
+		{
+			kevent_t[2] events;
+			EV_SET(&(events[0]), ctxt.socket, EVFILT_READ, EV_DELETE, 0, 0, null);
+			EV_SET(&(events[1]), ctxt.socket, EVFILT_WRITE, EV_DELETE, 0, 0, null);
+			err = kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
+			
+			if (catchError!"event_del(udp)"(err)) 
+				return false;
+		}
+		
+		
+		try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+		catch (Exception e){
+			assert(false, "Failed to free resources: " ~ e.msg);
+		}
+		
+		return true;
+	}
+
+}

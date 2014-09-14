@@ -18,8 +18,6 @@ private:
 
 	version(Posix) EventInfo* m_evInfo;
 	fd_t m_evId;
-	void* m_message;
-	void* m_ctxt;
 
 public:
 
@@ -33,8 +31,7 @@ public:
 		m_owner = cast(shared) Thread.getThis();
 		version(Posix) static if (!EPOLL) m_owner_id = cast(shared) g_threadId;
 	}
-
-		
+			
 	@property bool hasError() const 
 	{
 		return (cast(EventLoop)m_evLoop).status.code != Status.OK;
@@ -48,57 +45,14 @@ public:
 		return (cast(EventLoop)m_evLoop).error;
 	}
 
-
-
-	T getContext(T)() 
-		if (isPointer!T)
-	in {
-		assert(Thread.getThis() is cast(Thread)m_owner);
-	}
-	body 
-	{
-		return cast(T*) m_ctxt;
-	}
-	
-	T getContext(T)() 
-		if (is(T == class))
-	in {
-			assert(Thread.getThis() is cast(Thread)m_owner);
-	}
-	body {
-		return cast(T) m_ctxt;
+	bool run (void delegate() del) {
+		shared SignalHandler handler;
+		handler.del = del;
+		handler.ctxt = this;
+		return run(handler);
 	}
 
-	T getMessage(T)()
-		if (isPointer!T)
-	in {
-		assert(Thread.getThis() is cast(Thread)m_owner);
-	}
-	body 
-	{
-		return cast(T) m_message;
-	}
-
-	T getMessage(T)()
-		if (is(T == class))
-	in {
-		assert(Thread.getThis() is cast(Thread)m_owner);
-	}
-	body 
-	{
-		return cast(T) m_message;
-	}
-
-	void setContext(T)(T ctxt)
-		if (isPointer!T || is(T == class))
-	in {
-			assert(Thread.getThis() is cast(Thread) m_owner);
-	}
-	body {
-		m_ctxt = cast(shared(void*)) ctxt;
-	}
-
-	bool run(shared SignalHandler del) 
+	private bool run(shared SignalHandler del) 
 	in {
 		assert(Thread.getThis() is cast(Thread)m_owner);
 	}
@@ -119,44 +73,11 @@ public:
 		return (cast(EventLoop)m_evLoop).kill(cast(shared AsyncSignal) this);
 	}
 
-	// EventLoop must be thread-local
-	synchronized bool trigger(T)(EventLoop evl, T msg) 
-		if (isWeaklyIsolated!T)
-	{
-		if (isPointer!T)
-			m_message = cast(shared(void*))msg;
-		else if (is(T == class))
-			m_message = cast(shared(void*))msg;
-		else
-			m_message = cast(shared(void*))new T(msg);
-
-		return evl.notify(m_evId, this);
-	}
-
 	synchronized bool trigger(EventLoop evl) {
 		return evl.notify(m_evId, this);
 	}
 
-	synchronized bool trigger(T)(T msg)
-		if (isWeaklyIsolated!T)
-	in {
-		assert(Thread.getThis() is cast(Thread) m_owner);
-	}
-	body {
-		import std.traits : isSomeString;
-		static if (isPointer!T)
-			m_message = cast(shared void*) msg;
-		else static  if (is(T == class))
-			m_message = cast(shared void*)msg;
-		else {
-			T* msgPtr = new T;
-			m_message = cast(shared void*) msgPtr;
-		}
-		return (cast(EventLoop)m_evLoop).notify(m_evId, this);
-	}
-
 	synchronized bool trigger() {
-		m_message = null;
 		return (cast(EventLoop)m_evLoop).notify(m_evId, this);
 	}
 
@@ -188,13 +109,13 @@ version(Posix) {
 	}
 }
 
-shared struct SignalHandler {
+package shared struct SignalHandler {
 	AsyncSignal ctxt;
-	void function(shared AsyncSignal ctxt) fct;
+	void delegate() del;
 
 	void opCall() {
 		assert(ctxt !is null);
-		fct(ctxt);
+		del();
 		return;
 	}
 }

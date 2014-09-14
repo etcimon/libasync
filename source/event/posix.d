@@ -12,6 +12,7 @@ import core.stdc.errno;
 import event.events;
 import event.internals.memory : FreeListObjectAlloc;
 import core.sys.posix.signal;
+import event.posix2;
 enum SOCKET_ERROR = -1;
 alias fd_t = int;
 
@@ -48,6 +49,7 @@ version(FreeBSD) {
 	import event.internals.kqueue;
 	const EPOLL = false;
 }
+
 package struct EventLoopImpl {
 	static if (EPOLL) {
 		pragma(msg, "Using Linux EPOLL for events");
@@ -79,6 +81,8 @@ private:
 	}
 package:
 
+	/// workaround for IDE indent bug on too big files
+	mixin RunKill!();
 
 	@property bool started() const {
 		return m_started;
@@ -302,7 +306,24 @@ package:
 						setInternalError!"signalEvHandler"(Status.ERROR);
 					}
 					break;
-
+				case EventType.DirectoryWatcher:
+					try log("Got watched file event! " ~ info.fd.to!string); catch {}
+					static if (EPOLL) {
+						static long val;
+						import core.sys.posix.unistd : read;
+						read(info.evObj.timerHandler.ctxt.id, &val, long.sizeof);
+					}
+					try info.evObj.timerHandler();
+					catch (Exception e) {
+						setInternalError!"signalEvHandler"(Status.ERROR);
+					}
+					static if (!EPOLL) {
+						if (info.evObj.timerHandler.ctxt.oneShot && !info.evObj.timerHandler.ctxt.rearmed) {
+							destroyIndex(info.evObj.timerHandler.ctxt);
+							info.evObj.timerHandler.ctxt.id = 0;
+						}
+					}
+					break;
 				case EventType.Timer:
 					try log("Got timer! " ~ info.fd.to!string); catch {}
 					static if (EPOLL) {
@@ -436,499 +457,6 @@ package:
 		}
 		return success;
 	}
-
-	fd_t run(AsyncTCPConnection ctxt, TCPEventHandler del)
-	in { assert(ctxt.socket == fd_t.init, "TCP Connection is active. Use another instance."); }
-	body {
-		m_status = StatusInfo.init;
-		import event.internals.socket_compat : socket, SOCK_STREAM;
-		import core.sys.posix.unistd : close;
-
-		fd_t fd = socket(cast(int)ctxt.peer.family, SOCK_STREAM, 0);
-
-		if (catchError!("run AsyncTCPConnection")(fd)) 
-			return 0;
-
-		/// Make sure the socket doesn't block on recv/send
-		if (!setNonBlock(fd)) {
-			close(fd);
-			return 0;
-		}
-
-		/// Enable Nagel's algorithm if specified
-		if (ctxt.noDelay) {
-			if (!setOption(fd, TCPOption.NODELAY, true)) {
-				try log("Closing connection"); catch {}
-				close(fd);
-				return 0;
-			}
-		}
-
-		/// Trigger the connection setup instructions
-		if (!initTCPConnection(fd, ctxt, del)) {
-			close(fd);
-			return 0;
-		}
-
-		return fd;
-		
-	}
-	
-	fd_t run(AsyncTCPListener ctxt, TCPAcceptHandler del)
-	in { 
-		assert(ctxt.socket == fd_t.init, "TCP Listener already bound. Please run another instance."); 
-		assert(ctxt.local.addr !is typeof(ctxt.local.addr).init, "No locally binding address specified. Use AsyncTCPListener.local = EventLoop.resolve*"); 
-	}
-	body {
-		m_status = StatusInfo.init;
-		import event.internals.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR;
-		import core.sys.posix.unistd : close;
-
-		/// Create the listening socket
-		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_STREAM, 0);
-		if (catchError!("run AsyncTCPAccept")(fd))
-			return 0;
-
-		/// Make sure the socket returns instantly when calling listen()
-		if (!setNonBlock(fd)) {
-			close(fd);
-			return 0;
-		}
-
-		/// Allow multiple threads to listen on this address
-		if (!setOption(fd, TCPOption.REUSEADDR, true))
-			return 0;
-
-		// todo: defer accept
-
-		/// Automatically starts connections with noDelay if specified
-		if (ctxt.noDelay) {
-			if (!setOption(fd, TCPOption.NODELAY, true)) {
-				try log("Closing connection"); catch {}
-				close(fd);
-				return 0;
-			}
-		}
-
-		/// Setup the listening mechanism
-		if (!initTCPListener(fd, ctxt, del)) {
-			close(fd);
-			return 0;
-		}
-
-		return fd;
-		
-	}
-
-	fd_t run(AsyncUDPSocket ctxt, UDPHandler del) {
-		m_status = StatusInfo.init;
-
-		import event.internals.socket_compat : socket, SOCK_DGRAM, IPPROTO_UDP;
-		import core.sys.posix.unistd;
-		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP);
-
-		if (catchSocketError!("run AsyncUDPSocket")(fd))
-			return 0;
-
-		if (!setNonBlock(fd))
-			return 0;
-
-		if (!initUDPSocket(fd, ctxt, del))
-			return 0;
-		
-		try log("UDP Socket started FD#" ~ fd.to!string);
-		catch{}
-		/*
-		static if (!EPOLL) {
-			gs_fdPool.insert(fd);
-		}*/
-
-		return fd;
-	}
-
-	fd_t run(AsyncNotifier ctxt)
-	{
-
-		m_status = StatusInfo.init;
-
-		fd_t err;
-		static if (EPOLL) {
-			fd_t fd = eventfd(0, EFD_NONBLOCK);
-
-			if (catchSocketError!("run AsyncNotifier")(fd))
-				return 0;
-
-			epoll_event _event;
-			_event.events = EPOLLIN | EPOLLET;
-		}	
-		else /* if KQUEUE */
-		{
-			kevent_t _event;
-			fd_t fd = cast(fd_t)createIndex();
-		}
-		EventType evtype = EventType.Notifier;
-		NotifierHandler evh;
-		evh.ctxt = ctxt;
-		
-		evh.fct = (AsyncNotifier ctxt) {
-			try {
-				ctxt.handler();
-			} catch (Exception e) {
-				//setInternalError!"AsyncTimer handler"(Status.ERROR);
-			}
-		};
-		
-		EventObject eobj;
-		eobj.notifierHandler = evh;
-		
-		EventInfo* evinfo;
-		
-		if (!ctxt.evInfo) {
-			try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
-			catch (Exception e) {
-				assert(false, "Failed to allocate resources: " ~ e.msg);
-			}
-			
-			ctxt.evInfo = evinfo;
-		}
-
-		static if (EPOLL) {
-			_event.data.ptr = cast(void*) evinfo;
-			
-			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event);
-			if (catchSocketError!("epoll_add(eventfd)")(err))
-				return fd_t.init;
-		}
-		else /* if KQUEUE */
-		{
-			EV_SET(&_event, fd, EVFILT_USER, EV_ADD | EV_CLEAR, NOTE_FFCOPY, 0, evinfo);
-
-			err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
-			
-			if (catchError!"kevent_addSignal"(err))
-				return fd_t.init;
-		}
-
-		return fd;
-
-
-	}
-
-	fd_t run(shared AsyncSignal ctxt) 
-	{
-		static if (EPOLL) {
-
-			m_status = StatusInfo.init;
-
-			ctxt.evInfo = cast(shared) m_evSignal;
-
-			return cast(fd_t) (__libc_current_sigrtmin() + m_instanceId);
-		}
-		else
-		{
-			m_status = StatusInfo.init;
-			
-			ctxt.evInfo = cast(shared) m_evSignal;
-			return cast(fd_t) createIndex(ctxt);
-
-		}
-	}
-	
-	fd_t run(AsyncTimer ctxt, TimerHandler del, Duration timeout) {
-		m_status = StatusInfo.init;
-
-		static if (EPOLL)
-		{
-			import core.sys.posix.time : itimerspec, CLOCK_REALTIME;
-
-			fd_t fd = ctxt.id;
-			itimerspec its;
-
-			its.it_value.tv_sec = timeout.split!("seconds", "nsecs")().seconds;
-			its.it_value.tv_nsec = timeout.split!("seconds", "nsecs")().nsecs;
-			if (!ctxt.oneShot)
-			{
-				its.it_interval.tv_sec = its.it_value.tv_sec;
-				its.it_interval.tv_nsec = its.it_value.tv_nsec;
-
-			}
-
-			if (fd == fd_t.init) {
-				fd = timerfd_create(CLOCK_REALTIME, 0);
-				if (catchError!"timer_create"(fd))
-					return 0;
-			}
-			int err = timerfd_settime(fd, 0, &its, null);
-
-			if (catchError!"timer_settime"(err))
-				return 0;
-			epoll_event _event;
-
-			EventType evtype;
-			TimerHandler evh;
-			evh.ctxt = ctxt;
-			
-			evtype = EventType.Timer;
-			evh.fct = (AsyncTimer ctxt) {
-				try {
-					ctxt.handler();
-				} catch (Exception e) {
-					//setInternalError!"AsyncTimer handler"(Status.ERROR);
-				}
-			};
-			
-			EventObject eobj;
-			eobj.timerHandler = evh;
-			
-			EventInfo* evinfo;
-			
-			if (!ctxt.evInfo) {
-				try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
-				catch (Exception e) {
-					assert(false, "Failed to allocate resources: " ~ e.msg);
-				}
-				
-				ctxt.evInfo = evinfo;
-			}
-			else
-				evinfo = ctxt.evInfo;
-
-			_event.events |= EPOLLIN | EPOLLET;
-			_event.data.ptr = evinfo;
-			if (ctxt.id > 0)
-				err = epoll_ctl(m_epollfd, EPOLL_CTL_DEL, ctxt.id, null); 
-
-			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event); 
-
-			if (catchError!"timer_epoll_add"(err))
-				return 0;
-			return fd;
-		}
-		else /* if KQUEUE */
-		{
-			fd_t fd = ctxt.id;
-
-			if (ctxt.id == 0)
-				fd = cast(fd_t) createIndex();
-			EventType evtype;
-			TimerHandler evh;
-			evh.ctxt = ctxt;
-
-			evtype = EventType.Timer;
-			evh.fct = (AsyncTimer ctxt) {
-				try {
-					ctxt.handler();
-				} catch (Exception e) {
-					//setInternalError!"AsyncTimer handler"(Status.ERROR);
-				}
-			};
-			
-			EventObject eobj;
-			eobj.timerHandler = evh;
-			
-			EventInfo* evinfo;
-
-			if (!ctxt.evInfo) {
-				try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
-				catch (Exception e) {
-					assert(false, "Failed to allocate resources: " ~ e.msg);
-				}
-
-				ctxt.evInfo = evinfo;
-			}
-			else
-				evinfo = ctxt.evInfo;
-			kevent_t _event;
-
-			int msecs = cast(int) timeout.total!"msecs";
-
-			// www.khmere.com/freebsd_book/html/ch06.html - EV_CLEAR set internally
-
-			if (ctxt.id != 0) 
-				EV_SET(&_event, fd, EVFILT_TIMER, EV_ENABLE, 0, msecs, cast(void*) evinfo);
-			else
-				EV_SET(&_event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
-
-			if (ctxt.oneShot)
-				_event.flags |= EV_ONESHOT;
-
-			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
-
-			if (catchError!"kevent_timer_add"(err))
-				return 0;
-
-			return fd;
-
-		}
-	}
-
-	fd_t run(AsyncDirectoryWatcher ctxt, DWFileEventHandler cb) {
-		m_core = core;
-		enum IN_NONBLOCK = 0x800; // value in core.sys.linux.sys.inotify is incorrect
-		m_handle = inotify_init1(IN_NONBLOCK);
-		errnoEnforce(m_handle != -1, "Failed to initialize inotify.");
-		auto spath = m_path.toString();
-		addWatch(spath);
-		if (recursive && spath.isDir)
-		{
-			foreach (de; spath.dirEntries(SpanMode.shallow))
-				if (de.isDir) addWatch(de.name);
-		}
-	}
-
-	bool kill(AsyncTCPConnection ctxt, bool forced = false)
-	{
-		m_status = StatusInfo.init;
-		fd_t fd = ctxt.socket;
-		scope(exit) {
-			if (forced) {
-				ctxt.connected = false;
-			}
-			ctxt.disconnecting = true;
-		}
-		if (ctxt.connected)
-			return closeSocket(fd, true, forced);
-		else {
-			return true;
-		}
-	}
-	
-	bool kill(AsyncTCPListener ctxt)
-	{
-		m_status = StatusInfo.init;
-		nothrow void cleanup() {
-			try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
-			catch { assert(false, "Failed to free resources"); }
-		}
-
-		scope(exit) {
-			cleanup();
-		}
-
-		fd_t fd = ctxt.socket;
-
-		return closeSocket(fd, false, true);
-	}
-	
-	bool kill(AsyncNotifier ctxt)
-	{
-		static if (EPOLL)
-		{
-			import core.sys.posix.unistd : close;
-			fd_t err = close(ctxt.id);
-
-			if (catchError!"close(eventfd)"(err))
-				return false;
-
-			try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
-			catch (Exception e){ assert(false, "Error freeing resources"); }
-
-			return true;
-		}
-		else /* if KQUEUE */
-		{
-			scope(exit) destroyIndex(ctxt);
-
-			if (ctxt.id == fd_t.init)
-				return false;
-
-			kevent_t _event;
-			EV_SET(&_event, ctxt.id, EVFILT_USER, EV_DELETE | EV_DISABLE, 0, 0, null);
-			
-			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
-
-			try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
-			catch (Exception e){ assert(false, "Error freeing resources"); }
-
-			if (catchError!"kevent_del(notifier)"(err)) {
-				return false;
-			}
-			return true;
-		}
-
-	}
-	
-	bool kill(shared AsyncSignal ctxt)
-	{
-
-		static if (EPOLL) {
-			ctxt.evInfo = null;
-		}
-		else 
-		{
-			m_status = StatusInfo.init;
-			destroyIndex(ctxt);
-		}
-		return true;
-	}
-		
-	bool kill(AsyncTimer ctxt) {
-		import core.sys.posix.time;
-		m_status = StatusInfo.init;
-
-		static if (EPOLL)
-		{
-			import core.sys.posix.unistd : close;
-			fd_t err = close(ctxt.id);
-			if (catchError!"timer_kill"(err))
-				return false;
-
-			if (ctxt.evInfo) {
-				try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
-				catch (Exception e) { assert(false, "Failed to free resources: " ~ e.msg); }
-			}
-			
-		}
-		else /* if KQUEUE */
-		{
-			scope(exit) 
-				destroyIndex(ctxt);
-
-			if (ctxt.evInfo) {
-				try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
-				catch (Exception e) { assert(false, "Failed to free resources: " ~ e.msg); }
-			}
-			kevent_t _event;
-			EV_SET(&_event, ctxt.id, EVFILT_TIMER, EV_DELETE, 0, 0, null);
-			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
-			if (catchError!"kevent_del(timer)"(err))
-				return false;
-		}
-		return true;
-	}
-
-	bool kill(AsyncUDPSocket ctxt) {
-		import core.sys.posix.unistd : close;
-
-
-		m_status = StatusInfo.init;
-		
-		fd_t fd = ctxt.socket;
-		fd_t err = close(fd);
-
-		if (catchError!"udp close"(err)) 
-			return false;
-
-		static if (!EPOLL)
-		{
-			kevent_t[2] events;
-			EV_SET(&(events[0]), ctxt.socket, EVFILT_READ, EV_DELETE, 0, 0, null);
-			EV_SET(&(events[1]), ctxt.socket, EVFILT_WRITE, EV_DELETE, 0, 0, null);
-			err = kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
-
-			if (catchError!"event_del(udp)"(err)) 
-				return false;
-		}
-
-
-		try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
-		catch (Exception e){
-			assert(false, "Failed to free resources: " ~ e.msg);
-		}
-
-		return true;
-	}
-
 
 	bool setOption(T)(fd_t fd, TCPOption option, in T value) {
 		m_status = StatusInfo.init;
@@ -1309,6 +837,39 @@ package:
 	{
 		m_status = StatusInfo.init;
 		return 0;
+	}
+
+	uint watch(in fd_t fd, in WatchInfo info) {
+		import core.sys.linux.sys.inotify;
+
+		static if (EPOLL) {
+			fd_t wd;
+			uint events = info.events; // have the same values.
+			if (events & IN_DELETE)
+				events |= IN_DELETE_SELF;
+			if (events & IN_MOVE_FROM)
+				events |= IN_MOVE_SELF;
+			wd = inotify_add_watch(fd, info.path.toNativeString().toStringz, events);
+
+			if (catchError!"inotify_add_watch"(wd))
+				return fd_t.init;
+			return wd;
+		} else /* if KQUEUE */ {
+
+			// todo
+
+		}
+	}
+
+	bool unwatch(in fd_t fd, in uint wd) {
+		import core.sys.linux.sys.inotify;
+
+		int err = inotify_rm_watch(fd, wd);
+
+		if (catchError!"inotify_rm_watch"(err))
+			return false;
+
+		return true;
 	}
 
 	bool broadcast(in fd_t fd, bool b) {
@@ -2403,6 +1964,7 @@ union EventObject {
 	TCPAcceptHandler tcpAcceptHandler;
 	TCPEventHandler tcpEvHandler;
 	TimerHandler timerHandler;
+	DWHandler dwHandler;
 	UDPHandler udpHandler;
 	NotifierHandler notifierHandler;
 }
@@ -2413,7 +1975,8 @@ enum EventType : char {
 	UDPSocket,
 	Notifier,
 	Signal,
-	Timer
+	Timer,
+	DirectoryWatcher
 }
 
 struct EventInfo {

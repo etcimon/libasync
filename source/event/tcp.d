@@ -2,6 +2,7 @@ module event.tcp;
 import std.traits : isPointer;
 import event.types;
 import event.events;
+import std.typecons : Tuple;
 
 final class AsyncTCPConnection
 {
@@ -15,7 +16,6 @@ private:
 nothrow:
 	fd_t m_socket;
 	bool m_noDelay;
-	void* m_ctxt;
 	bool m_inbound;
 
 public:
@@ -24,8 +24,6 @@ public:
 	body { m_evLoop = evl; }
 
 	mixin DefStatus;
-
-	mixin ContextMgr;
 
 	@property bool isConnected() const {
 		return m_socket != fd_t.init;
@@ -58,7 +56,7 @@ public:
 	in {
 		assert(isConnected && m_peer != NetworkAddress.init, "Cannot get local address from a non-connected socket");
 	}
-	body {			
+	body {
 		return m_evLoop.localAddr(m_socket, m_peer.ipv6);
 	}
 
@@ -105,7 +103,15 @@ public:
 		return m_evLoop.send(m_socket, ub);
 	}
 
-	bool run(TCPEventHandler del)
+	bool run(void delegate(TCPEvent) del) {
+		TCPEventHandler handler;
+		handler.fct = del.funcptr;
+		m_ctxt = del.ptr;
+		handler.conn = this;
+		return run(handler);
+	}
+
+	private bool run(TCPEventHandler del)
 	in { assert(!isConnected); }
 	body {
 		m_socket = m_evLoop.run(this, del);
@@ -198,11 +204,17 @@ public:
 		return this;
 	}
 
-	bool run(TCPAcceptHandler del)
+	bool run(void delegate(TCPEvent) delegate(AsyncTCPConnection) del) {
+		TCPAcceptHandler handler;
+		handler.ctxt = this;
+		handler.del = del;
+		return run(handler);
+	}
+
+	private bool run(TCPAcceptHandler del)
 	in { 
 		assert(m_socket == fd_t.init, "Cannot rebind a listening socket");
 		assert(m_local != NetworkAddress.init, "Cannot bind without an address. Please run .host() or .ip()");
-
 	}
 	body {
 		m_socket = m_evLoop.run(this, del);
@@ -227,26 +239,38 @@ package:
 	}
 }
 
-struct TCPEventHandler {
+package struct TCPEventHandler {
 	AsyncTCPConnection conn;
 
 	/// Use getContext/setContext to persist the context in each activity. Using AsyncTCPConnection in args 
 	/// allows the EventLoop implementation to create and pass a new object, which is necessary for listeners.
-	void function(AsyncTCPConnection, TCPEvent) fct;
-	void opCall(TCPEvent code){
+	void delegate(TCPEvent) del;
+
+	void opCall(TCPEvent ev){
 		assert(conn !is null, "Connection was disposed before shutdown could be completed");
-		fct(conn, code);
-		assert(conn !is null);
+
+		del(ev);
+
+		debug {
+			ubyte[1] test;
+			assert(conn.recv((&test)[0..1]) == 0 && conn.status.code == Status.ASYNC, "You must recv the whole buffer, because events are edge triggered!");
+		}
 		return;
 	}
 }
 
-struct TCPAcceptHandler {
-	void* ctxt;
-	TCPEventHandler function(void*, AsyncTCPConnection) fct;
+package struct TCPAcceptHandler {
+	AsyncTCPListener ctxt;
+	void delegate(TCPEvent) delegate(AsyncTCPConnection) del;
+
 	TCPEventHandler opCall(AsyncTCPConnection conn){ // conn is null = error!
-		assert(conn !is null);
-		return fct(ctxt, conn);
+		assert(ctxt !is null);
+
+		void delegate(TCPEvent) ev_handler = del(conn);
+		TCPEventHandler handler;
+		handler.del = ev_handler;
+		handler.conn = conn;
+		return handler;
 	}
 }
 

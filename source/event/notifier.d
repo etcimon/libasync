@@ -10,8 +10,6 @@ private:
 	EventLoop m_evLoop;
 	NotifierHandler m_evh;
 	fd_t m_evId;
-	void* m_message;
-	void* m_ctxt;
 	version(Posix) static if (EPOLL) shared ushort m_owner;
 	
 public:	
@@ -25,22 +23,14 @@ public:
 		
 	mixin DefStatus;
 
-	mixin ContextMgr;
-	
-	T getMessage(T)()
-		if (isPointer!T)
-	{
-		return cast(T) m_message;
-	}
-	
-	T getMessage(T)()
-		if (is(T == class))
-	{
-		return cast(T) m_message;
+	bool run(void delegate() del) {
+		NotifierHandler handler;
+		handler.del = del;
+		handler.ctxt = this;
+		return run(handler);
 	}
 
-	
-	bool run(NotifierHandler del) 
+	private bool run(NotifierHandler del) 
 	{
 		m_evh = del;
 		m_evId = m_evLoop.run(this);
@@ -90,13 +80,13 @@ package:
 	}
 }
 
-struct NotifierHandler {
+package struct NotifierHandler {
 	AsyncNotifier ctxt;
-	void function(AsyncNotifier ctxt) fct;
+	void delegate() del;
 	
 	void opCall() {
 		assert(ctxt !is null);
-		fct(ctxt);
+		del();
 		return;
 	}
 }

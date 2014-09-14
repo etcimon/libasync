@@ -109,6 +109,14 @@ package:
 		return m_evLoop.write(fd, data);
 	}
 
+	uint watch(in fd_t fd, in WatchInfo info) {
+		return m_evLoop.watch(fd, info);
+	}
+
+	bool unwatch(in fd_t fd, in fd_t wd) {
+		return m_evLoop.unwatch(fd, wd);
+	}
+
 	bool broadcast(in fd_t fd, bool b)
 	{
 		return m_evLoop.broadcast(fd, b);

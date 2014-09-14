@@ -4,17 +4,13 @@ import core.sync.condition;
 import core.thread;
 import event.events;
 import std.stdio;
-enum FileCmd {
-	READ,
-	WRITE,
-	APPEND
-}
-
+import std.container : Array;
 
 nothrow {
 	
 	__gshared Mutex gs_wlock;
 	__gshared Array!(void*) gs_waiters; // Array!(shared AsyncSignal)
+	__gshared Array!CommandInfo gs_jobs; // Array!(shared AsyncFile)
 	__gshared Condition gs_started;
 	
 	__gshared Mutex gs_tlock;
@@ -106,7 +102,7 @@ private:
 		m_evLoop = new EventLoop;
 		m_waiter = new shared AsyncSignal(m_evLoop);
 		m_waiter.setContext(this);
-		m_waiter.run(makeHandler(m_waiter));
+		m_waiter.run(&handler);
 		try {
 			synchronized(gs_wlock) {
 				gs_waiters.insertBack(cast(void*)m_waiter);
@@ -126,25 +122,29 @@ private:
 		m_stop = true;
 	}
 	
-	SignalHandler makeHandler(shared AsyncSignal waiter) {
-		SignalHandler eh;
-		eh.ctxt = waiter;
-		eh.fct = (shared AsyncSignal ev) {
-			CmdProcessor this_ = ev.getContext!CmdProcessor();
-			shared AsyncFile ctxt = ev.getMessage!(shared AsyncFile)();
-			
-			if (ctxt is null)
-			{
-				this_.m_stop = true;
-				return;
+	private void handler() {
+		while(true) {
+			CommandInfo cmd;
+
+			synchronized(gs_wlock) {
+				if (gs_jobs.empty) return;
+				cmd = gs_jobs.back;
+				gs_jobs.removeBack();
 			}
-			
-			this_.process(ctxt);
-			return;
-		};
-		
-		return eh;
+
+			final switch (cmd.type) {
+				case CmdInfoType.FILE:
+					process(cast(shared AsyncFile) cmd.data);
+					break;
+				case CmdInfoType.DNS:
+					assert(false, "AsyncDNS not implemented");
+					break;
+			}
+
+		}
+		return;
 	}
+
 }
 
 shared static this() {
@@ -169,4 +169,14 @@ void destroyAsyncThreads() {
 		CmdProcessor thread = cast(CmdProcessor)thr;
 		(cast(shared)thread).stop();
 	}
+}
+
+enum CmdInfoType {
+	FILE,
+	DNS
+}
+
+struct CommandInfo {
+	CmdInfoType type;
+	void* data;
 }
