@@ -10,6 +10,7 @@ AsyncDNS g_dns;
 
 
 unittest {
+	writeln("Unit test started");
 	g_cbCheck = new shared bool[17];
 	g_lastTimer = Clock.currTime();
 	gs_start = Clock.currTime();

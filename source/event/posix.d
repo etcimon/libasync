@@ -19,6 +19,7 @@ import event.posix2;
 enum SOCKET_ERROR = -1;
 alias fd_t = int;
 
+
 version(linux) {
 	import event.internals.epoll;
 	const EPOLL = true;
@@ -26,6 +27,7 @@ version(linux) {
 		int __libc_current_sigrtmin();
 		int __libc_current_sigrtmax();
 	}
+	bool g_signalsBlocked;
 	package nothrow void blockSignals() {
 		try {
 			/// Block signals to reserve SIGRTMIN .. " +30 for AsyncSignal
@@ -41,8 +43,8 @@ version(linux) {
 	}
 	static this() {
 		blockSignals();
+		g_signalsBlocked = true;
 	}
-
 }
 version(OSX) {
 	import event.internals.kqueue;
@@ -51,6 +53,14 @@ version(OSX) {
 version(FreeBSD) {
 	import event.internals.kqueue;
 	const EPOLL = false;
+}
+
+
+static if (!EPOLL) {
+	struct DWFileInfo {
+		fd_t folder;
+		Path path;
+	}
 }
 
 package struct EventLoopImpl {
@@ -115,6 +125,8 @@ package:
 
 		static if (EPOLL)
 		{
+			if (!g_signalsBlocked)
+				blockSignals();
 			assert(m_instanceId <= __libc_current_sigrtmax(), "An additional event loop is unsupported due to SIGRTMAX restrictions in Linux Kernel");
 			m_epollfd = epoll_create1(0);
 
@@ -165,7 +177,22 @@ package:
 		}
 		else /* if KQUEUE */ 
 		{
-
+			try {
+				if (!gs_queueMutex) {
+					gs_queueMutex = FreeListObjectAlloc!ReadWriteMutex.alloc();
+					gs_signalQueue = Array!(Array!AsyncSignal)();
+					gs_idxQueue = Array!(Array!size_t)();
+				}
+				if (g_evIdxAvailable.empty) {
+					g_evIdxAvailable.reserve(32);
+					
+					foreach (j; g_evIdxAvailable.length .. g_evIdxAvailable.capacity) {
+						g_evIdxAvailable.insertBack(j + 1);
+					}
+					g_evIdxCapacity = 32;
+					g_idxCapacity = 32;
+				}
+			} catch { assert(false, "Initialization failed"); }
 			m_kqueuefd = kqueue();
 			int err;
 			try {
@@ -319,28 +346,32 @@ package:
 				case EventType.DirectoryWatcher:
 					static if (!EPOLL) {
 						Path path;
+						try {
+							path = m_dwFolders.get(cast(fd_t)_event.ident, Path.init);
+							if (path == Path.init)
+								path = m_dwFiles.get(cast(fd_t)_event.ident, DWFileInfo.init).path;
+							Array!(DWChangeInfo)* changes = m_changes.get(info.fd, null);
+							assert(changes !is null, "DirectoryWatcher event sent with a null changes container");
+							DWFileEvent fevent;
+							if (_event.fflags & (NOTE_LINK | NOTE_WRITE))
+								fevent = DWFileEvent.CREATED;
+							else if (_event.fflags & NOTE_DELETE)
+								fevent = DWFileEvent.DELETED;
+							else if (_event.fflags & (NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE))
+								fevent = DWFileEvent.MODIFIED;
+							else if (_event.fflags & NOTE_RENAME)
+								fevent = DWFileEvent.MOVED_FROM;
+							else if (_event.fflags & NOTE_RENAME)
+								fevent = DWFileEvent.MOVED_TO;
+							else
+								assert(false, "No event found?");
 
-						path = m_dwFolders.get(cast(fd_t)_event.ident, Path.init);
-						if (path == Path.init)
-							path = m_dwFiles.get(cast(fd_t)_event.ident, Path.init);
-						Array!(DWChangeInfo)* changes = m_changes.get(info.fd, null);
-						assert(changes !is null, "DirectoryWatcher event sent with a null changes container");
-						DWFileEvent event;
-						if (_event.fflags & (NOTE_LINK | NOTE_WRITE))
-							event = DWFileEvent.CREATED;
-						else if (_event.fflags & NOTE_DELETE)
-							event = DWFileEvent.DELETED;
-						else if (_event.fflags & (NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE))
-							event = DWFileEvent.MODIFIED;
-						else if (_event.fflags & NOTE_RENAME)
-							event = DWFileEvent.MOVED_FROM;
-						else if (_event.fflags & NOTE_RENAME)
-							event = DWFileEvent.MOVED_TO;
-						else
-							assert(false, "No event found?");
-
-						DWChangeInfo changeInfo = DWChangeInfo(event, path);
-						changes.insert(changeInfo);
+							DWChangeInfo changeInfo = DWChangeInfo(fevent, path);
+							changes.insert(changeInfo);
+						} catch (Exception e) {
+							log("Could not process DirectoryWatcher event: " ~ e.msg);
+							break;
+						}
 					}
 
 					try info.evObj.dwHandler();
@@ -886,9 +917,24 @@ package:
 			import core.sys.posix.fcntl;
 			import event.internals.kqueue;
 
+			uint events;
+			if (info.events & DWFileEvent.CREATED)
+				events |= NOTE_LINK | NOTE_WRITE;
+			if (info.events & DWFileEvent.DELETED)
+				events |= NOTE_DELETE;
+			if (info.events & DWFileEvent.MODIFIED)
+				events |= NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE;
+			if (info.events & DWFileEvent.MOVED_FROM)
+				events |= NOTE_RENAME;
+			if (info.events & DWFileEvent.MOVED_TO)
+				events |= NOTE_RENAME;
+
+			EventInfo* evinfo;
+			try evinfo = m_watchers[fd]; catch { assert(false, "Could not find file descriptor in watchers"); }
+
 			fd_t addEvent(Path path) {
-				int ret = open(path, O_EVTONLY);
-				if (catchError!"open(watch)"(wd))
+				int ret = open(path.toNativeString().toStringz, O_EVTONLY);
+				if (catchError!"open(watch)"(ret))
 					return 0;
 				kevent_t _event;
 				
@@ -901,46 +947,40 @@ package:
 				
 				return ret;
 			}
+			fd_t wd;
+			try {
+				string dirPath;
+				try dirPath = info.path.toNativeString(); catch {}
 
-			auto dirPath = info.path.toNativeString();
-			EventInfo* evinfo = m_watchers[fd];
+				wd = addEvent(info.path);
+				if (wd == 0)
+					return 0;
 
-			fd_t wd = addEvent(info.path);
-			if (wd == 0)
-				return 0;
+				m_dwFolders[wd] = info.path;
 
-			try m_dwFolders[wd] = info.path; catch {}
 
-			uint events;
+				//NOTE_DELETE     = 0x0001, /* vnode was removed */
+				//NOTE_WRITE      = 0x0002, /* data contents changed */
+				//NOTE_EXTEND     = 0x0004, /* size increased */
+				//NOTE_ATTRIB     = 0x0008, /* attributes changed */
+				//NOTE_LINK       = 0x0010, /* link count changed */
+				//NOTE_RENAME     = 0x0020, /* vnode was renamed */
+				//NOTE_REVOKE     = 0x0040, /* vnode access was revoked */
 
-			//NOTE_DELETE     = 0x0001, /* vnode was removed */
-			//NOTE_WRITE      = 0x0002, /* data contents changed */
-			//NOTE_EXTEND     = 0x0004, /* size increased */
-			//NOTE_ATTRIB     = 0x0008, /* attributes changed */
-			//NOTE_LINK       = 0x0010, /* link count changed */
-			//NOTE_RENAME     = 0x0020, /* vnode was renamed */
-			//NOTE_REVOKE     = 0x0040, /* vnode access was revoked */
-			if (info.events & DWFileEvent.CREATED)
-				events |= NOTE_LINK | NOTE_WRITE;
-			if (info.events & DWFileEvent.DELETED)
-				events |= NOTE_DELETE;
-			if (info.events & DWFileEvent.MODIFIED)
-				events |= NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE;
-			if (info.events & DWFileEvent.MOVED_FROM)
-				events |= NOTE_RENAME;
-			if (info.events & DWFileEvent.MOVED_TO)
-				events |= NOTE_RENAME;
-
-			import std.file;
-			import std.path;
-			foreach (string file; dirEntries(dirPath, SpanMode.shallow)) {
-				Path filePath = Path(buildPath(dirPath, file));
-				if (isDir(filePath.toNativeString()))
-					continue;
-				fd_t fwd = addEvent(filePath);
-				try m_dwFiles[fwd] = DWFileInfo(wd, filePath); catch {}
+				import std.file;
+				import std.path;
+				foreach (string file; dirEntries(dirPath, SpanMode.shallow)) {
+					Path filePath;
+					filePath = Path(buildPath(dirPath, file));
+					if (isDir(filePath.toNativeString()))
+						continue;
+					fd_t fwd = addEvent(filePath);
+					m_dwFiles[fwd] = DWFileInfo(wd, filePath);
+				}
 			}
-
+			catch (Exception e) {
+				setInternalError!"dw.watch"(Status.ERROR, "Failed to watch directory: " ~ e.msg); 
+			}
 			return cast(uint)wd;
 		}
 	}
@@ -970,26 +1010,30 @@ package:
 				close(id);
 				return true;
 			}
-
-			// foreach file in a wd folder, unset event and delete from m_dwFiles
-			foreach (fd_t id, DWFileInfo file; m_dwFiles) {
-				if (file.folder == wd) {
-					if (!removeEvent(id))
-						return false;
-					try m_dwFiles.remove(id); catch {}
+			try {
+				// foreach file in a wd folder, unset event and delete from m_dwFiles
+				foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles) {
+					if (file.folder == wd) {
+						if (!removeEvent(id))
+							return false;
+						m_dwFiles.remove(id);
+					}
 				}
-			}
 
-			if (!removeEvent(wd))
+				if (!removeEvent(wd))
+					return false;
+				 m_dwFolders.remove(wd);
+			} catch (Exception e) {
+				setInternalError!"dw.unwatch"(Status.ERROR, "Failed to process directory unwatch: " ~ e.msg);
 				return false;
-			try m_dwFolders.remove(wd); catch {}
+			}
 			return true;
 
 
 		}
 	}
 
-	// returns true when all changes have been read
+	// returns the amount of changes
 	uint readChanges(in fd_t fd, ref DWChangeInfo[] dst) {
 		static if (EPOLL) {
 			assert(dst.length > 0, "DirectoryWatcher called with 0 length DWChangeInfo array");
@@ -1039,13 +1083,23 @@ package:
 			return cast(uint) i;
 		}
 		else /* if KQUEUE */ {
-			Array!(DWChangeInfo)* changes = m_changes[fd];
-			import std.algorithm : min;
-			size_t cnt = min(dst.length, changes.length);
-			dst[0 .. cnt] = changes[0 .. cnt];
-			changes.remove(folder.changes[0 .. cnt]);
-
-			return changes.empty;
+			Array!(DWChangeInfo)* changes;
+			size_t i;
+			try {
+				changes = m_changes[fd];
+				import std.algorithm : min;
+				size_t cnt = min(dst.length, changes.length);
+				foreach (DWChangeInfo change; (*changes)[0 .. cnt]) {
+					dst[i] = (*changes)[i];
+					i++;
+				}
+				changes.linearRemove((*changes)[0 .. cnt]);
+			}
+			catch (Exception e) {
+				setInternalError!"watcher.readChanges"(Status.ERROR, "Could not read directory changes: " ~ e.msg);
+				return false;
+			}
+			return cast(uint) i;
 		}
 	}
 
@@ -1839,7 +1893,6 @@ private:
 
 static if (!EPOLL)
 {
-nothrow:
 	import std.container : Array;
 	import core.sync.mutex : Mutex;
 	import core.sync.rwmutex : ReadWriteMutex;
@@ -1847,7 +1900,7 @@ nothrow:
 	Array!size_t g_evIdxAvailable;
 
 	// called on run
-	size_t createIndex() {
+	nothrow size_t createIndex() {
 		size_t idx;
 		import std.algorithm : max;
 		try {
@@ -1870,12 +1923,17 @@ nothrow:
 				idx = getIdx();
 			}
 			
-		} catch {}
-		
+		} catch (Throwable e) {
+
+			import std.stdio;
+			
+			try writeln(e.toString()); catch {}
+
+		}
 		return idx;
 	}
 
-	void destroyIndex(AsyncNotifier ctxt) {
+	nothrow void destroyIndex(AsyncNotifier ctxt) {
 		try {
 			g_evIdxAvailable.insert(ctxt.id);		
 		}
@@ -1884,7 +1942,7 @@ nothrow:
 		}
 	}
 
-	void destroyIndex(AsyncTimer ctxt) {
+	nothrow void destroyIndex(AsyncTimer ctxt) {
 		try {
 			g_evIdxAvailable.insert(ctxt.id);		
 		}
@@ -1892,20 +1950,6 @@ nothrow:
 			assert(false, "Error destroying index: " ~ e.msg);
 		}
 	}
-
-	static this() {
-		try {
-			g_evIdxAvailable.reserve(32);
-
-			foreach (i; g_evIdxAvailable.length .. g_evIdxAvailable.capacity) {
-				g_evIdxAvailable.insertBack(i + 1);
-			}
-			g_evIdxCapacity = 32;
-			g_idxCapacity = 32;
-		}
-		catch {}
-	}
-
 
 	size_t* g_threadId;
 	size_t g_idxCapacity;
@@ -1915,21 +1959,9 @@ nothrow:
 	__gshared Array!(Array!AsyncSignal) gs_signalQueue;
 	__gshared Array!(Array!size_t) gs_idxQueue; // signals notified
 
-	shared static this() {
-		try {
-			gs_queueMutex = FreeListObjectAlloc!ReadWriteMutex.alloc();
-			gs_signalQueue = Array!(Array!AsyncSignal)();
-			gs_idxQueue = Array!(Array!size_t)();
-		}
-		catch (Exception e) {
-			assert(false, "failed to allocate queue Mutex");
-		}
-
-
-	}
 
 	// loop
-	bool popSignals(ref AsyncSignal[] sigarr) {
+	nothrow bool popSignals(ref AsyncSignal[] sigarr) {
 		bool more;
 		try {
 			foreach (ref AsyncSignal sig; sigarr) {
@@ -1968,7 +2000,7 @@ nothrow:
 	}
 
 	// notify
-	void addSignal(shared AsyncSignal ctxt) {
+	nothrow void addSignal(shared AsyncSignal ctxt) {
 		try {
 			size_t thread_id = ctxt.threadId;
 			bool must_resize;
@@ -1996,7 +2028,7 @@ nothrow:
 	}
 
 	// called on run
-	size_t createIndex(shared AsyncSignal ctxt) {
+	nothrow size_t createIndex(shared AsyncSignal ctxt) {
 		size_t idx;
 		import std.algorithm : max;
 		try {
@@ -2060,7 +2092,7 @@ nothrow:
 	}
 
 	// called on kill
-	void destroyIndex(shared AsyncSignal ctxt) {
+	nothrow void destroyIndex(shared AsyncSignal ctxt) {
 		try {
 			g_idxAvailable.insert(ctxt.id);
 			synchronized (gs_queueMutex.writer) {
@@ -2162,14 +2194,6 @@ struct EventInfo {
 	EventObject evObj;
 	ushort owner;
 }
-
-static if (!EPOLL) {
-	struct DWFileInfo {
-		fd_t folder;
-		Path path;
-	}
-}
-
 
 /**
 		Represents a network/socket address. (taken from vibe.core.net)

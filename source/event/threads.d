@@ -157,13 +157,16 @@ private:
 			}
 			
 			gs_started.notifyAll();
-		} catch {}
+		} catch {
+			try writeln("Error inserting in waiters"); catch {}
+		}
 		
 		while(m_evLoop.loop()){
-			try synchronized(this) if (m_stop) break; catch {}
+			try synchronized(this) if (m_stop) break; catch {
+				try writeln("Lock error?"); catch {}
+			}
 			continue;
 		}
-		try writeln("Leaving Waiter Thread"); catch {}
 	}
 	
 	synchronized void stop()
@@ -234,7 +237,6 @@ shared static this() {
 	gs_wlock = new Mutex;
 	gs_threads = new ThreadGroup;
 	gs_started = new Condition(gs_wlock);
-	
 	foreach (i; 0 .. 4) {
 		Thread thr = new CmdProcessor;
 		thr.start();

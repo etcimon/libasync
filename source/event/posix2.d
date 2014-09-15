@@ -196,6 +196,7 @@ mixin template RunKill()
 			m_status = StatusInfo.init;
 			
 			ctxt.evInfo = cast(shared) m_evSignal;
+
 			return cast(fd_t) createIndex(ctxt);
 			
 		}
@@ -296,11 +297,7 @@ mixin template RunKill()
 			int msecs = cast(int) timeout.total!"msecs";
 			
 			// www.khmere.com/freebsd_book/html/ch06.html - EV_CLEAR set internally
-			
-			if (ctxt.id != 0) 
-				EV_SET(&_event, fd, EVFILT_TIMER, EV_ENABLE, 0, msecs, cast(void*) evinfo);
-			else
-				EV_SET(&_event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
+			EV_SET(&_event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
 			
 			if (ctxt.oneShot)
 				_event.flags |= EV_ONESHOT;
@@ -359,7 +356,7 @@ mixin template RunKill()
 		else /* if KQUEUE */ {
 			static size_t id = 0;
 
-			fd_t fd = ++id;
+			fd_t fd = cast(uint)++id;
 
 			EventType evtype;
 			
@@ -392,27 +389,31 @@ mixin template RunKill()
 	
 	bool kill(AsyncDirectoryWatcher ctxt) {
 		import core.sys.posix.unistd : close;
-
-		static if (!EPOLL) {
-			foreach (uint wd, DWFolderInfo fi; m_folders)
-				unwatch(ctxt.fd, wd);
-			try m_watchers.remove(ctxt.fd); catch {}
-
+		try 
+		{
 			static if (!EPOLL) {
-				try {
-					FreeListObjectAlloc!(Array!DWChangeInfo).free(m_changes[fd]);
-					m_changes.remove(fd);
-				}
-				catch (Exception e) {
-					assert(false, "Failed to free resources: " ~ e.msg);
+				foreach (ref const fd_t wd, ref const Path path; m_dwFolders)
+					unwatch(ctxt.fd, wd);
+				try m_watchers.remove(ctxt.fd); catch {}
+
+				static if (!EPOLL) {
+					try {
+						FreeListObjectAlloc!(Array!DWChangeInfo).free(m_changes[ctxt.fd]);
+						m_changes.remove(ctxt.fd);
+					}
+					catch (Exception e) {
+						assert(false, "Failed to free resources: " ~ e.msg);
+					}
 				}
 			}
+			close(ctxt.fd);
+			FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+			ctxt.evInfo = null;
 		}
-		close(ctxt.fd);
-		try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
-		catch (Exception e){ assert(false, "Error freeing resources"); }
-		ctxt.evInfo = null;
-
+		catch (Exception e)
+		{ 
+			assert(false, "Error killing directory watcher"); 
+		}
 		return true;
 	}
 	

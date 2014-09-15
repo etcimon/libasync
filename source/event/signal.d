@@ -45,7 +45,7 @@ public:
 		return (cast(EventLoop)m_evLoop).error;
 	}
 
-	bool run (void delegate() del) 
+	bool run(void delegate() del) 
 	in {
 		assert(Thread.getThis() is cast(Thread)m_owner);
 	}

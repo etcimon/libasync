@@ -31,13 +31,17 @@ public:
 		m_oneshot = b;
 	}
 
+	// Changing the duration on a running timer takes effet on the next run.
 	typeof(this) duration(Duration dur) {
 		m_timeout = dur;
 		return this;
 	}
 
 	bool rearm(Duration dur)
-	in { assert(m_timeout > 0.seconds); }
+	in { 
+		assert(m_timeout > 0.seconds);
+		assert(m_oneshot, "Cannot rearm a periodic timer, it must fist be killed.");
+	}
 	body {
 		m_rearmed = true;
 
@@ -51,7 +55,10 @@ public:
 	}
 
 	bool run(void delegate() del) 
-	in { assert(m_timeout > 0.seconds); }
+	in { 
+		assert(m_timeout > 0.seconds);
+		assert(m_oneshot || !m_timerId, "Cannot rearm a periodic timer, it must fist be killed.");
+	}
 	body {
 		TimerHandler handler;
 		handler.del = del;
@@ -62,7 +69,11 @@ public:
 
 	private bool run(TimerHandler cb) {
 		m_evh = cb;
-		m_rearmed = false;
+
+		if (m_timerId)
+			m_rearmed = true;
+		else
+			m_rearmed = false;
 		m_timerId = m_evLoop.run(this, cb, m_timeout);
 		// try writeln("Timer starting", m_timerId); catch {}
 		if (m_timerId == 0)
@@ -111,6 +122,7 @@ package struct TimerHandler {
 	void delegate() del;
 	void opCall() {
 		assert(ctxt !is null);
+		ctxt.m_rearmed = false;
 		del();
 		return;
 	}
