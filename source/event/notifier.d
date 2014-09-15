@@ -5,10 +5,10 @@ import event.events;
 
 final class AsyncNotifier
 {
+	void delegate() m_evh;
 nothrow:
 private:
 	EventLoop m_evLoop;
-	NotifierHandler m_evh;
 	fd_t m_evId;
 	version(Posix) static if (EPOLL) shared ushort m_owner;
 	
@@ -24,22 +24,14 @@ public:
 	mixin DefStatus;
 
 	bool run(void delegate() del) {
-		NotifierHandler handler;
-		handler.del = del;
-		handler.ctxt = this;
-		return run(handler);
-	}
-
-	private bool run(NotifierHandler del) 
-	{
-		m_evh = del;
+		m_evh = cast(void delegate()) del;
 		m_evId = m_evLoop.run(this);
 		if (m_evId != fd_t.init)
 			return true;
 		else
 			return false;
 	}
-	
+
 	bool kill() 
 	{
 		return m_evLoop.kill(this);
@@ -82,11 +74,11 @@ package:
 
 package struct NotifierHandler {
 	AsyncNotifier ctxt;
-	void delegate() del;
+	void function(AsyncNotifier) fct;
 	
 	void opCall() {
 		assert(ctxt !is null);
-		del();
+		fct(ctxt);
 		return;
 	}
 }

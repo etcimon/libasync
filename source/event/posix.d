@@ -8,9 +8,12 @@ import std.conv : to;
 import std.datetime : Duration, msecs, seconds;
 import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
+import std.container : Array;
+
 import core.stdc.errno;
 import event.events;
 import event.internals.memory : FreeListObjectAlloc;
+import event.internals.hashmap;
 import core.sys.posix.signal;
 import event.posix2;
 enum SOCKET_ERROR = -1;
@@ -74,10 +77,15 @@ private:
 	EventInfo* m_evSignal;
 	static if (EPOLL){
 		fd_t m_epollfd;
+		HashMap!(uint, Path) m_dwFolders; // uint = inotify_add_watch(Path)
 	}
 	else /* if KQUEUE */
 	{
 		fd_t m_kqueuefd;
+		HashMap!(fd_t, EventInfo*) m_watchers; // fd_t = id++ per AsyncDirectoryWatcher
+		HashMap!(fd_t, Path) m_dwFolders; // fd_t = open(folder)
+		HashMap!(fd_t, DWFileInfo) m_dwFiles; // fd_t = open(file)
+		HashMap!(fd_t, Array!(DWChangeInfo)*) m_changes; // fd_t = id++ per AsyncDirectoryWatcher
 	}
 package:
 
@@ -298,32 +306,49 @@ package:
 						break;
 					success = onTCPAccept(info.fd, info.evObj.tcpAcceptHandler, event_flags);
 					break;
+
 				case EventType.Notifier:
 
 					try log("Got notifier!"); catch {}
 					try info.evObj.notifierHandler();
 					catch (Exception e) {
-						setInternalError!"signalEvHandler"(Status.ERROR);
+						setInternalError!"notifierHandler"(Status.ERROR);
 					}
 					break;
+
 				case EventType.DirectoryWatcher:
-					try log("Got watched file event! " ~ info.fd.to!string); catch {}
-					static if (EPOLL) {
-						static long val;
-						import core.sys.posix.unistd : read;
-						read(info.evObj.timerHandler.ctxt.id, &val, long.sizeof);
-					}
-					try info.evObj.timerHandler();
-					catch (Exception e) {
-						setInternalError!"signalEvHandler"(Status.ERROR);
-					}
 					static if (!EPOLL) {
-						if (info.evObj.timerHandler.ctxt.oneShot && !info.evObj.timerHandler.ctxt.rearmed) {
-							destroyIndex(info.evObj.timerHandler.ctxt);
-							info.evObj.timerHandler.ctxt.id = 0;
-						}
+						Path path;
+
+						path = m_dwFolders.get(cast(fd_t)_event.ident, Path.init);
+						if (path == Path.init)
+							path = m_dwFiles.get(cast(fd_t)_event.ident, Path.init);
+						Array!(DWChangeInfo)* changes = m_changes.get(info.fd, null);
+						assert(changes !is null, "DirectoryWatcher event sent with a null changes container");
+						DWFileEvent event;
+						if (_event.fflags & (NOTE_LINK | NOTE_WRITE))
+							event = DWFileEvent.CREATED;
+						else if (_event.fflags & NOTE_DELETE)
+							event = DWFileEvent.DELETED;
+						else if (_event.fflags & (NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE))
+							event = DWFileEvent.MODIFIED;
+						else if (_event.fflags & NOTE_RENAME)
+							event = DWFileEvent.MOVED_FROM;
+						else if (_event.fflags & NOTE_RENAME)
+							event = DWFileEvent.MOVED_TO;
+						else
+							assert(false, "No event found?");
+
+						DWChangeInfo changeInfo = DWChangeInfo(event, path);
+						changes.insert(changeInfo);
+					}
+
+					try info.evObj.dwHandler();
+					catch (Exception e) {
+						setInternalError!"dwHandler"(Status.ERROR);
 					}
 					break;
+
 				case EventType.Timer:
 					try log("Got timer! " ~ info.fd.to!string); catch {}
 					static if (EPOLL) {
@@ -333,7 +358,7 @@ package:
 					}
 					try info.evObj.timerHandler();
 					catch (Exception e) {
-						setInternalError!"signalEvHandler"(Status.ERROR);
+						setInternalError!"timerHandler"(Status.ERROR);
 					}
 					static if (!EPOLL) {
 						if (info.evObj.timerHandler.ctxt.oneShot && !info.evObj.timerHandler.ctxt.rearmed) {
@@ -345,12 +370,6 @@ package:
 
 				case EventType.Signal:
 					try log("Got signal!"); catch {}
-					static AsyncSignal[] sigarr;
-
-					if (sigarr.length == 0) {
-						try sigarr = new AsyncSignal[32]; 
-						catch (Exception e) { assert(false, "Could not allocate signals array"); }		
-					}
 
 					static if (EPOLL) {
 						
@@ -370,6 +389,13 @@ package:
 					}
 					else /* if KQUEUE */
 					{
+						static AsyncSignal[] sigarr;
+						
+						if (sigarr.length == 0) {
+							try sigarr = new AsyncSignal[32]; 
+							catch (Exception e) { assert(false, "Could not allocate signals array"); }		
+						}
+
 						bool more = popSignals(sigarr);
 						foreach (AsyncSignal sig; sigarr)
 						{
@@ -827,12 +853,14 @@ package:
 		return true;
 	}
 
+	// no known uses
 	uint read(in fd_t fd, ref ubyte[] data)
 	{
 		m_status = StatusInfo.init;
 		return 0;
 	}
-	
+
+	// no known uses
 	uint write(in fd_t fd, in ubyte[] data)
 	{
 		m_status = StatusInfo.init;
@@ -847,29 +875,178 @@ package:
 			uint events = info.events; // have the same values.
 			if (events & IN_DELETE)
 				events |= IN_DELETE_SELF;
-			if (events & IN_MOVE_FROM)
+			if (events & IN_MOVED_FROM)
 				events |= IN_MOVE_SELF;
-			wd = inotify_add_watch(fd, info.path.toNativeString().toStringz, events);
-
+			try wd = inotify_add_watch(fd, info.path.toNativeString().toStringz, events); catch {}
 			if (catchError!"inotify_add_watch"(wd))
 				return fd_t.init;
+			try m_dwFolders[wd] = info.path; catch {}
 			return wd;
 		} else /* if KQUEUE */ {
+			import core.sys.posix.fcntl;
+			import event.internals.kqueue;
 
-			// todo
+			fd_t addEvent(Path path) {
+				int ret = open(path, O_EVTONLY);
+				if (catchError!"open(watch)"(wd))
+					return 0;
+				kevent_t _event;
+				
+				EV_SET(&_event, ret, EVFILT_VNODE, EV_ADD | EV_CLEAR, events, 0, cast(void*) evinfo);
+				
+				int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
+				
+				if (catchError!"kevent_timer_add"(err))
+					return 0;
+				
+				return ret;
+			}
 
+			auto dirPath = info.path.toNativeString();
+			EventInfo* evinfo = m_watchers[fd];
+
+			fd_t wd = addEvent(info.path);
+			if (wd == 0)
+				return 0;
+
+			try m_dwFolders[wd] = info.path; catch {}
+
+			uint events;
+
+			//NOTE_DELETE     = 0x0001, /* vnode was removed */
+			//NOTE_WRITE      = 0x0002, /* data contents changed */
+			//NOTE_EXTEND     = 0x0004, /* size increased */
+			//NOTE_ATTRIB     = 0x0008, /* attributes changed */
+			//NOTE_LINK       = 0x0010, /* link count changed */
+			//NOTE_RENAME     = 0x0020, /* vnode was renamed */
+			//NOTE_REVOKE     = 0x0040, /* vnode access was revoked */
+			if (info.events & DWFileEvent.CREATED)
+				events |= NOTE_LINK | NOTE_WRITE;
+			if (info.events & DWFileEvent.DELETED)
+				events |= NOTE_DELETE;
+			if (info.events & DWFileEvent.MODIFIED)
+				events |= NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE;
+			if (info.events & DWFileEvent.MOVED_FROM)
+				events |= NOTE_RENAME;
+			if (info.events & DWFileEvent.MOVED_TO)
+				events |= NOTE_RENAME;
+
+			import std.file;
+			import std.path;
+			foreach (string file; dirEntries(dirPath, SpanMode.shallow)) {
+				Path filePath = Path(buildPath(dirPath, file));
+				if (isDir(filePath.toNativeString()))
+					continue;
+				fd_t fwd = addEvent(filePath);
+				try m_dwFiles[fwd] = DWFileInfo(wd, filePath); catch {}
+			}
+
+			return cast(uint)wd;
 		}
 	}
 
 	bool unwatch(in fd_t fd, in uint wd) {
-		import core.sys.linux.sys.inotify;
+		try m_dwFolders.remove(wd); catch {}
+		static if (EPOLL) {
+			import core.sys.linux.sys.inotify;
+			int err = inotify_rm_watch(fd, wd);
+			try m_dwFolders.remove(wd); catch {}
+			if (catchError!"inotify_rm_watch"(err))
+				return false;
+			return true;
+		}
+		else /* if KQUEUE */ {
 
-		int err = inotify_rm_watch(fd, wd);
+			bool removeEvent(fd_t id) {
+				import core.sys.posix.unistd : close;
+				kevent_t _event;
+				
+				EV_SET(&_event, cast(int) id, EVFILT_VNODE, EV_DELETE, 0, 0, null);
+				
+				int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
+				
+				if (catchError!"kevent_timer_add"(err))
+					return false;
+				close(id);
+				return true;
+			}
 
-		if (catchError!"inotify_rm_watch"(err))
-			return false;
+			// foreach file in a wd folder, unset event and delete from m_dwFiles
+			foreach (fd_t id, DWFileInfo file; m_dwFiles) {
+				if (file.folder == wd) {
+					if (!removeEvent(id))
+						return false;
+					try m_dwFiles.remove(id); catch {}
+				}
+			}
 
-		return true;
+			if (!removeEvent(wd))
+				return false;
+			try m_dwFolders.remove(wd); catch {}
+			return true;
+
+
+		}
+	}
+
+	// returns true when all changes have been read
+	uint readChanges(in fd_t fd, ref DWChangeInfo[] dst) {
+		static if (EPOLL) {
+			assert(dst.length > 0, "DirectoryWatcher called with 0 length DWChangeInfo array");
+			import core.sys.linux.sys.inotify;
+			import core.sys.posix.unistd : read;
+			import core.stdc.stdio : FILENAME_MAX;
+			import core.stdc.string : strlen;
+			ubyte[inotify_event.sizeof + FILENAME_MAX + 1] buf = void;
+			ssize_t nread = read(fd, buf.ptr, cast(uint)buf.sizeof);
+			if (catchError!"read()"(nread))
+			{
+				return 0;
+			}
+			assert(nread > 0);
+			size_t i;
+			do
+			{
+				for (auto p = buf.ptr; p < buf.ptr + nread; )
+				{
+					inotify_event* ev = cast(inotify_event*)p;
+					DWFileEvent evtype;
+					if (ev.mask & IN_CREATE)
+						evtype = DWFileEvent.CREATED;
+					else if (ev.mask & (IN_DELETE|IN_DELETE_SELF))
+						evtype = DWFileEvent.DELETED;
+					else if (ev.mask & IN_MODIFY)
+						evtype = DWFileEvent.MODIFIED;
+					else if (ev.mask & (IN_MOVED_FROM | IN_MOVE_SELF))
+						evtype = DWFileEvent.MOVED_FROM;
+					else if (ev.mask & (IN_MOVED_TO))
+						evtype = DWFileEvent.MOVED_TO;
+
+					import std.path : buildPath;
+					string name = cast(string) ev.name.ptr[0 .. cast(size_t) ev.len];
+					Path path;
+					try path = Path(buildPath(m_dwFolders[ev.wd].toNativeString(), name)); catch {}
+					dst[i] = DWChangeInfo(evtype, path);
+					p += inotify_event.sizeof + ev.len;
+					i++;
+					if (! (i < dst.length))
+						return cast(uint) i;
+				}
+				nread = read(fd, buf.ptr, buf.sizeof);
+				if (catchError!"read()"(nread))
+					return cast(uint) i;
+			} while (nread > 0 && i < dst.length);
+			return cast(uint) i;
+		}
+		else /* if KQUEUE */ {
+			Array!(DWChangeInfo)* changes = m_changes[fd];
+			import std.algorithm : min;
+			size_t cnt = min(dst.length, changes.length);
+			dst[0 .. cnt] = changes[0 .. cnt];
+			changes.remove(folder.changes[0 .. cnt]);
+
+			return changes.empty;
+		}
 	}
 
 	bool broadcast(in fd_t fd, bool b) {
@@ -1985,6 +2162,14 @@ struct EventInfo {
 	EventObject evObj;
 	ushort owner;
 }
+
+static if (!EPOLL) {
+	struct DWFileInfo {
+		fd_t folder;
+		Path path;
+	}
+}
+
 
 /**
 		Represents a network/socket address. (taken from vibe.core.net)

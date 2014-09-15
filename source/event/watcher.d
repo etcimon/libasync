@@ -14,6 +14,11 @@ package struct WatchInfo {
 	uint wd; // watch descriptor
 }
 
+struct DWChangeInfo {
+	DWFileEvent event;
+	Path path;
+}
+
 final nothrow class AsyncDirectoryWatcher
 {
 nothrow:
@@ -30,34 +35,42 @@ public:
 	
 	mixin DefStatus;
 
+	uint readChanges(ref DWChangeInfo[] dst) {
+		return m_evLoop.readChanges(m_fd, dst);
+	}
+
 	bool watchDir(string path, DWFileEvent ev = DWFileEvent.ALL, bool recursive = false) {
 
-		path = Path(path).toString();
+		try 
+		{
+			path = Path(path).toString();
 
-		bool addWatch(string subPath) {
-			WatchInfo info;
-			info.events = ev;
-			info.path = Path(subPath);
-			info.recursive = recursive;
-			uint wd = m_evLoop.watch(ctxt.fd, info);
-			if (wd == 0 && m_evLoop.status.code != Status.OK)
-				return false;
-			info.wd = wd;
-			m_directories.insert(info);
-			return true;
-		}
-
-		if (!addWatch(path))
-			return false;
-
-		if (recursive && path.isDir) {
-			foreach (de; path.dirEntries(SpanMode.shallow)) {
-				if (de.isDir){
-					if (!addWatch(de.name))
-						return false;
-				}
+			bool addWatch(string subPath) {
+				WatchInfo info;
+				info.events = ev;
+				try info.path = Path(subPath); catch {}
+				info.recursive = recursive;
+				uint wd = m_evLoop.watch(m_fd, info);
+				if (wd == 0 && m_evLoop.status.code != Status.OK)
+					return false;
+				info.wd = wd;
+				try m_directories.insert(info); catch {}
+				return true;
 			}
+
+			if (!addWatch(path))
+				return false;
+
+			if (recursive && path.isDir) {
+				foreach (de; path.dirEntries(SpanMode.shallow)) {
+					if (de.isDir){
+						if (!addWatch(de.name))
+							return false;
+					}
+				}
+			} 
 		}
+		catch {}
 
 		return true;
 	}
@@ -65,33 +78,34 @@ public:
 	bool unwatchDir(string path, bool recursive) {
 		import std.algorithm : countUntil;
 
-		path = Path(path).toString();
+		try {
+			path = Path(path).toString();
 
-		bool removeWatch(string path) {
-			auto idx = m_directories.countUntil!((a,b) => a.path == b)(path);
-			if (idx < 0)
+			bool removeWatch(string path) {
+				auto idx = m_directories[].countUntil!((a,b) => a.path == b)(Path(path));
+				if (idx < 0)
+					return true;
+
+				if (!m_evLoop.unwatch(m_fd, m_directories[idx].wd))
+					return false;
+
+				m_directories.linearRemove(m_directories[idx .. idx+1]);
 				return true;
-
-			if (!m_evLoop.unwatch(ctxt.fd, m_directories[idx].wd))
-				return false;
-
-			m_directories.remove(m_directories[idx .. idx+1]);
-			return true;
-		}
-		removeWatch(path);
-		if (recursive && path.isDir) {
-			foreach (de; path.dirEntries(SpanMode.shallow)) {
-				if (de.isDir){
-					if (!removeWatch(path))
-						return false;
+			}
+			removeWatch(path);
+			if (recursive && path.isDir) {
+				foreach (de; path.dirEntries(SpanMode.shallow)) {
+					if (de.isDir){
+						if (!removeWatch(path))
+							return false;
+					}
 				}
 			}
-		}
-
+		} catch {}
 		return true;
 	}
 
-	bool run(void delegate(DWFileEvent, Path) del) {
+	bool run(void delegate() del) {
 		DWHandler handler;
 		handler.del = del;
 		handler.ctxt = this;
@@ -115,7 +129,7 @@ public:
 	}
 	
 	bool kill()
-	in { assert(m_socket != fd_t.init); }
+	in { assert(m_fd != fd_t.init); }
 	body {
 		return m_evLoop.kill(this);
 	}
@@ -130,29 +144,20 @@ package:
 	@property void fd(fd_t val) {
 		m_fd = val;
 	}
-
-	@property Path path() {
-		return m_path;
-	}
-
-	@property DWFileEvent watching() {
-		return m_watching;
-	}
-
-	void handler(DWFileEvent ev, string path) {
-		try m_evh(ev, Path(path));
-		catch {}
-		return;
-	}
 	
 }
 
 struct DWHandler {
 	AsyncDirectoryWatcher ctxt;
-	void delegate(DWFileEvent, Path) del;
-	void opCall(DWFileEvent ev, Path file){
+	void delegate() del;
+	void opCall(){
 		assert(ctxt !is null);
-		del(ev, file);
+		del();
+		debug {
+			DWChangeInfo[1] arr;
+			DWChangeInfo[] arrRef = arr.ptr[0..1];
+			assert(ctxt.readChanges(arrRef) == 0, "You must read all changes when you receive a notification for directory changes");
+		}
 		assert(ctxt !is null);
 		return;
 	}

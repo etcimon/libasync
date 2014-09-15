@@ -9,12 +9,12 @@ import core.thread;
 /// Can also be used lockless in thread-local instances
 shared final class AsyncSignal
 {
+	private void delegate() m_sgh;
 nothrow:
 private:
 	Thread m_owner;
 	shared(size_t)* m_owner_id;
 	EventLoop m_evLoop;
-	SignalHandler m_sgh;
 
 	version(Posix) EventInfo* m_evInfo;
 	fd_t m_evId;
@@ -45,19 +45,14 @@ public:
 		return (cast(EventLoop)m_evLoop).error;
 	}
 
-	bool run (void delegate() del) {
-		shared SignalHandler handler;
-		handler.del = del;
-		handler.ctxt = this;
-		return run(handler);
-	}
-
-	private bool run(shared SignalHandler del) 
+	bool run (void delegate() del) 
 	in {
 		assert(Thread.getThis() is cast(Thread)m_owner);
 	}
 	body {
-		m_sgh = del;
+
+		m_sgh = cast(void delegate()) del;
+
 		m_evId = (cast(EventLoop) m_evLoop).run(this);
 		if (m_evId != fd_t.init)
 			return true;
@@ -89,15 +84,15 @@ package:
 	synchronized @property size_t threadId() {
 		return cast(size_t) *m_owner_id;
 	}
-version(Posix) {
-	@property shared(EventInfo*) evInfo() {
-		return m_evInfo;
+	version(Posix) {
+		@property shared(EventInfo*) evInfo() {
+			return m_evInfo;
+		}
+		
+		@property void evInfo(shared(EventInfo*) info) {
+			m_evInfo = info;
+		}
 	}
-	
-	@property void evInfo(shared(EventInfo*) info) {
-		m_evInfo = info;
-	}
-}
 	@property id() const {
 		return m_evId;
 	}
@@ -111,11 +106,11 @@ version(Posix) {
 
 package shared struct SignalHandler {
 	AsyncSignal ctxt;
-	void delegate() del;
+	void function(shared AsyncSignal) fct;
 
-	void opCall() {
+	void opCall(shared AsyncSignal ctxt) {
 		assert(ctxt !is null);
-		del();
+		fct(ctxt);
 		return;
 	}
 }

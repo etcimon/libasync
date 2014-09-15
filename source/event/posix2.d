@@ -246,9 +246,10 @@ mixin template RunKill()
 				
 				ctxt.evInfo = evinfo;
 			}
-			else
+			else {
 				evinfo = ctxt.evInfo;
-			
+				evinfo.evObj = eobj;
+			}
 			_event.events |= EPOLLIN | EPOLLET;
 			_event.data.ptr = evinfo;
 			if (ctxt.id > 0) {
@@ -285,8 +286,11 @@ mixin template RunKill()
 				
 				ctxt.evInfo = evinfo;
 			}
-			else
+			else {
 				evinfo = ctxt.evInfo;
+				evinfo.evObj = eobj;
+			}
+
 			kevent_t _event;
 			
 			int msecs = cast(int) timeout.total!"msecs";
@@ -313,16 +317,17 @@ mixin template RunKill()
 	}
 	
 	fd_t run(AsyncDirectoryWatcher ctxt, DWHandler del) {
-		import core.sys.linux.sys.inotify;
-		enum IN_NONBLOCK = 0x800; // value in core.sys.linux.sys.inotify is incorrect
-		assert(ctxt.fd == fd_t.init);
-		int fd = inotify_init1(IN_NONBLOCK);	
-		if (catchError!"inotify_init1"(fd)) {
-			return fd_t.init;
-		}
+
 
 		static if (EPOLL) 
 		{
+			import core.sys.linux.sys.inotify;
+			enum IN_NONBLOCK = 0x800; // value in core.sys.linux.sys.inotify is incorrect
+			assert(ctxt.fd == fd_t.init);
+			int fd = inotify_init1(IN_NONBLOCK);	
+			if (catchError!"inotify_init1"(fd)) {
+				return fd_t.init;
+			}
 			epoll_event _event;
 			
 			EventType evtype;
@@ -345,95 +350,97 @@ mixin template RunKill()
 			_event.events |= EPOLLIN;
 			_event.data.ptr = evinfo;
 			
-			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event); 
+			int err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event); 
 			
 			if (catchError!"epoll_ctl"(err))
 				return fd_t.init;
+			return fd;
 		} 
-		else {
+		else /* if KQUEUE */ {
+			static size_t id = 0;
 
-			epoll_event _event;
+			fd_t fd = ++id;
+
 			EventType evtype;
-
+			
 			evtype = EventType.DirectoryWatcher;
 			EventObject eobj;
 			eobj.dwHandler = del;
-
+			
 			EventInfo* evinfo;
-			
+
 			assert (!ctxt.evInfo);
-			
+
 			try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
 			catch (Exception e) {
 				assert(false, "Failed to allocate resources: " ~ e.msg);
 			}
-
 			ctxt.evInfo = evinfo;
-			kevent_t _event;
+			try m_watchers[fd] = evinfo; catch {}
 
-			uint events;
+			static if (!EPOLL) {
+				try m_changes[fd] = FreeListObjectAlloc!(Array!DWChangeInfo).alloc();
+				catch (Exception e) {
+					assert(false, "Failed to allocate resources: " ~ e.msg);
+				}
+			}
 
-			import event.watcher;
-			if (info.events & DWFileEvent.CREATED)
-				events |= NOTE_LINK | NOTE_WRITE;
-			if (info.events & DWFileEvent.DELETED)
-				events |= NOTE_DELETE;
-			if (info.events & DWFileEvent.MODIFIED)
-				events |= NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE;
-			if (info.events & DWFileEvent.MOVED_FROM)
-				events |= NOTE_RENAME;
-			if (info.events & DWFileEvent.MOVED_TO)
-				events |= NOTE_RENAME;
-
-			//NOTE_DELETE     = 0x0001, /* vnode was removed */
-			//NOTE_WRITE      = 0x0002, /* data contents changed */
-			//NOTE_EXTEND     = 0x0004, /* size increased */
-			//NOTE_ATTRIB     = 0x0008, /* attributes changed */
-			//NOTE_LINK       = 0x0010, /* link count changed */
-			//NOTE_RENAME     = 0x0020, /* vnode was renamed */
-			//NOTE_REVOKE     = 0x0040, /* vnode access was revoked */
-			EV_SET(&_event, fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, events, 0, cast(void*) evinfo);
-
-			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
-			
-			if (catchError!"kevent_timer_add"(err))
-				return 0;
+			return fd;
 
 		}
-		
-		return fd;
 	}
 	
 	bool kill(AsyncDirectoryWatcher ctxt) {
 		import core.sys.posix.unistd : close;
-		close(ctxt.fd);
-	}
-	
-bool kill(AsyncTCPConnection ctxt, bool forced = false)
-{
-	m_status = StatusInfo.init;
-		fd_t fd = ctxt.socket;
-			scope(exit) {
-				if (forced) {
-				ctxt.connected = false;
+
+		static if (!EPOLL) {
+			foreach (uint wd, DWFolderInfo fi; m_folders)
+				unwatch(ctxt.fd, wd);
+			try m_watchers.remove(ctxt.fd); catch {}
+
+			static if (!EPOLL) {
+				try {
+					FreeListObjectAlloc!(Array!DWChangeInfo).free(m_changes[fd]);
+					m_changes.remove(fd);
+				}
+				catch (Exception e) {
+					assert(false, "Failed to free resources: " ~ e.msg);
+				}
+			}
 		}
-		ctxt.disconnecting = true;
-	}
-	if (ctxt.connected)
-		return closeSocket(fd, true, forced);
-	else {
+		close(ctxt.fd);
+		try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+		catch (Exception e){ assert(false, "Error freeing resources"); }
+		ctxt.evInfo = null;
+
 		return true;
 	}
-}
-
-bool kill(AsyncTCPListener ctxt)
-{
-	m_status = StatusInfo.init;
-	nothrow void cleanup() {
-		try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
-			catch { assert(false, "Failed to free resources"); }
+	
+	bool kill(AsyncTCPConnection ctxt, bool forced = false)
+	{
+		m_status = StatusInfo.init;
+			fd_t fd = ctxt.socket;
+				scope(exit) {
+					if (forced) {
+					ctxt.connected = false;
+			}
+			ctxt.disconnecting = true;
 		}
-		
+		if (ctxt.connected)
+			return closeSocket(fd, true, forced);
+		else {
+			return true;
+		}
+	}
+
+	bool kill(AsyncTCPListener ctxt)
+	{
+		m_status = StatusInfo.init;
+		nothrow void cleanup() {
+			try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+			catch { assert(false, "Failed to free resources"); }
+			ctxt.evInfo = null;
+		}
 		scope(exit) {
 			cleanup();
 		}
@@ -509,6 +516,7 @@ bool kill(AsyncTCPListener ctxt)
 			if (ctxt.evInfo) {
 				try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
 				catch (Exception e) { assert(false, "Failed to free resources: " ~ e.msg); }
+				ctxt.evInfo = null;
 			}
 			
 		}
@@ -520,6 +528,7 @@ bool kill(AsyncTCPListener ctxt)
 			if (ctxt.evInfo) {
 				try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
 				catch (Exception e) { assert(false, "Failed to free resources: " ~ e.msg); }
+				ctxt.evInfo = null;
 			}
 			kevent_t _event;
 			EV_SET(&_event, ctxt.id, EVFILT_TIMER, EV_DELETE, 0, 0, null);
@@ -558,7 +567,7 @@ bool kill(AsyncTCPListener ctxt)
 		catch (Exception e){
 			assert(false, "Failed to free resources: " ~ e.msg);
 		}
-		
+		ctxt.evInfo = null;
 		return true;
 	}
 

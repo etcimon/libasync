@@ -6,8 +6,6 @@
 	Authors: Sönke Ludwig
 */
 module event.internals.hashmap;
-version(Windows):
-
 import event.internals.memory;
 
 import std.conv : emplace;

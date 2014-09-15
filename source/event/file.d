@@ -31,6 +31,8 @@ private:
 public:
 	this(EventLoop evl) {
 		m_evLoop = cast(shared) evl;
+		m_cmdInfo.ready = new shared AsyncSignal(cast(EventLoop)m_evLoop);
+		m_cmdInfo.ready.run(cast(void delegate())&handler);
 		m_owner = cast(shared)Thread.getThis();
 		try m_cmdInfo.mtx = cast(shared) new Mutex; catch {}
 	}
@@ -57,11 +59,13 @@ public:
 		shared FileReadyHandler handler;
 		handler.del = del;
 		handler.ctxt = this;
-		synchronized(this) m_handler = handler;
+		try synchronized(this) m_handler = handler; catch {}
 		return true;
 	}
 
 	bool kill() {
+		m_cmdInfo.ready.kill();
+
 		return true;
 	}
 
@@ -79,7 +83,7 @@ public:
 	bool read(Path file_path, shared ubyte[] buffer, size_t off = -1) 
 	in { 
 		assert(!m_busy, "File is busy or closed");
-		assert(m_handler != FileReadyHandler.init, "AsyncFile must be run before being operated on.");
+		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
 	body {
 		try synchronized(m_cmdInfo.mtx) { 
@@ -94,7 +98,7 @@ public:
 	bool write(Path file_path, shared ubyte[] buffer, size_t off = -1) 
 	in { 
 		assert(!m_busy, "File is busy or closed"); 
-		assert(m_handler != FileReadyHandler.init, "AsyncFile must be run before being operated on.");
+		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
 	body {
 		try synchronized(m_cmdInfo.mtx) { 
@@ -110,7 +114,7 @@ public:
 	bool append(Path file_path, shared ubyte[] buffer)
 	in {
 		assert(!m_busy, "File is busy or closed");
-		assert(m_handler != FileReadyHandler.init, "AsyncFile must be run before being operated on.");
+		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
 	body {
 		try synchronized(m_cmdInfo.mtx) { 
@@ -121,78 +125,49 @@ public:
 		return sendCommand();
 	}
 
-private:
-	// chooses a thread or starts it if necessary
-	void sendCommand() 
+	private bool sendCommand() 
 	in { assert(!waiting, "File is busy or closed"); }
 	body {
 		waiting = true;
 		m_error = false;
 		status = StatusInfo.init;
-
+		
 		shared AsyncSignal cmd_handler;
+
 		try {
-			bool start_thread;
-			do {
-				if (start_thread) {
-					Thread thr = new CmdProcessor;
-					thr.start();
-
-					core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
-					gs_threads.add(thr);
-				}
-
-				synchronized(gs_wlock) {
-					if (start_thread && !gs_started.wait(5.seconds))
-						continue;
-
-					try {
-						if (!cmd_handler && !gs_waiters.empty) {
-							cmd_handler = cast(shared AsyncSignal) gs_waiters.back;
-							gs_waiters.removeBack();
-						}
-						else if (core.atomic.atomicLoad(gs_threadCnt) < 16) {
-							start_thread = true;
-						}
-						else {
-							Thread.sleep(50.usecs);
-						}
-					} catch {}
-				}
-			} while(!cmd_handler);
+			cmd_handler = popWaiter();
+		
 		} catch (Throwable e) {
 			import std.stdio;
 			try {
 				status = StatusInfo(Status.ERROR, e.toString());
 				m_error = true;
 			} catch {}
-
+			
 			return false;
-
+			
 		}
 		assert(cmd_handler);
+		
 		m_cmdInfo.waiter = cmd_handler;
-		synchronized(gs_wlock) gs_jobs.insert(CommandInfo(CmdInfoType.FILE, cast(void*) m_cmdInfo));
+		try synchronized(gs_wlock) gs_jobs.insert(CommandInfo(CmdInfoType.FILE, cast(void*) this)); catch {}
 		cmd_handler.trigger(cast(EventLoop)m_evLoop);
 		return true;
 	}
+package:
 
-	synchronized void handler() {
-		try m_handler();
-		catch (Throwable e) {
-			import std.stdio : writeln;
-			try writeln("Failed to send command. ", e.toString()); catch {}
-		}
+	synchronized @property FileCmdInfo cmdInfo() {
+		return m_cmdInfo;
 	}
 
 	synchronized @property Path filePath() {
 		return cast(Path) m_cmdInfo.filePath;
 	}
-
+	
 	synchronized @property void filePath(Path file_path) {
 		m_cmdInfo.filePath = cast(shared) file_path;
 	}
-
+	
 	synchronized @property void status(StatusInfo stat) {
 		m_status = cast(shared) stat;
 	}
@@ -204,6 +179,14 @@ private:
 	synchronized @property void waiting(bool b) {
 		m_busy = cast(shared) b;
 	}
+
+	void handler() {
+		try m_handler();
+		catch (Throwable e) {
+			import std.stdio : writeln;
+			try writeln("Failed to send command. ", e.toString()); catch {}
+		}
+	}
 }
 
 package shared struct FileCmdInfo
@@ -212,6 +195,7 @@ package shared struct FileCmdInfo
 	Path filePath;
 	ubyte[] buffer;
 	AsyncSignal waiter;
+	AsyncSignal ready;
 	AsyncFile file;
 	Mutex mtx; // for buffer writing
 }

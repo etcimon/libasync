@@ -34,16 +34,63 @@ private:
 			try writeln("Failed to run thread ... ", e.toString()); catch {}
 		}
 	}
+
+	void process(shared AsyncDNS ctxt) {
+		auto cmdInfo = ctxt.cmdInfo;
+		auto mutex = cmdInfo.mtx;
+		DNSCmd cmd;
+		shared AsyncSignal waiter;
+		string url;
+		cmd = cmdInfo.command; 
+		waiter = cmdInfo.waiter;
+		url = cmdInfo.url;
+
+		import std.stdio;
+		
+		try writeln("Processing command: ", cmd); catch {}
+		assert(m_waiter is waiter, "File processor is handling a command from the wrong thread");
+		
+		
+		try final switch (cmd)
+		{
+			case DNSCmd.RESOLVEHOST:
+				*ctxt.addr = cast(shared) m_evLoop.resolveHost(url, 0, cmdInfo.ipv6?isIPv6.yes:isIPv6.no);
+				break;
+
+			case DNSCmd.RESOLVEIP:
+				*ctxt.addr = cast(shared) m_evLoop.resolveIP(url, 0, cmdInfo.ipv6?isIPv6.yes:isIPv6.no);
+				break;
+
+		} catch (Throwable e) {
+			auto status = StatusInfo.init;
+			status.code = Status.ERROR;
+			try status.text = e.toString(); catch {}
+			ctxt.status = status;
+		}
+		
+		cmdInfo.ready.trigger(m_evLoop);
+		
+		try {
+			synchronized(gs_wlock)
+				gs_waiters.insertBack(cast(void*) m_waiter);
+			gs_started.notifyAll(); // saves some waiting on a new thread
+		}
+		catch (Throwable e) {
+			auto status = StatusInfo.init;
+			status.code = Status.ERROR;
+			try status.text = e.toString(); catch {}
+			ctxt.status = status;
+		}
+	}
 	
 	void process(shared AsyncFile ctxt) {
-		auto mutex = ctxt.m_cmdInfo.mtx;
+		auto cmdInfo = ctxt.cmdInfo;
+		auto mutex = cmdInfo.mtx;
 		FileCmd cmd;
 		shared AsyncSignal waiter;
-		try synchronized(mutex) {
-			cmd = ctxt.m_cmdInfo.command; 
-			waiter = ctxt.m_cmdInfo.waiter;
-		} catch {}
-		
+		cmd = cmdInfo.command; 
+		waiter = cmdInfo.waiter;
+
 		import std.stdio;
 		
 		try writeln("Processing command: ", cmd); catch {}
@@ -83,8 +130,8 @@ private:
 			try status.text = e.toString(); catch {}
 			ctxt.status = status;
 		}
-		
-		ctxt.handler();
+
+		cmdInfo.ready.trigger(m_evLoop);
 		
 		try {
 			synchronized(gs_wlock)
@@ -92,8 +139,10 @@ private:
 			gs_started.notifyAll(); // saves some waiting on a new thread
 		}
 		catch (Throwable e) {
-			ctxt.m_status.code = Status.ERROR;
-			try ctxt.m_status.text = e.toString(); catch {}
+			auto status = StatusInfo.init;
+			status.code = Status.ERROR;
+			try status.text = e.toString(); catch {}
+			ctxt.status = status;
 		}
 	}
 	
@@ -101,7 +150,6 @@ private:
 	{
 		m_evLoop = new EventLoop;
 		m_waiter = new shared AsyncSignal(m_evLoop);
-		m_waiter.setContext(this);
 		m_waiter.run(&handler);
 		try {
 			synchronized(gs_wlock) {
@@ -115,6 +163,7 @@ private:
 			try synchronized(this) if (m_stop) break; catch {}
 			continue;
 		}
+		try writeln("Leaving Waiter Thread"); catch {}
 	}
 	
 	synchronized void stop()
@@ -126,25 +175,57 @@ private:
 		while(true) {
 			CommandInfo cmd;
 
-			synchronized(gs_wlock) {
+			try synchronized(gs_wlock) {
 				if (gs_jobs.empty) return;
 				cmd = gs_jobs.back;
 				gs_jobs.removeBack();
-			}
+			} catch {}
 
 			final switch (cmd.type) {
 				case CmdInfoType.FILE:
 					process(cast(shared AsyncFile) cmd.data);
 					break;
 				case CmdInfoType.DNS:
-					assert(false, "AsyncDNS not implemented");
+					process(cast(shared AsyncDNS) cmd.data);
 					break;
 			}
 
 		}
-		return;
 	}
 
+}
+
+shared(AsyncSignal) popWaiter() {
+	shared AsyncSignal cmd_handler;
+	bool start_thread;
+	do {
+		if (start_thread) {
+			Thread thr = new CmdProcessor;
+			thr.start();
+			
+			core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
+			gs_threads.add(thr);
+		}
+		
+		synchronized(gs_wlock) {
+			if (start_thread && !gs_started.wait(5.seconds))
+				continue;
+			
+			try {
+				if (!cmd_handler && !gs_waiters.empty) {
+					cmd_handler = cast(shared AsyncSignal) gs_waiters.back;
+					gs_waiters.removeBack();
+				}
+				else if (core.atomic.atomicLoad(gs_threadCnt) < 16) {
+					start_thread = true;
+				}
+				else {
+					Thread.sleep(50.usecs);
+				}
+			} catch {}
+		}
+	} while(!cmd_handler);
+	return cmd_handler;
 }
 
 shared static this() {

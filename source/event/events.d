@@ -16,6 +16,8 @@ public import event.dns;
 public import event.timer;
 public import event.signal;
 public import event.watcher;
+public import event.file;
+public import event.threads;
 
 version(Windows) {
 	public import event.windows;
@@ -104,6 +106,10 @@ package:
 		return m_evLoop.read(fd, data);
 	}
 
+	uint readChanges(in fd_t fd, ref DWChangeInfo[] dst) {
+		return m_evLoop.readChanges(fd, dst);
+	}
+
 	uint write(in fd_t fd, in ubyte[] data)
 	{
 		return m_evLoop.write(fd, data);
@@ -141,39 +147,6 @@ package:
 		return m_evLoop.send(data, fd, dst);
 	}*/
 
-
-	version(none) { // std.regex increases the release size by 1MB
-		/* Returns a structure representing the peer address from an IP or a Hostname
-		 * It is much slower to use a hostname because of the blocking dns resolver.
-		 * An AsyncDNS can be used to retrieve this and improve performance-critical code.
-		*/
-		NetworkAddress resolveAny(string host, ushort port)
-		in { assert(host !is null); }
-		body {
-
-			import event.validator;
-			import std.typecons : Flag;
-
-			NetworkAddress addr;
-			try {
-				if ( validateHost(host) )
-					addr = resolveIP(host, port, isIPv6.no, isTCP.yes, isForced.no);
-				else if ( validateHost(host) ) // this validation is faster than IPv6
-					addr = resolveHost(host, port, isIPv6.no, isTCP.yes, isForced.yes);
-				else if ( validateIPv6(host) )
-					addr = resolveIP(host, port, isIPv6.yes, isTCP.yes, isForced.no);
-				else {
-					m_evLoop.setInternalError!"AsyncTCP.resolver(invalid_host)"(Status.ERROR);
-					return NetworkAddress.init;
-				}
-			} catch (Exception e) {
-				m_evLoop.setInternalError!"AsyncTCP.resolver"(Status.ERROR, e.msg);
-				return NetworkAddress.init;
-			}
-			return addr;
-		}
-	}
-
 	bool closeSocket(fd_t fd, bool connected, bool listener = false)
 	{
 		return m_evLoop.closeSocket(fd, connected, listener);
@@ -201,6 +174,14 @@ package:
 
 	fd_t run(AsyncUDPSocket ctxt, UDPHandler del) {
 		return m_evLoop.run(ctxt, del);
+	}
+
+	fd_t run(AsyncDirectoryWatcher ctxt, DWHandler del) {
+		return m_evLoop.run(ctxt, del);
+	}
+
+	bool kill(AsyncDirectoryWatcher obj) {
+		return m_evLoop.kill(obj);
 	}
 
 	bool kill(AsyncTCPConnection obj, bool forced = false) {

@@ -57,7 +57,7 @@ public:
 	}
 
 	private bool run(UDPHandler del)
-	in { assert(m_local != NetworkAddress.init) && m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
+	in { assert(m_local != NetworkAddress.init && m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
 	body {
 		m_socket = m_evLoop.run(this, del);
 		if (m_socket == fd_t.init)
@@ -92,7 +92,7 @@ package:
 
 package struct UDPHandler {
 	AsyncUDPSocket conn;
-	void delegate(UDPEvent) fct;
+	void delegate(UDPEvent) del;
 	void opCall(UDPEvent code){
 		assert(conn !is null);
 		del(code);

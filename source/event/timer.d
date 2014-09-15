@@ -36,13 +36,13 @@ public:
 		return this;
 	}
 
-	bool rearm(Duration timeout)
-	in { assert(timeout > 0.seconds); }
+	bool rearm(Duration dur)
+	in { assert(m_timeout > 0.seconds); }
 	body {
 		m_rearmed = true;
 
-		m_timerId = m_evLoop.run(this, m_evh, timeout);
-		m_timeout = timeout;
+		m_timerId = m_evLoop.run(this, m_evh, dur);
+		m_timeout = dur;
 
 		if (m_timerId == 0)
 			return false;
@@ -51,13 +51,13 @@ public:
 	}
 
 	bool run(void delegate() del) 
-	in { assert(timeout > 0.seconds); }
+	in { assert(m_timeout > 0.seconds); }
 	body {
 		TimerHandler handler;
 		handler.del = del;
 		handler.ctxt = this;
 
-		return run(del);
+		return run(handler);
 	}
 
 	private bool run(TimerHandler cb) {

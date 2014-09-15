@@ -105,8 +105,7 @@ public:
 
 	bool run(void delegate(TCPEvent) del) {
 		TCPEventHandler handler;
-		handler.fct = del.funcptr;
-		m_ctxt = del.ptr;
+		handler.del = del;
 		handler.conn = this;
 		return run(handler);
 	}
@@ -251,10 +250,11 @@ package struct TCPEventHandler {
 
 		del(ev);
 
-		debug {
+		/*debug {
 			ubyte[1] test;
-			assert(conn.recv((&test)[0..1]) == 0 && conn.status.code == Status.ASYNC, "You must recv the whole buffer, because events are edge triggered!");
-		}
+			ubyte[] testRef = test.ptr[0..1];
+			assert(conn.recv(testRef) == 0 && conn.status.code == Status.ASYNC, "You must recv the whole buffer, because events are edge triggered!");
+		}*/
 		return;
 	}
 }

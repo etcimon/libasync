@@ -58,6 +58,10 @@ struct kevent_t
 	void        *udata; /* opaque user data identifier */
 }
 
+enum : uint {
+	O_EVTONLY = 0x8000
+}
+
 enum : ushort
 {
 	/* actions */
