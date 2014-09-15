@@ -392,7 +392,7 @@ mixin template RunKill()
 		try 
 		{
 			static if (!EPOLL) {
-				foreach (ref const fd_t wd, ref const Path path; m_dwFolders)
+				foreach (ref const fd_t wd, ref const WatchInfo info; m_dwFolders)
 					unwatch(ctxt.fd, wd);
 				try m_watchers.remove(ctxt.fd); catch {}
 

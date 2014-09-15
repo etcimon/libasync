@@ -93,12 +93,65 @@ private:
 	{
 		fd_t m_kqueuefd;
 		HashMap!(fd_t, EventInfo*) m_watchers; // fd_t = id++ per AsyncDirectoryWatcher
-		HashMap!(fd_t, Path) m_dwFolders; // fd_t = open(folder)
+		HashMap!(fd_t, WatchInfo) m_dwFolders; // fd_t = open(folder)
 		HashMap!(fd_t, DWFileInfo) m_dwFiles; // fd_t = open(file)
 		HashMap!(fd_t, Array!(DWChangeInfo)*) m_changes; // fd_t = id++ per AsyncDirectoryWatcher
-	}
-package:
+	
+		DWChangeInfo compareFolderFiles(fd_t fd, fd_t wd, Path path, DWFileEvent changes) {
+			import std.file;
+			import std.path : buildPath;
+			try {
+				Array!Path currFiles;
 
+
+				scope(exit) {
+					auto watchInfo =  m_dwFolders[wd];
+					unwatch(fd, wd);
+					watch(fd, watchInfo);
+				}
+				foreach (string file; dirEntries(m_dwFolders[wd].path.toNativeString(), SpanMode.shallow)) {
+					Path tmp = Path(file);
+					if (isDir(tmp.toNativeString()))
+						continue;
+					bool found;
+					foreach (ref const fd_t id, ref const DWFileInfo info; m_dwFiles) {
+						if (info.folder != wd) continue;
+						if (info.path == tmp) {
+							found = true;
+							break;
+						}
+					}
+					// This file is in the folder now but wasn't there before
+					if (!found) {
+						return DWChangeInfo(DWFileEvent.CREATED, tmp);
+					}
+					currFiles.insert(tmp);
+				}
+				foreach (ref const fd_t id, ref const DWFileInfo info; m_dwFiles) {
+					if (info.folder != wd) continue;
+					bool found;
+					foreach (Path file; currFiles) {
+						if (info.path == file){
+							found = true;
+							break;
+						}
+					}
+					// this file was in the folder but it's not there anymore
+					if (!found) 
+						return DWChangeInfo(DWFileEvent.DELETED, info.path);
+
+				}
+			}
+			catch (Exception e) 
+			{
+				setInternalError!"compareFiles"(Status.ERROR, "Fatal error in file comparison: " ~ e.msg);
+			}
+			return DWChangeInfo(DWFileEvent.MODIFIED, path);
+		}
+	}
+
+package:
+	
 	/// workaround for IDE indent bug on too big files
 	mixin RunKill!();
 
@@ -347,9 +400,12 @@ package:
 					static if (!EPOLL) {
 						Path path;
 						try {
-							path = m_dwFolders.get(cast(fd_t)_event.ident, Path.init);
+							bool isFolder;
+							path = m_dwFolders.get(cast(fd_t)_event.ident, WatchInfo.init).path;
 							if (path == Path.init)
 								path = m_dwFiles.get(cast(fd_t)_event.ident, DWFileInfo.init).path;
+							else
+								isFolder = true;
 							Array!(DWChangeInfo)* changes = m_changes.get(info.fd, null);
 							assert(changes !is null, "DirectoryWatcher event sent with a null changes container");
 							DWFileEvent fevent;
@@ -366,7 +422,11 @@ package:
 							else
 								assert(false, "No event found?");
 
-							DWChangeInfo changeInfo = DWChangeInfo(fevent, path);
+							DWChangeInfo changeInfo;
+							if (isFolder)
+								changeInfo = compareFolderFiles(info.fd, cast(fd_t) _event.ident, path, fevent);
+							else
+								changeInfo = DWChangeInfo(fevent, path);
 							changes.insert(changeInfo);
 						} catch (Exception e) {
 							log("Could not process DirectoryWatcher event: " ~ e.msg);
@@ -956,7 +1016,7 @@ package:
 				if (wd == 0)
 					return 0;
 
-				m_dwFolders[wd] = info.path;
+				m_dwFolders[wd] = info;
 
 
 				//NOTE_DELETE     = 0x0001, /* vnode was removed */
@@ -971,7 +1031,7 @@ package:
 				import std.path;
 				foreach (string file; dirEntries(dirPath, SpanMode.shallow)) {
 					Path filePath;
-					filePath = Path(buildPath(dirPath, file));
+					filePath = Path(file);
 					if (isDir(filePath.toNativeString()))
 						continue;
 					fd_t fwd = addEvent(filePath);
@@ -1005,7 +1065,7 @@ package:
 				
 				int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 				
-				if (catchError!"kevent_timer_add"(err))
+				if (catchError!"kevent_unwatch"(err))
 					return false;
 				close(id);
 				return true;
@@ -1022,7 +1082,6 @@ package:
 
 				if (!removeEvent(wd))
 					return false;
-				 m_dwFolders.remove(wd);
 			} catch (Exception e) {
 				setInternalError!"dw.unwatch"(Status.ERROR, "Failed to process directory unwatch: " ~ e.msg);
 				return false;
