@@ -17,8 +17,7 @@ unittest {
 	writeln("Loading objects...");
 	testDirectoryWatcher();
 //	testDNS();
-	/*
-	 * testFile();
+	testFile();
 	testOneshotTimer();
 	testMultiTimer();
 	gs_tlsEvent = new shared AsyncSignal(g_evl);
@@ -29,10 +28,10 @@ unittest {
 	writeln("Loaded. Running event loop...");
 
 	testTCPConnect("localhost", 8081);
-	*/
+
 	while(Clock.currTime() - gs_start < 4.seconds) 
 		g_evl.loop(100.msecs);
-	/*
+
 	int i;
 	foreach (bool b; g_cbCheck) {
 		assert(b, "Callback not triggered: g_cbCheck[" ~ i.to!string ~ "]");
@@ -43,14 +42,16 @@ unittest {
 	assert(g_cbTimerCnt >= 3, "Multitimer expired only " ~ g_cbTimerCnt.to!string ~ " times"); // MultiTimer expired 3-4 times
 
 	g_listnr.kill();
-	*/
+
 	destroyAsyncThreads();
 }
 
 void testDirectoryWatcher() {
-	import std.file : mkdir, write, rmdir;
-	remove("hey/tmp.tmp");
-	rmdir("hey");
+	import std.file : mkdir, write, rmdir, exists;
+	if (exists("hey/tmp.tmp"))
+		remove("hey/tmp.tmp");
+	if (exists("hey"))
+		rmdir("hey");
 	g_watcher = new AsyncDirectoryWatcher(g_evl);
 	g_watcher.run({
 		DWChangeInfo[1] change;
