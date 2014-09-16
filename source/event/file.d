@@ -9,12 +9,8 @@ import core.atomic;
 public import event.internals.path;
 import event.threads;
 
-enum FileCmd {
-	READ,
-	WRITE,
-	APPEND
-}
-
+/// Runs all blocking file I/O commands in a thread pool and calls the handler
+/// upon completion.
 shared final class AsyncFile
 {
 nothrow:
@@ -37,6 +33,12 @@ public:
 		try m_cmdInfo.mtx = cast(shared) new Mutex; catch {}
 	}
 
+	/// Cleans up the underlying resources. todo: make this dispose?
+	bool kill() {
+		m_cmdInfo.ready.kill();
+		return true;
+	}
+
 	synchronized @property StatusInfo status() const
 	{
 		return cast(StatusInfo) m_status;
@@ -47,28 +49,7 @@ public:
 		return status.text;
 	}
 
-	synchronized @property bool waiting() const {
-		return cast(bool) m_busy;
-	}
-
-	synchronized @property size_t offset() const {
-		return cast(size_t) m_cursorOffset;
-	}
-
-	bool run(void delegate() del) {
-		shared FileReadyHandler handler;
-		handler.del = del;
-		handler.ctxt = this;
-		try synchronized(this) m_handler = handler; catch {}
-		return true;
-	}
-
-	bool kill() {
-		m_cmdInfo.ready.kill();
-
-		return true;
-	}
-
+	/// Retrieve the buffer from the last command. Must be called upon completion.
 	shared(ubyte[]) buffer() {
 		try synchronized(m_cmdInfo.mtx)
 			return m_cmdInfo.buffer;
@@ -76,10 +57,27 @@ public:
 		return null;
 	}
 
+	/// The current offset updated after the command execution
+	synchronized @property size_t offset() const {
+		return cast(size_t) m_cursorOffset;
+	}
+
+	/// Sets the handler called by the owner thread's event loop after the command is completed.
+	shared(typeof(this)) onReady(void delegate() del) {
+		shared FileReadyHandler handler;
+		handler.del = del;
+		handler.ctxt = this;
+		try synchronized(this) m_handler = handler; catch {}
+		return this;
+	}
+
+	/// Creates a new buffer with the specified length and uses it to read the
+	/// file data at the specified path starting at the specified offset byte.
 	bool read(Path file_path, size_t len = 128, size_t off = -1) {
 		return read(file_path, new shared ubyte[len], off);
 	}
 
+	/// Reads the file into the buffer starting at offset byte position.
 	bool read(Path file_path, shared ubyte[] buffer, size_t off = -1) 
 	in { 
 		assert(!m_busy, "File is busy or closed");
@@ -95,6 +93,8 @@ public:
 		return sendCommand();
 	}
 
+	/// Writes the data from the buffer into the file at the specified path starting at the
+	/// given offset byte position.
 	bool write(Path file_path, shared ubyte[] buffer, size_t off = -1) 
 	in { 
 		assert(!m_busy, "File is busy or closed"); 
@@ -111,6 +111,7 @@ public:
 
 	}
 
+	/// Appends the data from the buffer into a file at the specified path.
 	bool append(Path file_path, shared ubyte[] buffer)
 	in {
 		assert(!m_busy, "File is busy or closed");
@@ -163,7 +164,11 @@ package:
 	synchronized @property Path filePath() {
 		return cast(Path) m_cmdInfo.filePath;
 	}
-	
+
+	synchronized @property bool waiting() const {
+		return cast(bool) m_busy;
+	}
+
 	synchronized @property void filePath(Path file_path) {
 		m_cmdInfo.filePath = cast(shared) file_path;
 	}
@@ -187,6 +192,12 @@ package:
 			try writeln("Failed to send command. ", e.toString()); catch {}
 		}
 	}
+}
+
+package enum FileCmd {
+	READ,
+	WRITE,
+	APPEND
 }
 
 package shared struct FileCmdInfo

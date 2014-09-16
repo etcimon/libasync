@@ -19,7 +19,7 @@ nothrow:
 	fd_t m_socket;
 	bool m_noDelay;
 	bool m_inbound;
-
+	debug bool m_dataRemaining;
 public:
 	this(EventLoop evl)
 	in { assert(evl !is null); }
@@ -101,12 +101,37 @@ public:
 		return this;
 	}
 
+	/// Starts the connection by registering the associated callback handler in the
+	/// underlying OS event loop.
+	bool run(void delegate(TCPEvent) del) {
+		TCPEventHandler handler;
+		handler.del = del;
+		handler.conn = this;
+		return run(handler);
+	}
+	
+	private bool run(TCPEventHandler del)
+	in { assert(!isConnected); }
+	body {
+		m_socket = m_evLoop.run(this, del);
+		if (m_socket == 0)
+			return false;
+		else
+			return true;
+		
+	}
+
 	/// Receive data from the underlying stream. To be used when TCPEvent.READ is received by the
 	/// callback handler. IMPORTANT: This must be called until is returns a lower value than the buffer!
 	uint recv(ref ubyte[] ub)
 	in { assert(isConnected, "No socket to operate on"); }
 	body {
-		return m_evLoop.recv(m_socket, ub);
+		uint cnt = m_evLoop.recv(m_socket, ub);
+		debug {
+			if (ub.length > cnt)
+			m_dataRemaining = false;
+		}
+		return cnt;
 	}
 
 	/// Send data through the underlying stream by moving it into the OS buffer.
@@ -118,26 +143,6 @@ public:
 				if (m_evLoop.status.code == Status.ASYNC)
 					this.writeBlocked = true;
 		return m_evLoop.send(m_socket, ub);
-	}
-
-	/// Starts the connection by registering the associated callback handler in the
-	/// underlying OS event loop.
-	bool run(void delegate(TCPEvent) del) {
-		TCPEventHandler handler;
-		handler.del = del;
-		handler.conn = this;
-		return run(handler);
-	}
-
-	private bool run(TCPEventHandler del)
-	in { assert(!isConnected); }
-	body {
-		m_socket = m_evLoop.run(this, del);
-		if (m_socket == 0)
-			return false;
-		else
-			return true;
-
 	}
 
 	/// Removes the connection from the event loop, closing it if necessary, and
@@ -280,14 +285,9 @@ package struct TCPEventHandler {
 
 	void opCall(TCPEvent ev){
 		assert(conn !is null, "Connection was disposed before shutdown could be completed");
-
+		debug conn.m_dataRemaining = true;
 		del(ev);
-
-		/*debug {
-			ubyte[1] test;
-			ubyte[] testRef = test.ptr[0..1];
-			assert(conn.recv(testRef) == 0 && conn.status.code == Status.ASYNC, "You must recv the whole buffer, because events are edge triggered!");
-		}*/
+		//debug assert(!conn.m_dataRemaining, "You must recv the whole buffer, because TCP events are edge triggered!");
 		return;
 	}
 }

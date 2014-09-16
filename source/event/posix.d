@@ -959,6 +959,7 @@ package:
 	}
 
 	uint watch(in fd_t fd, in WatchInfo info) {
+		m_status = StatusInfo.init;
 		import core.sys.linux.sys.inotify;
 
 		static if (EPOLL) {
@@ -1046,6 +1047,7 @@ package:
 	}
 
 	bool unwatch(in fd_t fd, in uint wd) {
+		m_status = StatusInfo.init;
 		try m_dwFolders.remove(wd); catch {}
 		static if (EPOLL) {
 			import core.sys.linux.sys.inotify;
@@ -1094,6 +1096,7 @@ package:
 
 	// returns the amount of changes
 	uint readChanges(in fd_t fd, ref DWChangeInfo[] dst) {
+		m_status = StatusInfo.init;
 		static if (EPOLL) {
 			assert(dst.length > 0, "DirectoryWatcher called with 0 length DWChangeInfo array");
 			import core.sys.linux.sys.inotify;

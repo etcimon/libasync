@@ -10,7 +10,7 @@ import std.file;
 /// Watches one or more directories in the local filesystem for the specified events
 /// by calling a custom event handler asynchroneously when they occur.
 /// 
-/// Usage: run() the object, starting watching directories, receive an event in your handler,
+/// Usage: run() the object, start watching directories, receive an event in your handler,
 /// read the changes by draining the buffer.
 final nothrow class AsyncDirectoryWatcher
 {
@@ -20,7 +20,7 @@ private:
 	DWHandler m_evh;
 	Array!WatchInfo m_directories;
 	fd_t m_fd;
-	
+	debug bool m_dataRemaining;
 public:
 	this(EventLoop evl)
 	in { assert(evl !is null); }
@@ -31,7 +31,12 @@ public:
 	/// Fills the buffer with file/folder events and returns the number
 	/// of events consumed. Returns 0 when the buffer is drained.
 	uint readChanges(ref DWChangeInfo[] dst) {
-		return m_evLoop.readChanges(m_fd, dst);
+		uint cnt = m_evLoop.readChanges(m_fd, dst);
+		debug {
+			if (cnt < dst.length)
+				m_dataRemaining = false;
+		}
+		return cnt;
 	}
 
 	/// Registers the object in the underlying event loop and sends notifications
@@ -177,11 +182,10 @@ package struct DWHandler {
 	void delegate() del;
 	void opCall(){
 		assert(ctxt !is null);
+		debug ctxt.m_dataRemaining = true;
 		del();
 		debug {
-			DWChangeInfo[1] arr;
-			DWChangeInfo[] arrRef = arr.ptr[0..1];
-			assert(ctxt.readChanges(arrRef) == 0, "You must read all changes when you receive a notification for directory changes");
+			assert(!ctxt.m_dataRemaining, "You must read all changes when you receive a notification for directory changes");
 		}
 		assert(ctxt !is null);
 		return;

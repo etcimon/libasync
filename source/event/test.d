@@ -83,7 +83,7 @@ void testFile() {
 		File file = File("test.txt", "w");
 		file.rawWrite("This is the file content.");
 	}
-	gs_file.run({
+	gs_file.onReady({
 		auto file = gs_file;
 		if (file.status.code == Status.ERROR)
 			writeln(file.status.text);
@@ -93,11 +93,11 @@ void testFile() {
 		else {
 			import std.stdio : writeln;
 			writeln(cast(string)file.buffer);
+			assert(false);
 		}
 		import std.file : remove;
 		remove("test.txt");
-	});
-	gs_file.read(Path("test.txt"));
+	}).read(Path("test.txt"));
 
 }
 

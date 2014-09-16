@@ -6,6 +6,7 @@ import core.atomic;
 import core.thread : Fiber;
 import event.types;
 import event.internals.hashmap;
+import event.internals.memory;
 import std.container : Array;
 import std.string : toStringz;
 import std.conv : to;
@@ -20,7 +21,9 @@ pragma(lib, "ws2_32");
 pragma(lib, "ole32");
 alias fd_t = SIZE_T;
 alias error_t = EWIN;
+
 //todo :  see if new connections with SO_REUSEADDR are evenly distributed between threads
+
 
 package struct EventLoopImpl {
 	pragma(msg, "Using Windows IOCP for events");
@@ -30,7 +33,8 @@ private:
 	HashMap!(fd_t, TCPEventHandler)* m_tcpHandlers;
 	HashMap!(fd_t, TimerHandler)* m_timerHandlers;
 	HashMap!(fd_t, UDPHandler)* m_udpHandlers;
-
+	HashMap!(fd_t, DWHandlerInfo)* m_dwHandlers; // todo: Change this to an array too
+	HashMap!(uint, DWFolderWatcher)* m_dwFolders;
 nothrow:
 private:
 	struct TimerCache {
@@ -60,7 +64,6 @@ package:
 
 		m_status = StatusInfo.init;
 
-		import event.internals.memory : manualAllocator, FreeListObjectAlloc;
 		import core.thread;
 		try Thread.getThis().priority = Thread.PRIORITY_MAX;
 		catch (Exception e) { assert(false, "Could not set thread priority"); }
@@ -70,6 +73,8 @@ package:
 			m_tcpHandlers = FreeListObjectAlloc!(typeof(*m_tcpHandlers)).alloc(manualAllocator());
 			m_udpHandlers = FreeListObjectAlloc!(typeof(*m_udpHandlers)).alloc(manualAllocator());
 			m_timerHandlers = FreeListObjectAlloc!(typeof(*m_timerHandlers)).alloc(manualAllocator());
+			m_dwHandlers = FreeListObjectAlloc!(typeof(*m_dwHandlers)).alloc(manualAllocator());
+			m_dwFolders = FreeListObjectAlloc!(typeof(*m_dwFolders)).alloc(manualAllocator());
 		} catch (Exception e) { assert(false, "failed to setup allocator strategy in HashMap"); }
 		m_evLoop = evl;
 		shared static ushort i;
@@ -348,6 +353,45 @@ package:
 		return timer_id;
 	}
 
+	fd_t run(AsyncDirectoryWatcher ctxt, DWHandler del)
+	{
+		static fd_t ids;
+		auto fd = ++ids;
+
+		try (*m_dwHandlers)[fd] = new DWHandlerInfo(del); 
+		catch (Exception e) {
+			setInternalError!"AsyncDirectoryWatcher.hashMap(run)"(Status.ERROR, "Could not add handler to hashmap: " ~ e.msg);
+		}
+
+		return fd;
+
+	}
+
+	bool kill(AsyncDirectoryWatcher ctxt) {
+
+		try {
+			Array!DWFolderWatcher toFree;
+			foreach (ref const uint k, const DWFolderWatcher v; *m_dwFolders) {
+				if (v.fd == ctxt.fd) {
+					CloseHandle(v.handle);
+					(*m_dwFolders).remove(k);
+				}
+			}
+
+			foreach (DWFolderWatcher obj; toFree[])
+				FreeListObjectAlloc!DWFolderWatcher.free(obj);
+
+			// todo: close all the handlers...
+			(*m_dwHandlers).remove(ctxt.fd);
+		}
+		catch (Exception e) {
+			setInternalError!"in kill(AsyncDirectoryWatcher)"(Status.ERROR, e.msg);
+			return false;
+		}
+
+		return true;
+	}
+
 	bool kill(AsyncTCPConnection ctxt, bool forced = false)
 	{
 
@@ -405,6 +449,7 @@ package:
 			m_error = GetLastErrorSafe();
 			m_status.code = Status.ERROR;
 			m_status.text = "kill(AsyncTimer)";
+			log(m_status);
 			return false;
 		}
 
@@ -445,7 +490,6 @@ package:
 	}
 
 	bool setOption(T)(fd_t fd, TCPOption option, in T value) {
-		import event.internals.memory : defaultAllocator;
 		m_status = StatusInfo.init;
 		int err;
 		try {
@@ -644,6 +688,68 @@ package:
 		return 0;
 	}
 
+	uint readChanges(in fd_t fd, ref DWChangeInfo[] dst) {
+		size_t i;
+		Array!DWChangeInfo* changes;
+		try {
+			changes = &((*m_dwHandlers).get(fd, DWHandlerInfo.init).buffer);
+			if ((*changes).empty){
+				setInternalError!"watcher.readChanges"(Status.ERROR, "Invalid changes buffer");
+				return 0;
+			}
+			import std.algorithm : min;
+			size_t cnt = min(dst.length, changes.length);
+			foreach (DWChangeInfo change; (*changes)[0 .. cnt]) {
+				dst[i] = (*changes)[i];
+				i++;
+			}
+			changes.linearRemove((*changes)[0 .. cnt]);
+		}
+		catch (Exception e) {
+			setInternalError!"watcher.readChanges"(Status.ERROR, "Could not read directory changes: " ~ e.msg);
+			return 0;
+		}
+		return cast(uint) i;
+	}
+
+	uint watch(in fd_t fd, in WatchInfo info) {
+		m_status = StatusInfo.init;
+		uint wd;
+		try {
+			HANDLE hndl = CreateFileW(toUTFz!(const(wchar)*)(info.path.toNativeString()),
+			                     FILE_LIST_DIRECTORY,
+			                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+			                     null,
+			                     OPEN_EXISTING,
+			                     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
+			                     null);
+			wd = cast(uint) hndl;
+			DWHandlerInfo handler = (*m_dwHandlers).get(fd, DWHandlerInfo.init);
+			assert(handler !is null);
+
+			(*m_dwFolders)[wd] = FreeListObjectAlloc!DWFolderWatcher.alloc(m_evLoop, fd, hndl, info.path, info.events, handler);
+		} catch (Exception e) {
+			setInternalError!"watch"(Status.ERROR, "Could not start watching directory: " ~ e.msg);
+			return 0;
+		}
+		return wd;
+	}
+
+	bool unwatch(in fd_t fd, in uint wd) {
+		m_status = StatusInfo.init;
+		try {
+			DWFolderWatcher fw = (*m_dwFolders).get(wd, null);
+			assert(fw !is null);
+			(*m_dwFolders).remove(wd);
+			fw.close();
+			FreeListObjectAlloc!DWFolderWatcher.free(fw);
+		} catch (Exception e) {
+			setInternalError!"unwatch"(Status.ERROR, "Failed when unwatching directory: " ~ e.msg);
+			return false;
+		}
+		return true;
+	}
+
 	bool notify(T)(in fd_t fd, in T payload) 
 	if (is(T == shared AsyncSignal) || is(T == AsyncNotifier))
 	{
@@ -787,7 +893,6 @@ package:
 		try {
 			TCPEventHandler* evh = fd in *m_tcpHandlers;
 			if (evh && evh.conn.inbound) {
-				import event.internals.memory : FreeListObjectAlloc;
 				try FreeListObjectAlloc!AsyncTCPConnection.free(evh.conn);
 				catch(Exception e) { assert(false, "Failed to free resources"); }
 				//log("Remove event handler for " ~ fd.to!string);
@@ -993,14 +1098,18 @@ private:
  
 					cb.ctxt.rearmed = false;
 
+					if (cb.ctxt.oneShot)
+						kill(cb.ctxt);
+
 					cb();
 
-					if (cb.ctxt.oneShot && !cb.ctxt.rearmed)
-						kill(cb.ctxt);
+					if (cb.ctxt.oneShot && cb.ctxt.rearmed)
+						run(cb.ctxt, cb, cb.ctxt.timeout);
+
 				}
 				catch (Exception e) {
 					// An Error callback should never fail...
-					setInternalError!"del@TimerHandler"(Status.ERROR);  
+					setInternalError!"del@TimerHandler"(Status.ERROR, e.msg);  
 					return false;
 				}
 
@@ -1126,7 +1235,6 @@ private:
 					return false;
 				}
 				catchSocketError!"WSAAccept"(csock, INVALID_SOCKET);
-				import event.internals.memory : FreeListObjectAlloc;
 				AsyncTCPConnection conn;
 				try conn = FreeListObjectAlloc!AsyncTCPConnection.alloc(m_evLoop);
 				catch (Exception e) { assert(false, "Failed allocation"); }
@@ -1449,6 +1557,122 @@ mixin template TCPConnectionMixins() {
 	
 	@property bool* connected() {
 		return &m_impl.connected;
+	}
+	
+}
+
+private class DWHandlerInfo {
+	DWHandler handler;
+	Array!DWChangeInfo buffer;
+
+	this(DWHandler cb) {
+		handler = cb;
+	}
+}
+
+private final class DWFolderWatcher {
+private:
+	EventLoop m_evLoop;
+	fd_t m_fd;
+	HANDLE m_handle;
+	Path m_path;
+	DWFileEvent m_events;
+	DWHandlerInfo m_handler; // contains buffer
+	shared AsyncSignal m_signal;
+	ubyte[FILE_NOTIFY_INFORMATION.sizeof + MAX_PATH + 1] m_buffer;
+	DWORD m_bytesTransferred;
+public:
+	this(EventLoop evl, in fd_t fd, in HANDLE hndl, in Path path, in DWFileEvent events, DWHandlerInfo handler) {
+		m_fd = fd;
+		import std.stdio;
+		m_handle = cast(HANDLE)hndl;
+		m_evLoop = evl;
+		m_path = path;
+		m_handler = handler;
+		
+		m_signal = new shared AsyncSignal(m_evLoop);
+		m_signal.run(&onChanged);
+		triggerWatch();
+	}
+package:
+	void close() {
+		CloseHandle(m_handle);
+		m_signal.kill();
+	}
+	
+	void triggerChanged() {
+		m_signal.trigger();
+	}
+	
+	void onChanged() {
+		ubyte[] result = m_buffer.ptr[0 .. m_bytesTransferred];
+		do {
+			assert(result.length >= FILE_NOTIFY_INFORMATION.sizeof);
+			auto fni = cast(FILE_NOTIFY_INFORMATION*)result.ptr;
+			DWFileEvent kind;
+			switch( fni.Action ){
+				default: kind = DWFileEvent.MODIFIED; break;
+				case 0x1: kind = DWFileEvent.CREATED; break;
+				case 0x2: kind = DWFileEvent.DELETED; break;
+				case 0x3: kind = DWFileEvent.MODIFIED; break;
+				case 0x4: kind = DWFileEvent.MOVED_FROM; break;
+				case 0x5: kind = DWFileEvent.MOVED_TO; break;
+			}
+			string filename = to!string(fni.FileName.ptr[0 .. fni.FileNameLength/2]); // FileNameLength = #bytes, FileName=WCHAR[]
+			m_handler.buffer.insert(DWChangeInfo(kind, Path(filename)));
+			if( fni.NextEntryOffset == 0 ) break;
+			result = result[fni.NextEntryOffset .. $];
+		} while(result.length > 0);
+		
+		triggerWatch();
+		
+		m_handler.handler();
+	}
+	
+	void triggerWatch() {
+		
+		static UINT notifications = FILE_NOTIFY_CHANGE_FILE_NAME|FILE_NOTIFY_CHANGE_DIR_NAME|
+			FILE_NOTIFY_CHANGE_SIZE|FILE_NOTIFY_CHANGE_LAST_WRITE;
+		
+		OVERLAPPED* overlapped = FreeListObjectAlloc!OVERLAPPED.alloc();
+		overlapped.Internal = 0;
+		overlapped.InternalHigh = 0;
+		overlapped.Offset = 0;
+		overlapped.OffsetHigh = 0;
+		overlapped.Pointer = cast(void*)this;
+		import std.stdio;
+		DWORD bytesReturned;
+		BOOL success = ReadDirectoryChangesW(m_handle, m_buffer.ptr, m_buffer.length, FALSE, notifications, &bytesReturned, overlapped, &onIOCompleted);
+		
+		import std.stdio;
+		if (!success)
+			writeln("Failed to call ReadDirectoryChangesW: " ~ EWSAMessages[GetLastError().to!EWIN]);
+		
+	}
+	
+	@property fd_t fd() const {
+		return m_fd;
+	}
+	
+	@property HANDLE handle() const {
+		return cast(HANDLE) m_handle;
+	}
+	
+	static nothrow extern(System)
+	{
+		void onIOCompleted(DWORD dwError, DWORD cbTransferred, OVERLAPPED* overlapped)
+		{
+			import std.stdio;
+			DWFolderWatcher watcher = cast(DWFolderWatcher)(overlapped.Pointer);
+			watcher.m_bytesTransferred = cbTransferred;
+			
+			if (dwError != 0)
+				try writeln("Diretory watcher error: "~EWSAMessages[dwError.to!EWIN]); catch{}
+			try watcher.triggerChanged();
+			catch (Exception e) {
+				try writeln("Failed to trigger change"); catch {}
+			}
+		}
 	}
 	
 }

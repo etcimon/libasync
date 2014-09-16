@@ -45,13 +45,13 @@ public:
 		return status.text;
 	}
 
-	/// Starts the resolver using the callback for all resolved addresses.
-	bool run(void delegate(NetworkAddress) del) {
+	/// Uses the callback for all resolved addresses.
+	shared(typeof(this)) handler(void delegate(NetworkAddress) del) {
 		shared DNSReadyHandler handler;
 		handler.del = del;
 		handler.ctxt = this;
 		try synchronized(this) m_handler = handler; catch {}
-		return true;
+		return this;
 	}
 
 	/// Sends a request through a thread pool for the specified host to be resolved. The
