@@ -5,8 +5,8 @@ import event.types;
 import event.events;
 import core.thread;
 
-/// Cross-threading utility, considered thread safe and declarable __gshared or shared
-/// Can also be used lockless in thread-local instances
+/// Enqueues a signal in the event loop of the AsyncSignal owner's thread, 
+/// which allows a foreign thread to trigger the callback handler safely.
 shared final class AsyncSignal
 {
 	private void delegate() m_sgh;
@@ -31,20 +31,23 @@ public:
 		m_owner = cast(shared) Thread.getThis();
 		version(Posix) static if (!EPOLL) m_owner_id = cast(shared) g_threadId;
 	}
-			
+
 	@property bool hasError() const 
 	{
 		return (cast(EventLoop)m_evLoop).status.code != Status.OK;
 	}
 
+	/// Used to diagnose errors when run() or kill() returns false
 	@property StatusInfo status() const {
 		return (cast(EventLoop)m_evLoop).status;
 	}
 
+	/// Human-readable string describing the error
 	@property string error() const {
 		return (cast(EventLoop)m_evLoop).error;
 	}
 
+	/// Registers the signal handler in the event loop
 	bool run(void delegate() del) 
 	in {
 		assert(Thread.getThis() is cast(Thread)m_owner);
@@ -60,6 +63,7 @@ public:
 			return false;
 	}
 
+	/// Cleans up underlying resources. This object must be run() again afterwards to be valid
 	bool kill() 
 	in {
 		assert(Thread.getThis() is cast(Thread)m_owner);
@@ -68,14 +72,17 @@ public:
 		return (cast(EventLoop)m_evLoop).kill(cast(shared AsyncSignal) this);
 	}
 
+	/// Triggers the handler in its local thread
 	synchronized bool trigger(EventLoop evl) {
 		return evl.notify(m_evId, this);
 	}
 
+	/// ditto
 	synchronized bool trigger() {
 		return (cast(EventLoop)m_evLoop).notify(m_evId, this);
 	}
 
+	/// Returns the Thread that created this object.
 	synchronized @property Thread owner() const {
 		return cast(Thread) m_owner;
 	}

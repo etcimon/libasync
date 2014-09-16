@@ -4,6 +4,7 @@ import event.types;
 
 import event.events;
 
+/// Wrapper for a UDP Stream which must be bound to a socket.
 final nothrow class AsyncUDPSocket
 {
 nothrow:
@@ -19,20 +20,21 @@ public:
 
 	mixin DefStatus;
 
+	
+	/// Returns the locally bound address as an OS-specific structure. 
+	@property NetworkAddress local() const
+	{
+		return m_local;
+	}
+
+	/// Grants broadcast permissions to the socket (must be set before run).
 	bool broadcast(bool b) 
 	in { assert(m_socket == fd_t.init, "Cannot change state on unbound UDP socket"); }	
 	body {
 		return m_evLoop.broadcast(m_socket, b);
 	}
-
-	uint recvFrom(ref ubyte[] data, ref NetworkAddress addr) {
-		return m_evLoop.recvFrom(m_socket, data, addr);
-	}
 	
-	uint sendTo(in ubyte[] data, in NetworkAddress addr) {
-		return m_evLoop.sendTo(m_socket, data, addr);
-	}
-
+	/// Sets the hostname and port to which the UDP socket must be bound locally.
 	typeof(this) host(string hostname, size_t port)
 	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
 	body
@@ -40,7 +42,8 @@ public:
 		m_local = m_evLoop.resolveHost(hostname, cast(ushort) port);
 		return this;
 	}
-
+	
+	/// Sets the IP and port to which the UDP socket will be bound locally.
 	typeof(this) ip(string ip, size_t port)
 	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
 	body {
@@ -48,6 +51,8 @@ public:
 		return this;
 	}
 
+	/// Registers the UDP socket in the underlying OS event loop, forwards
+	/// all related events to the specified delegate.
 	bool run(void delegate(UDPEvent) del) 
 	{
 		UDPHandler handler;
@@ -55,7 +60,7 @@ public:
 		handler.conn = this;
 		return run(handler);
 	}
-
+	
 	private bool run(UDPHandler del)
 	in { assert(m_local != NetworkAddress.init && m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
 	body {
@@ -65,16 +70,24 @@ public:
 		else
 			return true;
 	}
-	
+
+	/// Receives data from one peer and copies its address to the
+	/// associated OS-specific address structure.
+	uint recvFrom(ref ubyte[] data, ref NetworkAddress addr) {
+		return m_evLoop.recvFrom(m_socket, data, addr);
+	}
+
+	/// Sends data to the internet address specified by the associated
+	/// OS-specific structure.
+	uint sendTo(in ubyte[] data, in NetworkAddress addr) {
+		return m_evLoop.sendTo(m_socket, data, addr);
+	}
+
+	/// Cleans up the resources associated with this object in the underlying OS.
 	bool kill()
 	in { assert(m_socket != fd_t.init); }
 	body {
 		return m_evLoop.kill(this);
-	}
-
-	@property NetworkAddress local() const
-	{
-		return m_local;
 	}
 
 package:

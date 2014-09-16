@@ -27,6 +27,9 @@ version(Posix) {
 	public import event.posix;
 }
 
+/// Event handlers can be registered to the event loop by being run(), all events
+/// associated with them will trigger the OS to resume the underlying thread which
+/// enables the existence of all the asynchroneous event objects in this library. 
 final class EventLoop
 {
 
@@ -36,11 +39,13 @@ package:
 nothrow:
 public:
 	this() { 
-
 		if (m_evLoop.started || !m_evLoop.init(this))
 			assert(false, "Event loop initialization failure");
 	}
 
+	/// Call this to cleanup underlying OS resources. The implementation is currently incomplete
+	/// and requires the process to be shut down for the resources to be collected automatically.
+	/// Used as a placeholder in the meantime.
 	void exit() {
 		m_evLoop.exit();
 	}

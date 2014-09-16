@@ -23,20 +23,39 @@ public:
 
 	mixin DefStatus;
 
+	/// Returns the Duration that the timer will wait before calling the handler
+	/// after it is run.
 	@property Duration timeout() const {
 		return m_timeout;
 	}
 
-	@property void oneShot(bool b) {
-		m_oneshot = b;
+	/// Returns whether the timer is set to rearm itself (oneShot=false) or 
+	/// if it will have to be rearmed (oneShot=true).
+	@property bool oneShot() const {
+		return m_oneshot;
 	}
 
-	// Changing the duration on a running timer takes effet on the next run.
+	/// Sets the timer to become periodic. For a running timer, 
+	/// this setting will take effect after the timer is expired (oneShot) or 
+	/// after it is killed (periodic).
+	typeof(this) periodic(bool b = true) 
+	in { assert(m_timerId == 0 || m_oneshot); }
+	body
+	{
+		m_oneshot = !b;
+		return this;
+	}
+
+	/// Sets or changes the duration on the timer. For a running timer, 
+	/// this setting will take effect after the timer is expired (oneShot) or 
+	/// after it is killed (periodic).
 	typeof(this) duration(Duration dur) {
 		m_timeout = dur;
 		return this;
 	}
 
+	/// Runs a non-periodic, oneshot timer once using the specified Duration as
+	/// a timeout. The handler from the last call to run() will be reused.
 	bool rearm(Duration dur)
 	in { 
 		assert(m_timeout > 0.seconds);
@@ -54,6 +73,7 @@ public:
 			return true;
 	}
 
+	/// Starts the timer using the delegate as an expiration callback.
 	bool run(void delegate() del) 
 	in { 
 		assert(m_timeout > 0.seconds);
@@ -81,7 +101,9 @@ public:
 		else
 			return true;
 	}
-	
+
+	/// Cleans up underlying OS resources. This is required to change the
+	/// timer from periodic to oneshot, or before disposing of this object.
 	bool kill() {
 		return m_evLoop.kill(this);
 	}
@@ -89,10 +111,6 @@ public:
 package:
 
 	version(Posix) mixin EvInfoMixins;
-
-	@property bool oneShot() const {
-		return m_oneshot;
-	}
 	
 	@property fd_t id() {
 		return m_timerId;

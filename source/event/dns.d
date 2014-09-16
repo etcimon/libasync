@@ -13,6 +13,7 @@ enum DNSCmd {
 	RESOLVEIP
 }
 
+/// Resolves internet addresses and returns the results in a specified callback.
 shared final class AsyncDNS
 {
 nothrow:
@@ -43,11 +44,8 @@ public:
 	{
 		return status.text;
 	}
-	
-	synchronized @property bool waiting() const {
-		return cast(bool) m_busy;
-	}
-	
+
+	/// Starts the resolver using the callback for all resolved addresses.
 	bool run(void delegate(NetworkAddress) del) {
 		shared DNSReadyHandler handler;
 		handler.del = del;
@@ -55,18 +53,10 @@ public:
 		try synchronized(this) m_handler = handler; catch {}
 		return true;
 	}
-	
-	bool kill() {
-		return true;
-	}
-	
-	shared(NetworkAddress*) addr() {
-		try synchronized(m_cmdInfo.mtx)
-			return cast(shared)&m_cmdInfo.addr;
-		catch {}
-		return null;
-	}
-	
+
+	/// Sends a request through a thread pool for the specified host to be resolved. The
+	/// callback specified in run() will be signaled with the OS-specific NetworkAddress
+	/// structure.
 	bool resolveHost(string url, bool ipv6)
 	in {
 		assert(!m_busy, "Resolver is busy or closed");
@@ -81,20 +71,15 @@ public:
 		
 		return sendCommand();
 	}
-	
-	bool resolveIP(string url, bool ipv6)
+
+	/// Returns an OS-specific NetworkAddress structure from the specified IP.
+	NetworkAddress resolveIP(string url, bool ipv6)
 	in {
 		assert(!m_busy, "Resolver is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncDNS must be running before being operated on.");
 	}
 	body {
-		try synchronized(m_cmdInfo.mtx) { 
-			m_cmdInfo.command = DNSCmd.RESOLVEIP;
-			m_cmdInfo.ipv6 = ipv6;
-			m_cmdInfo.url = cast(shared) url;
-		} catch {}
-		
-		return sendCommand();
+		return (cast(EventLoop)m_evLoop).resolveIP(url, 0, ipv6?isIPv6.yes:isIPv6.no);
 	}
 
 	// chooses a thread or starts it if necessary
@@ -124,15 +109,33 @@ public:
 		cmd_handler.trigger(cast(EventLoop)m_evLoop);
 		return true;
 	}
+
+	/// Cleans up underlying resources. Used as a placeholder for possible future purposes.
+	bool kill() {
+		return true;
+	}
+
 package:
 	synchronized @property DNSCmdInfo cmdInfo() {
 		return m_cmdInfo;
 	}
 
+	
+	shared(NetworkAddress*) addr() {
+		try synchronized(m_cmdInfo.mtx)
+			return cast(shared)&m_cmdInfo.addr;
+		catch {}
+		return null;
+	}
+
 	synchronized @property void status(StatusInfo stat) {
 		m_status = cast(shared) stat;
 	}
-	
+
+	synchronized @property bool waiting() const {
+		return cast(bool) m_busy;
+	}
+
 	synchronized @property void waiting(bool b) {
 		m_busy = cast(shared) b;
 	}

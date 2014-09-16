@@ -169,7 +169,6 @@ void testSharedEvent() {
 
 void testOneshotTimer() {	
 	AsyncTimer g_timerOneShot = new AsyncTimer(g_evl);
-	g_timerOneShot.oneShot = true;
 	g_timerOneShot.duration(1.seconds).run({
 		assert(!g_cbCheck[4] && Clock.currTime() - gs_start > 900.msecs && Clock.currTime() - gs_start < 1100.msecs);
 		assert(g_timerOneShot.id > 0);
@@ -180,8 +179,7 @@ void testOneshotTimer() {
 
 void testMultiTimer() {	
 	AsyncTimer g_timerMulti = new AsyncTimer(g_evl);
-	g_timerMulti.oneShot = false;
-	g_timerMulti.duration(1.seconds).run({
+	g_timerMulti.periodic().duration(1.seconds).run({
 		assert(g_lastTimer !is SysTime.init && Clock.currTime() - g_lastTimer > 900.msecs && Clock.currTime() - g_lastTimer < 1100.msecs);
 		assert(g_timerMulti.id > 0);
 		assert(!g_timerMulti.oneShot);

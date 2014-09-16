@@ -3,6 +3,8 @@
 import event.types;
 import event.events;
 
+/// Thread-local event dispatcher/handler, used to wake up the associated 
+/// callback in a new call stack originating from the event loop.
 final class AsyncNotifier
 {
 	void delegate() m_evh;
@@ -23,6 +25,7 @@ public:
 		
 	mixin DefStatus;
 
+	/// Starts the notifier with the associated delegate (handler)
 	bool run(void delegate() del) {
 		m_evh = cast(void delegate()) del;
 		m_evId = m_evLoop.run(this);
@@ -32,31 +35,18 @@ public:
 			return false;
 	}
 
+	/// Cleans up associated resources.
 	bool kill() 
 	{
 		return m_evLoop.kill(this);
 	}
 
+	/// Enqueues a call to the handler originating from the thread-local event loop.
 	bool trigger()
 	{		
 		return m_evLoop.notify(m_evId, this);
 	}
 
-	bool trigger(T)(T msg)
-	{
-		import std.traits : isSomeString;
-		static if (isPointer!T)
-			m_message = cast(void*) msg;
-		else static  if (is(T == class))
-			m_message = cast(void*)msg;
-		else {
-			T* msgPtr = new T;
-			m_message = cast(void*) msgPtr;
-		}
-
-		return m_evLoop.notify(m_evId, this);
-	}
-	
 package:
 
 	version(Posix) mixin EvInfoMixins;
