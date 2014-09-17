@@ -21,7 +21,7 @@ private:
 	FileReadyHandler m_handler;
 	FileCmdInfo m_cmdInfo;
 	StatusInfo m_status;
-	size_t m_cursorOffset;
+	ulong m_cursorOffset;
 	Thread m_owner;
 
 public:
@@ -58,8 +58,8 @@ public:
 	}
 
 	/// The current offset updated after the command execution
-	synchronized @property size_t offset() const {
-		return cast(size_t) m_cursorOffset;
+	synchronized @property ulong offset() const {
+		return m_cursorOffset;
 	}
 
 	/// Sets the handler called by the owner thread's event loop after the command is completed.
@@ -73,12 +73,12 @@ public:
 
 	/// Creates a new buffer with the specified length and uses it to read the
 	/// file data at the specified path starting at the specified offset byte.
-	bool read(Path file_path, size_t len = 128, size_t off = -1) {
+	bool read(Path file_path, size_t len = 128, ulong off = -1) {
 		return read(file_path, new shared ubyte[len], off);
 	}
 
 	/// Reads the file into the buffer starting at offset byte position.
-	bool read(Path file_path, shared ubyte[] buffer, size_t off = -1) 
+	bool read(Path file_path, shared ubyte[] buffer, ulong off = -1) 
 	in { 
 		assert(!m_busy, "File is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
@@ -95,14 +95,14 @@ public:
 
 	/// Writes the data from the buffer into the file at the specified path starting at the
 	/// given offset byte position.
-	bool write(Path file_path, shared ubyte[] buffer, size_t off = -1) 
+	bool write(Path file_path, shared const(ubyte)[] buffer, ulong off = -1) 
 	in { 
 		assert(!m_busy, "File is busy or closed"); 
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
 	body {
 		try synchronized(m_cmdInfo.mtx) { 
-			m_cmdInfo.buffer = buffer;
+			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 			m_cmdInfo.command = FileCmd.WRITE;
 		} catch {}
 		filePath = file_path;
@@ -184,7 +184,7 @@ package:
 		m_status = cast(shared) stat;
 	}
 	
-	synchronized @property void offset(size_t val) {
+	synchronized @property void offset(ulong val) {
 		m_cursorOffset = cast(shared) val;
 	}
 
@@ -224,6 +224,7 @@ package shared struct FileReadyHandler {
 	
 	void opCall() {
 		assert(ctxt !is null);
+		ctxt.waiting = false;
 		del();
 		return;
 	}

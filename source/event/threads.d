@@ -102,32 +102,38 @@ private:
 			case FileCmd.READ:
 				File file = File(ctxt.filePath.toNativeString(), "r");
 				if (ctxt.offset != -1)
-					file.seek(ctxt.offset);
+					file.seek(cast(long)ctxt.offset);
 				ubyte[] res;
 				synchronized(mutex) res = file.rawRead(cast(ubyte[])ctxt.buffer);
 				if (res)
-					ctxt.offset = cast(size_t) (ctxt.offset + res.length);
-				
+					ctxt.offset = cast(ulong) (ctxt.offset + res.length);
+
+				file.close();
 				break;
 				
 			case FileCmd.WRITE:
-				File file = File(ctxt.filePath.toNativeString(), "w");
+				File file = File(ctxt.filePath.toNativeString(), "r+");
 				if (ctxt.offset != -1)
-					file.seek(ctxt.offset);
-				synchronized(mutex) file.rawWrite(cast(ubyte[])ctxt.buffer);
-				ctxt.offset = cast(size_t) (ctxt.offset + ctxt.buffer.length);
+					file.seek(cast(long)ctxt.offset);
+				synchronized(mutex) {
+					file.rawWrite(cast(ubyte[])ctxt.buffer);
+				}
+				file.flush();
+				ctxt.offset = cast(ulong) (ctxt.offset + ctxt.buffer.length);
+				file.close();
 				break;
-				
+
 			case FileCmd.APPEND:
 				
 				File file = File(ctxt.filePath.toNativeString(), "a");
 				synchronized(mutex) file.rawWrite(cast(ubyte[]) ctxt.buffer);
-				ctxt.offset = cast(size_t) file.size();
+				ctxt.offset = cast(ulong) file.size();
+				file.close();
 				break;
 		} catch (Throwable e) {
 			auto status = StatusInfo.init;
 			status.code = Status.ERROR;
-			try status.text = e.toString(); catch {}
+			try status.text = "Error in " ~  cmd.to!string ~ ", " ~ e.toString(); catch {}
 			ctxt.status = status;
 		}
 
@@ -161,6 +167,7 @@ private:
 		} catch {
 			try writeln("Error inserting in waiters"); catch {}
 		}
+		try writeln("Started worker thread"); catch {}
 
 		process();
 	}
@@ -211,6 +218,7 @@ Waiter popWaiter() {
 	do {
 		if (start_thread) {
 			Thread thr = new CmdProcessor;
+			thr.isDaemon = true;
 			thr.start();
 			
 			core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
@@ -257,9 +265,10 @@ shared static this() {
 }
 
 void destroyAsyncThreads() {
-	foreach (thr; gs_threads) {
+	synchronized(gs_tlock) foreach (thr; gs_threads) {
 		CmdProcessor thread = cast(CmdProcessor)thr;
 		(cast(shared)thread).stop();
+		gs_threads.remove(thr);
 	}
 }
 
