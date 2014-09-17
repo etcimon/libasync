@@ -693,10 +693,9 @@ package:
 		Array!DWChangeInfo* changes;
 		try {
 			changes = &((*m_dwHandlers).get(fd, DWHandlerInfo.init).buffer);
-			if ((*changes).empty){
-				setInternalError!"watcher.readChanges"(Status.ERROR, "Invalid changes buffer");
+			if ((*changes).empty)
 				return 0;
-			}
+
 			import std.algorithm : min;
 			size_t cnt = min(dst.length, changes.length);
 			foreach (DWChangeInfo change; (*changes)[0 .. cnt]) {

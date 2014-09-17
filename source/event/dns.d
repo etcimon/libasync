@@ -29,8 +29,8 @@ private:
 public:
 	this(EventLoop evl) {
 		m_evLoop = cast(shared) evl;
-		try m_cmdInfo.ready = new shared AsyncSignal(cast(EventLoop)m_evLoop); catch {}
-		m_cmdInfo.ready.run(cast(void delegate())&handler);
+		try m_cmdInfo.ready = new shared AsyncSignal(cast(EventLoop)m_evLoop); catch { assert(false, "Failed to start DNS Signaling"); }
+		m_cmdInfo.ready.run(cast(void delegate())&callback);
 		m_owner = cast(shared)Thread.getThis();
 		try m_cmdInfo.mtx = cast(shared) new Mutex; catch {}
 	}
@@ -48,16 +48,16 @@ public:
 	/// Uses the callback for all resolved addresses.
 	shared(typeof(this)) handler(void delegate(NetworkAddress) del) {
 		shared DNSReadyHandler handler;
-		handler.del = del;
+		handler.del = cast(shared) del;
 		handler.ctxt = this;
-		try synchronized(this) m_handler = handler; catch {}
+		try synchronized(this) m_handler = handler; catch { assert(false, "Failed to set handler in AsyncDNS"); }
 		return this;
 	}
 
 	/// Sends a request through a thread pool for the specified host to be resolved. The
 	/// callback specified in run() will be signaled with the OS-specific NetworkAddress
 	/// structure.
-	bool resolveHost(string url, bool ipv6)
+	bool resolveHost(string url, bool ipv6 = false)
 	in {
 		assert(!m_busy, "Resolver is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncDNS must be running before being operated on.");
@@ -140,8 +140,11 @@ package:
 		m_busy = cast(shared) b;
 	}
 	
-	void handler() {
-		try m_handler(cast(NetworkAddress)m_cmdInfo.addr);
+	void callback() {
+
+		try {
+			m_handler(cast(NetworkAddress)m_cmdInfo.addr);
+		}
 		catch (Throwable e) {
 			import std.stdio : writeln;
 			try writeln("Failed to send command. ", e.toString()); catch {}

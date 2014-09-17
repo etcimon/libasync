@@ -6,7 +6,7 @@ import std.datetime;
 import event.file;
 //
 AsyncDirectoryWatcher g_watcher;
-AsyncDNS g_dns;
+shared AsyncDNS g_dns;
 
 
 unittest {
@@ -17,7 +17,7 @@ unittest {
 	g_evl = new EventLoop;
 	writeln("Loading objects...");
 	testDirectoryWatcher();
-//	testDNS();
+	testDNS();
 	testFile();
 	testOneshotTimer();
 	testMultiTimer();
@@ -47,12 +47,21 @@ unittest {
 	destroyAsyncThreads();
 }
 
+StopWatch g_swDns;
+void testDNS() {
+	g_dns = new shared AsyncDNS(g_evl);
+	g_swDns.start();
+	g_dns.handler((NetworkAddress addr) {
+		writeln("Resolved to: ", addr.toString(), ", it took: ", g_swDns.peek().msecs, " ms");
+	}).resolveHost("localhost");
+}
+
 void testDirectoryWatcher() {
 	import std.file : mkdir, write, rmdir, exists;
-	if (exists("hey/tmp.tmp"))
-		remove("hey/tmp.tmp");
-	if (exists("hey"))
-		rmdir("hey");
+	if (exists("./hey/tmp.tmp"))
+		remove("./hey/tmp.tmp");
+	if (exists("./hey"))
+		rmdir("./hey");
 	g_watcher = new AsyncDirectoryWatcher(g_evl);
 	g_watcher.run({
 		DWChangeInfo[1] change;
@@ -60,16 +69,15 @@ void testDirectoryWatcher() {
 		while(g_watcher.readChanges(changeRef)){
 			writeln(change);
 		}
-		writeln("Exiting g_watcher");
 	});
 	g_watcher.watchDir(".");
 	AsyncTimer tm = new AsyncTimer(g_evl);
 	tm.duration(1.seconds).run({
-		writeln("Making dir ./hey");
-		mkdir("hey");
-		g_watcher.watchDir("./hey/");
+		mkdir("./hey");
+		if (!g_watcher.watchDir("./hey/"))
+			writeln(g_watcher.status);
 		tm.duration(1.seconds).run({
-			writeln("Writing to hey/tmp.tmp");
+			writeln("Writing to ./hey/tmp.tmp");
 			std.file.write("./hey/tmp.tmp", "some string");
 		});
 	});
