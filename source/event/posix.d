@@ -103,16 +103,8 @@ private:
 			try {
 				Array!Path currFiles;
 
-
-				scope(exit) {
-					auto watchInfo =  m_dwFolders[wd];
-					unwatch(fd, wd);
-					watch(fd, watchInfo);
-				}
 				foreach (string file; dirEntries(m_dwFolders[wd].path.toNativeString(), SpanMode.shallow)) {
 					Path tmp = Path(file);
-					if (isDir(tmp.toNativeString()))
-						continue;
 					bool found;
 					foreach (ref const fd_t id, ref const DWFileInfo info; m_dwFiles) {
 						if (info.folder != wd) continue;
@@ -123,6 +115,11 @@ private:
 					}
 					// This file is in the folder now but wasn't there before
 					if (!found) {
+						scope(exit) {
+							auto watchInfo =  m_dwFolders[wd];
+							unwatch(fd, wd);
+							watch(fd, watchInfo);
+						}
 						return DWChangeInfo(DWFileEvent.CREATED, tmp);
 					}
 					currFiles.insert(tmp);
@@ -400,12 +397,7 @@ package:
 					static if (!EPOLL) {
 						Path path;
 						try {
-							bool isFolder;
 							path = m_dwFolders.get(cast(fd_t)_event.ident, WatchInfo.init).path;
-							if (path == Path.init)
-								path = m_dwFiles.get(cast(fd_t)_event.ident, DWFileInfo.init).path;
-							else
-								isFolder = true;
 							Array!(DWChangeInfo)* changes = m_changes.get(info.fd, null);
 							assert(changes !is null, "DirectoryWatcher event sent with a null changes container");
 							DWFileEvent fevent;
@@ -422,11 +414,8 @@ package:
 							else
 								assert(false, "No event found?");
 
-							DWChangeInfo changeInfo;
-							if (isFolder)
-								changeInfo = compareFolderFiles(info.fd, cast(fd_t) _event.ident, path, fevent);
-							else
-								changeInfo = DWChangeInfo(fevent, path);
+							DWChangeInfo changeInfo = compareFolderFiles(info.fd, cast(fd_t) _event.ident, path, fevent);
+
 							changes.insert(changeInfo);
 						} catch (Exception e) {
 							log("Could not process DirectoryWatcher event: " ~ e.msg);
@@ -993,19 +982,22 @@ package:
 			EventInfo* evinfo;
 			try evinfo = m_watchers[fd]; catch { assert(false, "Could not find file descriptor in watchers"); }
 
-			fd_t addEvent(Path path) {
+			fd_t addEvent(Path path, bool isFile) {
+				try log("Adding path: " ~ path.toNativeString()); catch {}
 				int ret = open(path.toNativeString().toStringz, O_EVTONLY);
 				if (catchError!"open(watch)"(ret))
 					return 0;
-				kevent_t _event;
-				
-				EV_SET(&_event, ret, EVFILT_VNODE, EV_ADD | EV_CLEAR, events, 0, cast(void*) evinfo);
-				
-				int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
-				
-				if (catchError!"kevent_timer_add"(err))
-					return 0;
-				
+
+				if (!isFile) {
+					kevent_t _event;
+					
+					EV_SET(&_event, ret, EVFILT_VNODE, EV_ADD | EV_CLEAR, events, 0, cast(void*) evinfo);
+					
+					int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
+					
+					if (catchError!"kevent_timer_add"(err))
+						return 0;
+				}
 				return ret;
 			}
 			fd_t wd;
@@ -1013,7 +1005,7 @@ package:
 				string dirPath;
 				try dirPath = info.path.toNativeString(); catch {}
 
-				wd = addEvent(info.path);
+				wd = addEvent(info.path, false);
 				if (wd == 0)
 					return 0;
 
@@ -1033,9 +1025,7 @@ package:
 				foreach (string file; dirEntries(dirPath, SpanMode.shallow)) {
 					Path filePath;
 					filePath = Path(file);
-					if (isDir(filePath.toNativeString()))
-						continue;
-					fd_t fwd = addEvent(filePath);
+					fd_t fwd = addEvent(filePath, true);
 					m_dwFiles[fwd] = DWFileInfo(wd, filePath);
 				}
 			}
@@ -1059,30 +1049,37 @@ package:
 		}
 		else /* if KQUEUE */ {
 
-			bool removeEvent(fd_t id) {
+			bool removeEvent(fd_t id, bool isFile) {
 				import core.sys.posix.unistd : close;
+
+				close(id);
+
+				if (isFile)
+					return true;
+
+
 				kevent_t _event;
-				
+
+
 				EV_SET(&_event, cast(int) id, EVFILT_VNODE, EV_DELETE, 0, 0, null);
 				
 				int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
-				
+
 				if (catchError!"kevent_unwatch"(err))
 					return false;
-				close(id);
 				return true;
 			}
 			try {
 				// foreach file in a wd folder, unset event and delete from m_dwFiles
 				foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles) {
 					if (file.folder == wd) {
-						if (!removeEvent(id))
+						if (!removeEvent(id, true))
 							return false;
 						m_dwFiles.remove(id);
 					}
 				}
 
-				if (!removeEvent(wd))
+				if (!removeEvent(wd, false))
 					return false;
 			} catch (Exception e) {
 				setInternalError!"dw.unwatch"(Status.ERROR, "Failed to process directory unwatch: " ~ e.msg);
