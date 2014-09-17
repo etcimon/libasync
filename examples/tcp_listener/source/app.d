@@ -6,7 +6,7 @@ TCPListener g_listener;
 bool g_closed;
 
 /// This example creates a listener on localhost:8081 which accepts connections, sends a reply, 
-/// reads all packet buffers and exits the process after a client has disconnected
+/// and exits the process after the first client has disconnected
 void main() {
 	g_evl = new EventLoop;
 	g_listener = new TCPListener("localhost", 8081);
@@ -19,30 +19,15 @@ class TCPListener {
 	AsyncTCPListener m_listener;
 	
 	this(string host, size_t port) {
-		TCPAcceptHandler accept_handler;
-		accept_handler.ctxt = cast(void*) this;
-		accept_handler.fct = (void* ctxt, AsyncTCPConnection conn) {
-			auto listener = cast(TCPListener)ctxt;
-			return listener.handler(conn);
-		};
-
 		m_listener = new AsyncTCPListener(g_evl);
-		
-		if (m_listener.host(host, port).run(accept_handler))
+		if (m_listener.host(host, port).run(&handler))
 			writeln("Listening to ", m_listener.local.toString());
 			
 	}
 
-	TCPEventHandler handler(AsyncTCPConnection conn) {
-		TCPEventHandler tcp_handler;
-		conn.setContext(new TCPConnection(conn));
-		tcp_handler.conn = conn;
-		tcp_handler.fct = (AsyncTCPConnection _conn, TCPEvent ev) {
-			auto tcpConn = _conn.getContext!TCPConnection();
-			return tcpConn.handler(ev);
-		};
-		
-		return tcp_handler;
+	void delegate(TCPEvent) handler(AsyncTCPConnection conn) {
+		auto tcpConn = new TCPConnection(conn);
+		return &tcpConn.handler;
 	}
 
 }
@@ -59,6 +44,7 @@ class TCPConnection {
 		onWrite();
 	}
 	
+	// Note: All buffers must be empty when returning from TCPEvent.READ
 	void onRead() {
 		static ubyte[] bin = new ubyte[4092];
 		while (true) {
@@ -75,6 +61,7 @@ class TCPConnection {
 	
 	void onWrite() {
 		m_conn.send(cast(ubyte[])"My Reply");
+		writeln("Sent: My Reply");
 	}
 	
 	void onClose() {

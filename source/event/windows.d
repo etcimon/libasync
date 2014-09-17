@@ -27,7 +27,7 @@ alias error_t = EWIN;
 
 package struct EventLoopImpl {
 	pragma(msg, "Using Windows IOCP for events");
-
+	
 private:
 	HashMap!(fd_t, TCPAcceptHandler)* m_connHandlers; // todo: Change this to an array
 	HashMap!(fd_t, TCPEventHandler)* m_tcpHandlers;
@@ -42,7 +42,7 @@ private:
 		fd_t fd;
 	}
 	TimerCache m_timer;
-
+	
 	EventLoop m_evLoop;
 	bool m_started;
 	wstring m_window;
@@ -52,7 +52,7 @@ private:
 	ushort m_instanceId;
 	StatusInfo m_status;
 	error_t m_error = EWIN.WSA_OK;
-
+	
 package:
 	@property bool started() const {
 		return m_started;
@@ -61,13 +61,13 @@ package:
 	in { assert(!m_started); }
 	body
 	{
-
+		
 		m_status = StatusInfo.init;
-
+		
 		import core.thread;
 		try Thread.getThis().priority = Thread.PRIORITY_MAX;
 		catch (Exception e) { assert(false, "Could not set thread priority"); }
-
+		
 		try {
 			m_connHandlers = FreeListObjectAlloc!(typeof(*m_connHandlers)).alloc(manualAllocator());
 			m_tcpHandlers = FreeListObjectAlloc!(typeof(*m_tcpHandlers)).alloc(manualAllocator());
@@ -121,22 +121,22 @@ package:
 		m_started = true;
 		return true;
 	}
-
+	
 	// todo: find where to call this
 	void exit() {
 		cast(void)PostThreadMessageW(m_threadId, WM_QUIT, 0, 0);
 	}
-
+	
 	@property StatusInfo status() const {
 		return m_status;
 	}
-
+	
 	@property string error() const {
 		string* ptr;
 		string pv = ((ptr = (m_error in EWSAMessages)) !is null) ? *ptr : string.init;
 		return pv;
 	}
-
+	
 	bool loop(Duration timeout = 0.seconds)
 	in { 
 		assert(Fiber.getThis() is null); 
@@ -156,15 +156,15 @@ package:
 			msTimeout,
 			QS_ALLEVENTS,								
 			MWMO_ALERTABLE | MWMO_INPUTAVAILABLE		// MWMO_ALERTABLE: Wakes up to execute overlapped hEvent (i/o completion)
-														// MWMO_INPUTAVAILABLE: Processes key/mouse input to avoid window ghosting
-		);
-
+			// MWMO_INPUTAVAILABLE: Processes key/mouse input to avoid window ghosting
+			);
+		
 		auto errors = 
-			[ tuple(WAIT_FAILED, Status.EVLOOP_FAILURE) ];	/* WAIT_FAILED: Failed to call MsgWait..() */
-
+		[ tuple(WAIT_FAILED, Status.EVLOOP_FAILURE) ];	/* WAIT_FAILED: Failed to call MsgWait..() */
+		
 		if (signal == WAIT_TIMEOUT)
 			return true;
-
+		
 		if (catchErrors!"MsgWaitForMultipleObjectsEx"(signal, errors)) {
 			log("Event Loop Exiting because of error");
 			return false; 
@@ -182,7 +182,7 @@ package:
 		}
 		return true;
 	}
-
+	
 	fd_t run(AsyncTCPListener ctxt, TCPAcceptHandler del)
 	{
 		m_status = StatusInfo.init;
@@ -190,17 +190,17 @@ package:
 		
 		if (catchSocketError!("run AsyncTCPConnection")(fd, INVALID_SOCKET))
 			return 0;
-
+		
 		if (!setOption(fd, TCPOption.REUSEADDR, true))
 			return 0;
-
+		
 		// todo: defer accept?
-
+		
 		if (ctxt.noDelay) {
 			if (!setOption(fd, TCPOption.NODELAY, true))
 				return 0;
 		}
-
+		
 		if (initTCPListener(fd, ctxt))
 		{
 			try {
@@ -216,7 +216,7 @@ package:
 		catch{}
 		return fd;
 	}
-
+	
 	fd_t run(AsyncTCPConnection ctxt, TCPEventHandler del)
 	in { 
 		assert(ctxt.socket == fd_t.init); 
@@ -225,11 +225,11 @@ package:
 	body {
 		m_status = StatusInfo.init;
 		fd_t fd = WSASocketW(cast(int)ctxt.peer.family, SOCK_STREAM, IPPROTO_TCP, null, 0, WSA_FLAG_OVERLAPPED);
-
+		
 		log("Starting connection at: " ~ fd.to!string);
 		if (catchSocketError!("run AsyncTCPConnection")(fd, INVALID_SOCKET))
 			return 0;
-
+		
 		try {
 			(*m_tcpHandlers)[fd] = del;
 		}
@@ -237,19 +237,19 @@ package:
 			setInternalError!"m_tcpHandlers assign"(Status.ERROR, e.msg);
 			return 0;
 		}
-
+		
 		debug {
 			TCPEventHandler evh;
 			try evh = m_tcpHandlers.get(fd);
 			catch (Exception e) { log("Failed"); return 0; }
 			assert( evh !is TCPEventHandler.init);
 		}
-
+		
 		if (ctxt.noDelay) {
 			if (!setOption(fd, TCPOption.NODELAY, true))
 				return 0;
 		}
-
+		
 		if (!initTCPConnection(fd, ctxt)) {
 			try {
 				log("Remove event handler for " ~ fd.to!string);
@@ -258,24 +258,24 @@ package:
 			catch (Exception e) {
 				setInternalError!"m_tcpHandlers remove"(Status.ERROR, e.msg);
 			}
-
+			
 			closeSocket(fd, false);
 			return 0;
 		}
-
-
+		
+		
 		try log("Client started FD#" ~ fd.to!string);
 		catch{}
 		return fd;
 	}
-
+	
 	fd_t run(AsyncUDPSocket ctxt, UDPHandler del) {
 		m_status = StatusInfo.init;
 		fd_t fd = WSASocketW(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP, null, 0, WSA_FLAG_OVERLAPPED);
 		
 		if (catchSocketError!("run AsyncUDPSocket")(fd, INVALID_SOCKET))
 			return 0;
-
+		
 		if (initUDPSocket(fd, ctxt))
 		{
 			try {
@@ -287,10 +287,10 @@ package:
 				return 0;
 			}
 		}
-
+		
 		try log("UDP Socket started FD#" ~ fd.to!string);
 		catch{}
-
+		
 		return fd;
 	}
 	
@@ -299,13 +299,13 @@ package:
 		try log("Signal subscribed to: " ~ m_hwnd.to!string); catch {}
 		return (cast(fd_t)m_hwnd);
 	}
-
+	
 	fd_t run(AsyncNotifier ctxt) {
 		m_status = StatusInfo.init;
 		//try log("Running signal " ~ (cast(AsyncNotifier)ctxt).to!string); catch {}
 		return cast(fd_t) m_hwnd;
 	}
-		
+	
 	fd_t run(AsyncTimer ctxt, TimerHandler del, Duration timeout) {
 		if (timeout < 0.seconds)
 			timeout = 0.seconds;
@@ -316,14 +316,14 @@ package:
 			timer_id = createIndex();
 		}
 		try log("Timer created: " ~ timer_id.to!string ~ " with timeout: " ~ timeout.total!"msecs".to!string ~ " msecs"); catch {}
-
+		
 		BOOL err;
 		try err = SetTimer(m_hwnd, timer_id, timeout.total!"msecs".to!uint, null);
 		catch(Exception e) {
 			setInternalError!"SetTimer"(Status.ERROR);
 			return 0;
 		}
-
+		
 		if (err == 0)
 		{
 			m_error = GetLastErrorSafe();
@@ -332,7 +332,7 @@ package:
 			log(m_status);
 			return 0;
 		}
-
+		
 		if (m_timer.fd == fd_t.init) 
 		{
 			m_timer.fd = timer_id;
@@ -348,27 +348,27 @@ package:
 				return 0;
 			}
 		}
-
-	
+		
+		
 		return timer_id;
 	}
-
+	
 	fd_t run(AsyncDirectoryWatcher ctxt, DWHandler del)
 	{
 		static fd_t ids;
 		auto fd = ++ids;
-
+		
 		try (*m_dwHandlers)[fd] = new DWHandlerInfo(del); 
 		catch (Exception e) {
 			setInternalError!"AsyncDirectoryWatcher.hashMap(run)"(Status.ERROR, "Could not add handler to hashmap: " ~ e.msg);
 		}
-
+		
 		return fd;
-
+		
 	}
-
+	
 	bool kill(AsyncDirectoryWatcher ctxt) {
-
+		
 		try {
 			Array!DWFolderWatcher toFree;
 			foreach (ref const uint k, const DWFolderWatcher v; *m_dwFolders) {
@@ -377,10 +377,10 @@ package:
 					(*m_dwFolders).remove(k);
 				}
 			}
-
+			
 			foreach (DWFolderWatcher obj; toFree[])
 				FreeListObjectAlloc!DWFolderWatcher.free(obj);
-
+			
 			// todo: close all the handlers...
 			(*m_dwHandlers).remove(ctxt.fd);
 		}
@@ -388,16 +388,16 @@ package:
 			setInternalError!"in kill(AsyncDirectoryWatcher)"(Status.ERROR, e.msg);
 			return false;
 		}
-
+		
 		return true;
 	}
-
+	
 	bool kill(AsyncTCPConnection ctxt, bool forced = false)
 	{
-
+		
 		m_status = StatusInfo.init;
 		fd_t fd = ctxt.socket;
-
+		
 		log("Killing socket "~ fd.to!string);
 		try { 
 			auto cb = (*m_tcpHandlers).get(ctxt.socket);
@@ -410,10 +410,10 @@ package:
 			setInternalError!"in m_tcpHandlers"(Status.ERROR, e.msg);
 			return false;
 		}
-
+		
 		return true;
 	}
-
+	
 	bool kill(AsyncTCPListener ctxt)
 	{
 		m_status = StatusInfo.init;
@@ -426,23 +426,23 @@ package:
 			setInternalError!"in m_connHandlers"(Status.ERROR, e.msg);
 			return false;
 		}
-
+		
 		return true;
 	}
-
+	
 	bool kill(shared AsyncSignal ctxt) {
 		return true;
 	}
-
+	
 	bool kill(AsyncNotifier ctxt) {
 		return true;
 	}
 	
 	bool kill(AsyncTimer ctxt) {
 		m_status = StatusInfo.init;
-
+		
 		log("Kill timer");
-
+		
 		BOOL err = KillTimer(m_hwnd, ctxt.id);
 		if (err == 0)
 		{
@@ -452,9 +452,9 @@ package:
 			log(m_status);
 			return false;
 		}
-
+		
 		destroyIndex(ctxt);
-
+		
 		if (m_timer.fd == ctxt.id) {
 			ctxt.id = 0;
 			m_timer = TimerCache.init;
@@ -467,19 +467,19 @@ package:
 				return 0;
 			}
 		}
-
-
+		
+		
 		return true;
 	}
 	
 	bool kill(AsyncUDPSocket ctxt) {
 		m_status = StatusInfo.init;
-
+		
 		fd_t fd = ctxt.socket;
 		INT err = closesocket(fd);
 		if (catchSocketError!"closesocket"(err)) 
 			return false;
-
+		
 		try m_udpHandlers.remove(ctxt.socket);
 		catch (Exception e) {
 			setInternalError!"HashMap remove"(Status.ERROR);
@@ -488,7 +488,7 @@ package:
 		
 		return true;
 	}
-
+	
 	bool setOption(T)(fd_t fd, TCPOption option, in T value) {
 		m_status = StatusInfo.init;
 		int err;
@@ -502,12 +502,12 @@ package:
 				
 				return true;
 			}
-
-
+			
+			
 			static HashMap!(fd_t, tcp_keepalive)* kcache;
-
+			
 			final switch (option) {
-
+				
 				case TCPOption.NODELAY: // true/false
 					static if (!is(T == bool))
 						assert(false, "NODELAY value type must be bool, not " ~ T.stringof);
@@ -555,10 +555,10 @@ package:
 					static if (!is(T == Duration))
 						assert(false, "KEEPALIVE_INTERVAL value type must be Duration, not " ~ T.stringof);
 					else {
-
+						
 						if (!kcache)
 							kcache = new HashMap!(fd_t, tcp_keepalive)(defaultAllocator());
-
+						
 						tcp_keepalive kaSettings = kcache.get(fd, tcp_keepalive.init);
 						tcp_keepalive sReturned;
 						DWORD dwBytes;
@@ -569,17 +569,17 @@ package:
 						kaSettings.keepaliveinterval = value.total!"msecs".to!ULONG;
 						(*kcache)[fd] = kaSettings;
 						err = WSAIoctl(fd, SIO_KEEPALIVE_VALS, &kaSettings, tcp_keepalive.sizeof, &sReturned, tcp_keepalive.sizeof, &dwBytes, null, null);
-
+						
 						return errorHandler();
 					}
 				case TCPOption.KEEPALIVE_DEFER: // wait ## seconds until start
 					static if (!is(T == Duration))
 						assert(false, "KEEPALIVE_DEFER value type must be Duration, not " ~ T.stringof);
 					else {
-
+						
 						if (!kcache)
 							kcache = new HashMap!(fd_t, tcp_keepalive)(defaultAllocator());
-
+						
 						tcp_keepalive kaSettings = kcache.get(fd, tcp_keepalive.init);
 						tcp_keepalive sReturned;
 						DWORD dwBytes;
@@ -588,10 +588,10 @@ package:
 							kaSettings.keepaliveinterval = 75*1000;
 						}
 						kaSettings.keepalivetime = value.total!"msecs".to!ULONG;
-
+						
 						(*kcache)[fd] = kaSettings;
 						err = WSAIoctl(fd, SIO_KEEPALIVE_VALS, &kaSettings, tcp_keepalive.sizeof, &sReturned, tcp_keepalive.sizeof, &dwBytes, null, null);
-
+						
 						return errorHandler();
 					}
 				case TCPOption.BUFFER_RECV: // bytes
@@ -670,24 +670,24 @@ package:
 						return errorHandler();
 					}
 			}
-
+			
 		}
 		catch (Exception e) {
 			return false;
 		}
-
+		
 	}
-
+	
 	uint read(in fd_t fd, ref ubyte[] data)
 	{
 		return 0;
 	}
-
+	
 	uint write(in fd_t fd, in ubyte[] data)
 	{
 		return 0;
 	}
-
+	
 	uint readChanges(in fd_t fd, ref DWChangeInfo[] dst) {
 		size_t i;
 		Array!DWChangeInfo* changes;
@@ -695,7 +695,7 @@ package:
 			changes = &((*m_dwHandlers).get(fd, DWHandlerInfo.init).buffer);
 			if ((*changes).empty)
 				return 0;
-
+			
 			import std.algorithm : min;
 			size_t cnt = min(dst.length, changes.length);
 			foreach (DWChangeInfo change; (*changes)[0 .. cnt]) {
@@ -710,22 +710,22 @@ package:
 		}
 		return cast(uint) i;
 	}
-
+	
 	uint watch(in fd_t fd, in WatchInfo info) {
 		m_status = StatusInfo.init;
 		uint wd;
 		try {
 			HANDLE hndl = CreateFileW(toUTFz!(const(wchar)*)(info.path.toNativeString()),
-			                     FILE_LIST_DIRECTORY,
-			                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-			                     null,
-			                     OPEN_EXISTING,
-			                     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
-			                     null);
+			                          FILE_LIST_DIRECTORY,
+			                          FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+			                          null,
+			                          OPEN_EXISTING,
+			                          FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
+			                          null);
 			wd = cast(uint) hndl;
 			DWHandlerInfo handler = (*m_dwHandlers).get(fd, DWHandlerInfo.init);
 			assert(handler !is null);
-
+			
 			(*m_dwFolders)[wd] = FreeListObjectAlloc!DWFolderWatcher.alloc(m_evLoop, fd, hndl, info.path, info.events, handler);
 		} catch (Exception e) {
 			setInternalError!"watch"(Status.ERROR, "Could not start watching directory: " ~ e.msg);
@@ -733,7 +733,7 @@ package:
 		}
 		return wd;
 	}
-
+	
 	bool unwatch(in fd_t fd, in uint wd) {
 		m_status = StatusInfo.init;
 		try {
@@ -748,9 +748,9 @@ package:
 		}
 		return true;
 	}
-
+	
 	bool notify(T)(in fd_t fd, in T payload) 
-	if (is(T == shared AsyncSignal) || is(T == AsyncNotifier))
+		if (is(T == shared AsyncSignal) || is(T == AsyncNotifier))
 	{
 		m_status = StatusInfo.init;
 		import std.conv;
@@ -769,16 +769,17 @@ package:
 			m_error = GetLastErrorSafe();
 			m_status.code = Status.ERROR;
 			m_status.text = "notify";
+			log(m_status);
 			return false;
 		}
 		return true;
 	}
-
+	
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
 		m_status = StatusInfo.init;
 		int ret = .recv(fd, cast(void*) data.ptr, cast(INT) data.length, 0);
-
+		
 		//try log("RECV " ~ ret.to!string ~ "B FD#" ~ fd.to!string); catch {}
 		if (catchSocketError!".recv"(ret)) { // ret == -1
 			if (m_error == WSAEWOULDBLOCK)
@@ -786,24 +787,24 @@ package:
 			return 0; // TODO: handle some errors more specifically
 		}
 		m_status.code = Status.OK;
-
+		
 		return cast(uint) ret;
 	}
-
+	
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		m_status = StatusInfo.init;
 		//try log("SEND " ~ data.length.to!string ~ "B FD#" ~ fd.to!string);
 		//catch{}
 		int ret = .send(fd, cast(const(void)*) data.ptr, cast(INT) data.length, 0);
-
+		
 		if (catchSocketError!"send"(ret)) // ret == -1
 			return 0; // TODO: handle some errors more specifically
-
+		
 		m_status.code = Status.ASYNC;
 		return cast(uint) ret;
 	}
-
+	
 	bool broadcast(in fd_t fd, bool b) {
 		int val = b?1:0;
 		socklen_t len = val.sizeof;
@@ -812,16 +813,16 @@ package:
 			return false;
 		
 		return true;
-
+		
 	}
-
+	
 	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
 		socklen_t addrLen;
 		addr.family = AF_INET;
 		int ret = .recvfrom(fd, cast(void*) data.ptr, cast(INT) data.length, 0, addr.sockAddr, &addrLen);
-
+		
 		if (addrLen > addr.sockAddrLen) {
 			addr.family = AF_INET6;
 		}
@@ -846,13 +847,13 @@ package:
 			ret = .sendto(fd, cast(void*) data.ptr, cast(INT) data.length, 0, addr.sockAddr, addr.sockAddrLen);
 		else
 			ret = .send(fd, cast(void*) data.ptr, cast(INT) data.length, 0);
-
+		
 		if (catchSocketError!".sendTo"(ret)) { // ret == -1
 			if (m_error == WSAEWOULDBLOCK)
 				m_status.code = Status.ASYNC;
 			return 0; // TODO: handle some errors more specifically
 		}
-
+		
 		m_status.code = Status.OK;
 		return cast(uint) ret;
 	}
@@ -872,23 +873,23 @@ package:
 			ret.family = AF_INET6;
 		return ret;
 	}
-
+	
 	void noDelay(in fd_t fd, bool b) {
 		m_status = StatusInfo.init;
 		setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &b, b.sizeof);
 	}
-
+	
 	private bool closeRemoteSocket(fd_t fd, bool forced) {
-
+		
 		INT err;
-
+		
 		try log("Shutdown FD#" ~ fd.to!string);
 		catch{}
 		if (forced)
 			err = shutdown(fd, SD_BOTH);
 		else
 			err = shutdown(fd, SD_SEND);
-
+		
 		try {
 			TCPEventHandler* evh = fd in *m_tcpHandlers;
 			if (evh && evh.conn.inbound) {
@@ -906,7 +907,7 @@ package:
 			return false;
 		return true;
 	}
-
+	
 	// for connected sockets
 	bool closeSocket(fd_t fd, bool connected, bool forced = false)
 	{
@@ -927,22 +928,22 @@ package:
 			// invokes m_tcpHandlers.remove()
 			return false;
 		}
-
+		
 		if (!connected || forced) {
 			// todo: flush the socket here?
-
+			
 			INT err = closesocket(fd);
 			if (catchSocketError!"closesocket"(err)) 
 				return false;
-
+			
 		}
 		return true;
 	}
-
+	
 	bool closeConnection(fd_t fd) {
 		return closeSocket(fd, true);
 	}
-
+	
 	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true)
 	in {
 		debug import event.internals.validator : validateIPv4, validateIPv6;
@@ -950,7 +951,7 @@ package:
 	}
 	body {
 		m_status = StatusInfo.init;
-
+		
 		NetworkAddress addr;
 		WSAPROTOCOL_INFOW hints;
 		import std.conv : to;
@@ -960,9 +961,9 @@ package:
 		else {
 			addr.family = AF_INET;
 		}
-
+		
 		INT addrlen = addr.sockAddrLen;
-
+		
 		LPWSTR str;
 		try {
 			str = cast(LPWSTR) toUTFz!(wchar*)(ipAddr);
@@ -970,7 +971,7 @@ package:
 			setInternalError!"toStringz"(Status.ERROR, e.msg);
 			return NetworkAddress.init;
 		}
-
+		
 		INT err = WSAStringToAddressW(str, cast(INT) addr.family, null, addr.sockAddr, &addrlen); 
 		if (port != 0) addr.port = port;
 		try log(addr.toString());
@@ -980,9 +981,9 @@ package:
 		else assert(addrlen == addr.sockAddrLen);
 		return addr;
 	}
-
+	
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true, in bool force = true)
-	/*in { 
+		/*in { 
 		debug import event.internals.validator : validateHost;
 		debug assert(validateHost(host), "Trying to connect to an invalid domain");
 	}
@@ -1020,13 +1021,13 @@ package:
 			setInternalError!"toUTFz"(Status.ERROR, e.msg);
 			return NetworkAddress.init;
 		}
-
+		
 		error_t err = cast(error_t) GetAddrInfoW(str, cast(LPCWSTR) wPort, &hints, &infos);
 		if (err != EWIN.WSA_OK) {
 			setInternalError!"GetAddrInfoW"(Status.ABORT, string.init, err);
 			return NetworkAddress.init;
 		}
-
+		
 		ubyte* pAddr = cast(ubyte*) infos.ai_addr;
 		ubyte* data = cast(ubyte*) addr.sockAddr;
 		data[0 .. infos.ai_addrlen] = pAddr[0 .. infos.ai_addrlen]; // perform bit copy
@@ -1035,7 +1036,7 @@ package:
 		catch (Exception e){}
 		return addr;
 	}
-
+	
 	void setInternalError(string TRACE)(in Status s, in string details = "", in error_t error = EWIN.ERROR_ACCESS_DENIED)
 	{
 		if (details.length > 0)
@@ -1094,24 +1095,24 @@ private:
 						cb = m_timer.cb;
 					else
 						cb = (*m_timerHandlers).get(cast(fd_t)msg.wParam);
- 
+					
 					cb.ctxt.rearmed = false;
-
+					
 					if (cb.ctxt.oneShot)
 						kill(cb.ctxt);
-
+					
 					cb();
-
+					
 					if (cb.ctxt.oneShot && cb.ctxt.rearmed)
 						run(cb.ctxt, cb, cb.ctxt.timeout);
-
+					
 				}
 				catch (Exception e) {
 					// An Error callback should never fail...
 					setInternalError!"del@TimerHandler"(Status.ERROR, e.msg);  
 					return false;
 				}
-
+				
 				break;
 			case WM_USER_EVENT:
 				ubyte[8] ptr;
@@ -1145,7 +1146,7 @@ private:
 		}
 		return true;
 	}
-
+	
 	bool onUDPEvent(WORD evt, WORD err, fd_t sock) {
 		m_status = StatusInfo.init;
 		try{
@@ -1196,12 +1197,12 @@ private:
 		}
 		return true;
 	}
-
+	
 	bool onTCPEvent(WORD evt, WORD err, fd_t sock) {
 		m_status = StatusInfo.init;
 		try{
 			if (m_tcpHandlers.get(sock) == TCPEventHandler.init && m_connHandlers.get(sock) == TCPAcceptHandler.init)
-			return false;
+				return false;
 		}	catch {}
 		if (sock == 0) { // highly unlikely...
 			setInternalError!"onTCPEvent"(Status.ERROR, "no socket defined");
@@ -1216,7 +1217,7 @@ private:
 			}
 			return false;
 		}
-
+		
 		TCPEventHandler cb;
 		switch(evt) {
 			default: break;
@@ -1257,11 +1258,11 @@ private:
 					setInternalError!"m_tcpHandlers.opIndexAssign"(Status.ABORT); 
 					return false; 
 				}
-
+				
 				int ok = WSAAsyncSelect(csock, m_hwnd, WM_TCP_SOCKET, FD_CONNECT|FD_READ|FD_WRITE|FD_CLOSE);
 				if ( catchSocketError!"WSAAsyncSelect"(ok) ) 
 					return false;
-
+				
 				break;
 			case FD_CONNECT:
 				try {
@@ -1294,7 +1295,7 @@ private:
 				break;
 			case FD_WRITE:
 				// todo: don't send the first write for consistency with epoll?
-
+				
 				try {
 					//import std.stdio;
 					log("WRITE FD#" ~ sock.to!string);
@@ -1338,14 +1339,14 @@ private:
 						setInternalError!"del@TCPEvent.CLOSE"(Status.ABORT); 
 					return false;
 				}
-
+				
 				closeSocket(sock, connected, true); // as necessary: invokes m_tcpHandlers.remove(fd), shutdown, closesocket
-
+				
 				break;
 		}
 		return true;
 	}
-
+	
 	bool initUDPSocket(fd_t fd, AsyncUDPSocket ctxt)
 	{
 		INT err;
@@ -1367,7 +1368,7 @@ private:
 		
 		return true;
 	}
-
+	
 	bool initTCPListener(fd_t fd, AsyncTCPListener ctxt)
 	in { 
 		assert(m_threadId == GetCurrentThreadId());
@@ -1390,10 +1391,10 @@ private:
 			closesocket(fd);
 			return false;
 		}
-
+		
 		return true;
 	}
-
+	
 	bool initTCPConnection(fd_t fd, AsyncTCPConnection ctxt)
 	in { 
 		assert(ctxt.peer !is NetworkAddress.init);
@@ -1403,13 +1404,13 @@ private:
 		INT err;
 		NetworkAddress bind_addr;
 		bind_addr.family = ctxt.peer.family;
-
+		
 		if (ctxt.peer.family == AF_INET) 
 			bind_addr.sockAddrInet4.sin_addr.s_addr = 0;
 		else if (ctxt.peer.family == AF_INET6) 
 			bind_addr.sockAddrInet6.sin6_addr.s6_addr[] = 0;
 		else assert(false, "Invalid NetworkAddress.family " ~ ctxt.peer.family.to!string);
-
+		
 		err = .bind(fd, bind_addr.sockAddr, bind_addr.sockAddrLen);
 		if ( catchSocketError!"bind"(err) ) 
 			return false;
@@ -1417,17 +1418,17 @@ private:
 		if ( catchSocketError!"WSAAsyncSelect"(err) ) 
 			return false;
 		err = .connect(fd, ctxt.peer.sockAddr, ctxt.peer.sockAddrLen);
-
+		
 		auto errors = [	tuple(cast(size_t) SOCKET_ERROR, EWIN.WSAEWOULDBLOCK, Status.ASYNC) ];		
-
+		
 		if (catchSocketErrorsEq!"connectEQ"(err, errors))
 			return true;
 		else if (catchSocketError!"connect"(err))
 			return false;
-
+		
 		return true;
 	}
-
+	
 	bool catchErrors(string TRACE, T)(T val, Tuple!(T, Status)[] cmp ...)
 		if (isIntegral!T)
 	{
@@ -1446,7 +1447,7 @@ private:
 		}
 		return false;
 	}
-
+	
 	bool catchSocketErrors(string TRACE, T)(T val, Tuple!(T, Status)[] cmp ...)
 		if (isIntegral!T)
 	{
@@ -1461,7 +1462,7 @@ private:
 		}
 		return false;
 	}
-
+	
 	bool catchSocketErrorsEq(string TRACE, T)(T val, Tuple!(T, error_t, Status)[] cmp ...)
 		if (isIntegral!T)
 	{
@@ -1480,7 +1481,7 @@ private:
 		}
 		return false;
 	}
-
+	
 	
 	bool catchSocketError(string TRACE, T)(T val, T cmp = SOCKET_ERROR)
 		if (isIntegral!T)
@@ -1494,7 +1495,7 @@ private:
 		}
 		return false;
 	}
-
+	
 	error_t WSAGetLastErrorSafe() {
 		try {
 			return cast(error_t) WSAGetLastError();
@@ -1502,7 +1503,7 @@ private:
 			return EWIN.ERROR_ACCESS_DENIED;
 		}
 	}
-
+	
 	error_t GetLastErrorSafe() {
 		try {
 			return cast(error_t) GetLastError();
@@ -1510,7 +1511,7 @@ private:
 			return EWIN.ERROR_ACCESS_DENIED;
 		}
 	}
-
+	
 	void log(StatusInfo val)
 	{
 		static if (LOG) {
@@ -1526,7 +1527,7 @@ private:
 			}
 		}
 	}
-
+	
 	void log(T)(T val)
 	{
 		static if (LOG) {
@@ -1538,7 +1539,7 @@ private:
 			}
 		}
 	}
-
+	
 }
 
 mixin template TCPConnectionMixins() {
@@ -1563,7 +1564,7 @@ mixin template TCPConnectionMixins() {
 private class DWHandlerInfo {
 	DWHandler handler;
 	Array!DWChangeInfo buffer;
-
+	
 	this(DWHandler cb) {
 		handler = cb;
 	}
@@ -1664,7 +1665,7 @@ package:
 			import std.stdio;
 			DWFolderWatcher watcher = cast(DWFolderWatcher)(overlapped.Pointer);
 			watcher.m_bytesTransferred = cbTransferred;
-			
+			try FreeListObjectAlloc!OVERLAPPED.free(overlapped); catch {}
 			if (dwError != 0)
 				try writeln("Diretory watcher error: "~EWSAMessages[dwError.to!EWIN]); catch{}
 			try watcher.triggerChanged();
@@ -1686,9 +1687,9 @@ public struct NetworkAddress {
 		sockaddr_in addr_ip4;
 		sockaddr_in6 addr_ip6;
 	}
-
+	
 	@property bool ipv6() const pure nothrow { return this.family == AF_INET6; }
-
+	
 	/** Family (AF_) of the socket address.
 		*/
 	@property ushort family() const pure nothrow { return addr.sa_family; }
@@ -1858,7 +1859,7 @@ nothrow extern(System) {
 		if (appl.onMessage(obj)) return 0;
 		else return DefWindowProcA(wnd, msg, wparam, lparam);
 	}
-
+	
 	BOOL PostMessageA(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
-
+	
 }

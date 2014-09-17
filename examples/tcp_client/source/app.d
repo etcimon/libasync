@@ -5,7 +5,7 @@ EventLoop g_evl;
 TCPConnection g_tcpConnection;
 bool g_closed;
 
-/// This example creates a connection localhost:8081 and sends a message before closing
+/// This example creates a connection localhost:8081, sends a message and waits for a reply before closing
 void main() {
 	g_evl = new EventLoop;
 	g_tcpConnection = new TCPConnection("localhost", 8081);
@@ -19,21 +19,16 @@ class TCPConnection {
 	
 	this(string host, size_t port)
 	{
-		TCPEventHandler tcp_handler;
 		m_conn = new AsyncTCPConnection(g_evl);
-		m_conn.setContext(this);
-
-		tcp_handler.conn = m_conn;
-		tcp_handler.fct = (AsyncTCPConnection conn, TCPEvent ev) {
-			TCPConnection This = conn.getContext!TCPConnection();
-			return This.handler(ev);
-		};
-
-		m_conn.host(host, port).run(tcp_handler);
+		
+		if (!m_conn.host(host, port).run(&handler)) {
+			writeln(m_conn.status);
+		}
 	}
 
 	void onConnect() {
 		onRead();
+		onWrite();
 	}
 	
 	void onRead() {
@@ -42,18 +37,20 @@ class TCPConnection {
 			uint len = m_conn.recv(bin);
 			
 			if (len > 0) {
-				auto res = cast(string)bin[0..len];
+				string res = cast(string)bin[0..len];
 				writeln("Received data: ", res);
+				m_conn.kill();
 			}
 			if (len < bin.length)
 				break;
 		}
+		
 
 	}
 	
 	void onWrite() {
 		m_conn.send(cast(ubyte[])"My Message");
-		m_conn.kill();
+		writeln("Sent: My Message");
 	}
 	
 	void onClose() {
@@ -62,7 +59,8 @@ class TCPConnection {
 	}
 	
 	void handler(TCPEvent ev) {
-		final switch (ev) {
+		
+		try final switch (ev) {
 			case TCPEvent.CONNECT:
 				onConnect();
 				break;
@@ -77,6 +75,8 @@ class TCPConnection {
 				break;
 			case TCPEvent.ERROR:
 				assert(false, m_conn.error());
+		} catch (Exception e) {
+			assert(false, e.toString());
 		}
 		return;
 	}

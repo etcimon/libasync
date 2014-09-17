@@ -7,10 +7,14 @@ import std.stdio;
 import std.container : Array;
 
 nothrow {
-	
+	struct Waiter {
+		Mutex mtx;
+		Condition cond;
+	}
+
 	__gshared Mutex gs_wlock;
-	__gshared Array!(void*) gs_waiters; // Array!(shared AsyncSignal)
-	__gshared Array!CommandInfo gs_jobs; // Array!(shared AsyncFile)
+	__gshared Array!Waiter gs_waiters;
+	__gshared Array!CommandInfo gs_jobs;
 	__gshared Condition gs_started;
 	
 	__gshared Mutex gs_tlock;
@@ -24,11 +28,16 @@ final class CmdProcessor : Thread
 nothrow:
 private:
 	EventLoop m_evLoop;
-	shared AsyncSignal m_waiter;
+	Waiter m_waiter;
 	bool m_stop;
 	
 	this() {
-		try super(&run);
+		try {
+			Mutex mtx = new Mutex;
+			Condition cond = new Condition(mtx);
+			m_waiter = Waiter(mtx, cond);
+			super(&run);
+		}
 		catch (Throwable e) {
 			import std.stdio;
 			try writeln("Failed to run thread ... ", e.toString()); catch {}
@@ -36,21 +45,16 @@ private:
 	}
 
 	void process(shared AsyncDNS ctxt) {
-		auto cmdInfo = ctxt.cmdInfo;
+		DNSCmdInfo cmdInfo = ctxt.cmdInfo();
 		auto mutex = cmdInfo.mtx;
 		DNSCmd cmd;
-		shared AsyncSignal waiter;
+		Waiter waiter;
 		string url;
 		cmd = cmdInfo.command; 
-		waiter = cmdInfo.waiter;
+		waiter = cast(Waiter)cmdInfo.waiter;
 		url = cmdInfo.url;
+		try assert(m_waiter == waiter, "File processor is handling a command from the wrong thread"); catch {}
 
-		import std.stdio;
-		
-		try writeln("Processing command: ", cmd); catch {}
-		assert(m_waiter is waiter, "File processor is handling a command from the wrong thread");
-		
-		
 		try final switch (cmd)
 		{
 			case DNSCmd.RESOLVEHOST:
@@ -68,11 +72,10 @@ private:
 			ctxt.status = status;
 		}
 		
-		cmdInfo.ready.trigger(m_evLoop);
-		
 		try {
+			cmdInfo.ready.trigger(m_evLoop);
 			synchronized(gs_wlock)
-				gs_waiters.insertBack(cast(void*) m_waiter);
+				gs_waiters.insertBack(m_waiter);
 			gs_started.notifyAll(); // saves some waiting on a new thread
 		}
 		catch (Throwable e) {
@@ -87,14 +90,11 @@ private:
 		auto cmdInfo = ctxt.cmdInfo;
 		auto mutex = cmdInfo.mtx;
 		FileCmd cmd;
-		shared AsyncSignal waiter;
+		Waiter waiter;
 		cmd = cmdInfo.command; 
-		waiter = cmdInfo.waiter;
+		waiter = cast(Waiter)cmdInfo.waiter;
 
-		import std.stdio;
-		
-		try writeln("Processing command: ", cmd); catch {}
-		assert(m_waiter is waiter, "File processor is handling a command from the wrong thread");
+		try assert(m_waiter == waiter, "File processor is handling a command from the wrong thread"); catch {}
 		
 		
 		try final switch (cmd)
@@ -131,14 +131,17 @@ private:
 			ctxt.status = status;
 		}
 
-		cmdInfo.ready.trigger(m_evLoop);
-		
+
 		try {
+
+			cmdInfo.ready.trigger(m_evLoop);
+
 			synchronized(gs_wlock)
-				gs_waiters.insertBack(cast(void*) m_waiter);
+				gs_waiters.insertBack(m_waiter);
 			gs_started.notifyAll(); // saves some waiting on a new thread
 		}
 		catch (Throwable e) {
+			try writeln("ERROR"); catch {}
 			auto status = StatusInfo.init;
 			status.code = Status.ERROR;
 			try status.text = e.toString(); catch {}
@@ -149,34 +152,38 @@ private:
 	void run()
 	{
 		m_evLoop = new EventLoop;
-		m_waiter = new shared AsyncSignal(m_evLoop);
-		m_waiter.run(&handler);
 		try {
 			synchronized(gs_wlock) {
-				gs_waiters.insertBack(cast(void*)m_waiter);
+				gs_waiters.insertBack(m_waiter);
 			}
 			
 			gs_started.notifyAll();
 		} catch {
 			try writeln("Error inserting in waiters"); catch {}
 		}
-		
-		while(m_evLoop.loop()){
-			try synchronized(this) if (m_stop) break; catch {
-				try writeln("Lock error?"); catch {}
-			}
-			continue;
-		}
+
+		process();
 	}
 	
 	synchronized void stop()
 	{
 		m_stop = true;
+		try (cast(Waiter)m_waiter).cond.notifyAll();
+		catch (Exception e) {
+			try writeln("Exception occured notifying foreign thread: ", e); catch {}
+		}
 	}
 	
-	private void handler() {
+	private void process() {
 		while(true) {
 			CommandInfo cmd;
+
+			try synchronized(m_waiter.mtx)
+				m_waiter.cond.wait();
+			catch {}
+
+			if (m_stop)
+				return;
 
 			try synchronized(gs_wlock) {
 				if (gs_jobs.empty) return;
@@ -198,8 +205,8 @@ private:
 
 }
 
-shared(AsyncSignal) popWaiter() {
-	shared AsyncSignal cmd_handler;
+Waiter popWaiter() {
+	Waiter cmd_handler;
 	bool start_thread;
 	do {
 		if (start_thread) {
@@ -215,8 +222,8 @@ shared(AsyncSignal) popWaiter() {
 				continue;
 			
 			try {
-				if (!cmd_handler && !gs_waiters.empty) {
-					cmd_handler = cast(shared AsyncSignal) gs_waiters.back;
+				if (!cmd_handler.mtx && !gs_waiters.empty) {
+					cmd_handler = gs_waiters.back;
 					gs_waiters.removeBack();
 				}
 				else if (core.atomic.atomicLoad(gs_threadCnt) < 16) {
@@ -225,9 +232,11 @@ shared(AsyncSignal) popWaiter() {
 				else {
 					Thread.sleep(50.usecs);
 				}
-			} catch {}
+			} catch (Exception e){
+				writeln("Exception in popWaiter: ", e);
+			}
 		}
-	} while(!cmd_handler);
+	} while(!cmd_handler.cond);
 	return cmd_handler;
 }
 

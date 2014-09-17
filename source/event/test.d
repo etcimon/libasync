@@ -10,40 +10,40 @@ shared AsyncDNS g_dns;
 
 
 unittest {
-	writeln("Unit test started");
-	g_cbCheck = new shared bool[17];
+	//writeln("Unit test started");
+	g_cbCheck = new shared bool[19];
 	g_lastTimer = Clock.currTime();
 	gs_start = Clock.currTime();
 	g_evl = new EventLoop;
-	writeln("Loading objects...");
+	//writeln("Loading objects...");
 	testDirectoryWatcher();
-//	testDNS();
-/*	testFile();
-	testOneshotTimer();
+	testDNS();
+	testFile();
+ 	testOneshotTimer();
 	testMultiTimer();
 	gs_tlsEvent = new shared AsyncSignal(g_evl);
 	testSignal();
 	testEvents();
 	testTCPListen("localhost", 8081);
 	testHTTPConnect();
-	writeln("Loaded. Running event loop...");
+	//writeln("Loaded. Running event loop...");
 
 	testTCPConnect("localhost", 8081);
-*/
+
 	while(Clock.currTime() - gs_start < 4.seconds) 
 		g_evl.loop(100.msecs);
 
-/*	int i;
+	int i;
 	foreach (bool b; g_cbCheck) {
 		assert(b, "Callback not triggered: g_cbCheck[" ~ i.to!string ~ "]");
 		i++;
 	}
-	writeln("Callback triggers were successful, run time: ", Clock.currTime - gs_start);
+	//writeln("Callback triggers were successful, run time: ", Clock.currTime - gs_start);
 
 	assert(g_cbTimerCnt >= 3, "Multitimer expired only " ~ g_cbTimerCnt.to!string ~ " times"); // MultiTimer expired 3-4 times
 
 	g_listnr.kill();
-*/
+
 	destroyAsyncThreads();
 }
 
@@ -52,8 +52,9 @@ void testDNS() {
 	g_dns = new shared AsyncDNS(g_evl);
 	g_swDns.start();
 	g_dns.handler((NetworkAddress addr) {
-		writeln("Resolved to: ", addr.toString(), ", it took: ", g_swDns.peek().msecs, " ms");
-	}).resolveHost("localhost");
+		g_cbCheck[17] = true;
+		//writeln("Resolved to: ", addr.toString(), ", it took: ", g_swDns.peek().usecs, " usecs");
+	}).resolveHost("127.0.0.1");
 }
 
 void testDirectoryWatcher() {
@@ -67,7 +68,8 @@ void testDirectoryWatcher() {
 		DWChangeInfo[1] change;
 		DWChangeInfo[] changeRef = change.ptr[0..1];
 		while(g_watcher.readChanges(changeRef)){
-			writeln(change);
+			g_cbCheck[18] = true;
+			//writeln(change);
 		}
 	});
 	g_watcher.watchDir(".");
@@ -75,12 +77,12 @@ void testDirectoryWatcher() {
 	tm.duration(1.seconds).run({
 		mkdir("./hey");
 		if (!g_watcher.watchDir("./hey/"))
-			writeln(g_watcher.status);
+			writeln("ERROR: ", g_watcher.status);
 		tm.duration(1.seconds).run({
-			writeln("Writing to ./hey/tmp.tmp");
+			// writeln("Writing to ./hey/tmp.tmp");
 			std.file.write("./hey/tmp.tmp", "some string");
 			tm.duration(100.msecs).run({
-				writeln("Removing ./hey/tmp.tmp");
+				// writeln("Removing ./hey/tmp.tmp");
 				remove("./hey/tmp.tmp");
 			});
 		});
@@ -98,13 +100,14 @@ void testFile() {
 	gs_file.onReady({
 		auto file = gs_file;
 		if (file.status.code == Status.ERROR)
-			writeln(file.status.text);
+			writeln("ERROR: ", file.status.text);
 		import std.algorithm;
-		if ((cast(string)file.buffer).startsWith("This is the file content."))
+		if ((cast(string)file.buffer).startsWith("This is the file content.")) {
 			g_cbCheck[7] = true;
+		}
 		else {
 			import std.stdio : writeln;
-			writeln(cast(string)file.buffer);
+			writeln("ERROR: ", cast(string)file.buffer);
 			assert(false);
 		}
 		import std.file : remove;
@@ -359,8 +362,8 @@ void testHTTPConnect() {
 						break;
 				}
 				g_cbCheck[15] = true;
-				writeln(conn.local.toString());
-				writeln(conn.peer.toString());
+				// writeln(conn.local.toString());
+				// writeln(conn.peer.toString());
 				conn.send(cast(ubyte[])"GET http://example.org/\nHost: example.org\nConnection: close");
 				break;
 			case TCPEvent.READ:

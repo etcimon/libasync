@@ -133,7 +133,7 @@ public:
 		m_error = false;
 		status = StatusInfo.init;
 		
-		shared AsyncSignal cmd_handler;
+		Waiter cmd_handler;
 
 		try {
 			cmd_handler = popWaiter();
@@ -148,11 +148,18 @@ public:
 			return false;
 			
 		}
-		assert(cmd_handler);
+		assert(cmd_handler.cond);
 		
-		m_cmdInfo.waiter = cmd_handler;
-		try synchronized(gs_wlock) gs_jobs.insert(CommandInfo(CmdInfoType.FILE, cast(void*) this)); catch {}
-		cmd_handler.trigger(cast(EventLoop)m_evLoop);
+		m_cmdInfo.waiter = cast(shared) cmd_handler;
+		try {
+			synchronized(gs_wlock)
+				gs_jobs.insert(CommandInfo(CmdInfoType.FILE, cast(void*) this));
+			cmd_handler.cond.notifyAll();
+		}
+		catch (Exception e){
+			import std.stdio;
+			try writeln("Exception occured notifying foreign thread: ", e); catch {}
+		}
 		return true;
 	}
 package:
@@ -205,7 +212,7 @@ package shared struct FileCmdInfo
 	FileCmd command;
 	Path filePath;
 	ubyte[] buffer;
-	AsyncSignal waiter;
+	Waiter waiter;
 	AsyncSignal ready;
 	AsyncFile file;
 	Mutex mtx; // for buffer writing

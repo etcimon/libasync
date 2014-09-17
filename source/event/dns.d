@@ -90,7 +90,7 @@ public:
 		m_error = false;
 		status = StatusInfo.init;
 		
-		shared AsyncSignal cmd_handler;
+		Waiter cmd_handler;
 		try {
 			cmd_handler = popWaiter();		
 		} catch (Throwable e) {
@@ -103,10 +103,18 @@ public:
 			return false;
 			
 		}
-		assert(cmd_handler);
-		m_cmdInfo.waiter = cmd_handler;
-		try synchronized(gs_wlock) gs_jobs.insert(CommandInfo(CmdInfoType.DNS, cast(void*) this)); catch {}
-		cmd_handler.trigger(cast(EventLoop)m_evLoop);
+		assert(cmd_handler.cond);
+		m_cmdInfo.waiter = cast(shared)cmd_handler;
+		try {
+			synchronized(gs_wlock) 
+				gs_jobs.insert(CommandInfo(CmdInfoType.DNS, cast(void*) this));
+
+			cmd_handler.cond.notifyAll(); 
+		}
+		catch (Exception e){
+			import std.stdio;
+			try writeln("Exception occured notifying foreign thread: ", e); catch {}
+		}
 		return true;
 	}
 
@@ -159,7 +167,7 @@ package shared struct DNSCmdInfo
 	bool ipv6;
 	string url;
 	NetworkAddress addr;
-	AsyncSignal waiter;
+	Waiter waiter;
 	AsyncSignal ready;
 	AsyncDNS dns;
 	Mutex mtx; // for NetworkAddress writing
