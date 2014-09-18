@@ -183,9 +183,10 @@ private:
 		} catch {
 			try writeln("Error inserting in waiters"); catch {}
 		}
-		try writeln("Started worker thread"); catch {}
+		try writeln("Started file access / dns resolver thread"); catch {}
 
 		process();
+		try writeln("Done event loop and all.."); catch {}
 	}
 	
 	synchronized void stop()
@@ -206,7 +207,7 @@ private:
 			catch {}
 
 			if (m_stop)
-				return;
+				break;
 
 			try synchronized(gs_wlock) {
 				if (gs_jobs.empty) return;
@@ -284,7 +285,6 @@ void destroyAsyncThreads() {
 	synchronized(gs_tlock) foreach (thr; gs_threads) {
 		CmdProcessor thread = cast(CmdProcessor)thr;
 		(cast(shared)thread).stop();
-		gs_threads.remove(thr);
 	}
 }
 
