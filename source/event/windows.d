@@ -309,7 +309,7 @@ package:
 	fd_t run(AsyncTimer ctxt, TimerHandler del, Duration timeout) {
 		if (timeout < 0.seconds)
 			timeout = 0.seconds;
-		timeout += 1.msecs(); // round up to the next 1 msecs to avoid premature timer events
+		timeout += 10.msecs(); // round up to the next 10 msecs to avoid premature timer events
 		m_status = StatusInfo.init;
 		fd_t timer_id = ctxt.id;
 		if (timer_id == fd_t.init) {
@@ -699,8 +699,8 @@ package:
 			import std.algorithm : min;
 			size_t cnt = min(dst.length, changes.length);
 			foreach (DWChangeInfo change; (*changes)[0 .. cnt]) {
+				try log("reading change: " ~ change.path.toNativeString()); catch {}
 				dst[i] = (*changes)[i];
-				i++;
 			}
 			changes.linearRemove((*changes)[0 .. cnt]);
 		}
@@ -708,6 +708,7 @@ package:
 			setInternalError!"watcher.readChanges"(Status.ERROR, "Could not read directory changes: " ~ e.msg);
 			return 0;
 		}
+		try log("Changes returning with: " ~ i.to!string); catch {}
 		return cast(uint) i;
 	}
 	
@@ -725,7 +726,7 @@ package:
 			wd = cast(uint) hndl;
 			DWHandlerInfo handler = (*m_dwHandlers).get(fd, DWHandlerInfo.init);
 			assert(handler !is null);
-			
+			log("Watching: " ~ info.path.toNativeString());
 			(*m_dwFolders)[wd] = FreeListObjectAlloc!DWFolderWatcher.alloc(m_evLoop, fd, hndl, info.path, info.events, handler);
 		} catch (Exception e) {
 			setInternalError!"watch"(Status.ERROR, "Could not start watching directory: " ~ e.msg);
@@ -1619,7 +1620,7 @@ package:
 				case 0x5: kind = DWFileEvent.MOVED_TO; break;
 			}
 			string filename = to!string(fni.FileName.ptr[0 .. fni.FileNameLength/2]); // FileNameLength = #bytes, FileName=WCHAR[]
-			m_handler.buffer.insert(DWChangeInfo(kind, Path(filename)));
+			m_handler.buffer.insert(DWChangeInfo(kind, m_path ~ Path(filename)));
 			if( fni.NextEntryOffset == 0 ) break;
 			result = result[fni.NextEntryOffset .. $];
 		} while(result.length > 0);
