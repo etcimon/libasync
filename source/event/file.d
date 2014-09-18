@@ -73,12 +73,12 @@ public:
 
 	/// Creates a new buffer with the specified length and uses it to read the
 	/// file data at the specified path starting at the specified offset byte.
-	bool read(Path file_path, size_t len = 128, ulong off = -1) {
-		return read(file_path, new shared ubyte[len], off);
+	bool read(Path file_path, size_t len = 128, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false) {
+		return read(file_path, new shared ubyte[len], off, create_if_not_exists, truncate_if_exists);
 	}
 
 	/// Reads the file into the buffer starting at offset byte position.
-	bool read(Path file_path, shared ubyte[] buffer, ulong off = -1) 
+	bool read(Path file_path, shared ubyte[] buffer, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false) 
 	in { 
 		assert(!m_busy, "File is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
@@ -87,6 +87,8 @@ public:
 		try synchronized(m_cmdInfo.mtx) { 
 			m_cmdInfo.buffer = buffer;
 			m_cmdInfo.command = FileCmd.READ;
+			m_cmdInfo.create_if_not_exists = create_if_not_exists;
+			m_cmdInfo.truncate_if_exists = truncate_if_exists;
 		} catch {}
 		filePath = file_path;
 		offset = off;
@@ -95,7 +97,7 @@ public:
 
 	/// Writes the data from the buffer into the file at the specified path starting at the
 	/// given offset byte position.
-	bool write(Path file_path, shared const(ubyte)[] buffer, ulong off = -1) 
+	bool write(Path file_path, shared const(ubyte)[] buffer, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false) 
 	in { 
 		assert(!m_busy, "File is busy or closed"); 
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
@@ -104,6 +106,8 @@ public:
 		try synchronized(m_cmdInfo.mtx) { 
 			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 			m_cmdInfo.command = FileCmd.WRITE;
+			m_cmdInfo.create_if_not_exists = create_if_not_exists;
+			m_cmdInfo.truncate_if_exists = truncate_if_exists;
 		} catch {}
 		filePath = file_path;
 		offset = off;
@@ -112,7 +116,7 @@ public:
 	}
 
 	/// Appends the data from the buffer into a file at the specified path.
-	bool append(Path file_path, shared ubyte[] buffer)
+	bool append(Path file_path, shared ubyte[] buffer, bool create_if_not_exists = true, bool truncate_if_exists = false)
 	in {
 		assert(!m_busy, "File is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
@@ -121,6 +125,8 @@ public:
 		try synchronized(m_cmdInfo.mtx) { 
 			m_cmdInfo.command = FileCmd.APPEND;
 			m_cmdInfo.buffer = buffer;
+			m_cmdInfo.create_if_not_exists = create_if_not_exists;
+			m_cmdInfo.truncate_if_exists = truncate_if_exists;
 		} catch {}
 		filePath = file_path;
 		return sendCommand();
@@ -216,6 +222,8 @@ package shared struct FileCmdInfo
 	AsyncSignal ready;
 	AsyncFile file;
 	Mutex mtx; // for buffer writing
+	bool truncate_if_exists;
+	bool create_if_not_exists;
 }
 
 package shared struct FileReadyHandler {

@@ -309,7 +309,7 @@ package:
 	fd_t run(AsyncTimer ctxt, TimerHandler del, Duration timeout) {
 		if (timeout < 0.seconds)
 			timeout = 0.seconds;
-		timeout += 35.msecs(); // round up to the next 35 msecs to avoid premature timer events
+		timeout += 1.msecs(); // round up to the next 1 msecs to avoid premature timer events
 		m_status = StatusInfo.init;
 		fd_t timer_id = ctxt.id;
 		if (timer_id == fd_t.init) {
