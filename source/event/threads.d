@@ -183,10 +183,8 @@ private:
 		} catch {
 			try writeln("Error inserting in waiters"); catch {}
 		}
-		try writeln("Started file access / dns resolver thread"); catch {}
 
 		process();
-		try writeln("Done event loop and all.."); catch {}
 	}
 	
 	synchronized void stop()
