@@ -932,7 +932,11 @@ package:
 					if (info.recursive) {
 						foreach (de; path.toNativeString().dirEntries(SpanMode.shallow))
 						{
-							Path de_path = path ~ Path(de.name);
+							Path de_path;
+							if (Path(de.name).absolute)
+								de_path = Path(de.name);
+							else
+								de_path = path ~ Path(de.name);
 							if (isDir(de_path.toNativeString()))
 								if (addFolderRecursive(de_path) == 0)
 									return 0;
