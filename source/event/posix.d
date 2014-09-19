@@ -911,7 +911,7 @@ package:
 		// note: info.wd is still 0 at this point.
 		m_status = StatusInfo.init;
 		import core.sys.linux.sys.inotify;
-		import std.file : dirEntries, isDir;
+		import std.file : dirEntries, isDir, SpanMode;
 
 		static if (EPOLL) {
 			// Manually handle recursivity... All events show up under the same inotify
@@ -930,7 +930,7 @@ package:
 					m_dwFolders[cast(size_t)ret] = DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd);
 
 					if (info.recursive) {
-						foreach (de; spath.dirEntries(SpanMode.shallow))
+						foreach (de; path.toNativeString().dirEntries(SpanMode.shallow))
 						{
 							Path de_path = path ~ Path(de.name);
 							if (isDir(de_path.toNativeString()))
@@ -1044,7 +1044,7 @@ package:
 				int err;
 				try {
 
-					void inotify_unwatch(uint wd) {
+					bool inotify_unwatch(uint wd) {
 						err = inotify_rm_watch(fd, wd);
 
 						if (catchError!"inotify_rm_watch"(err))
@@ -1059,7 +1059,7 @@ package:
 
 					if (fi.wi.recursive) {
 						// find all subdirectories by comparing the path
-						Array!wd remove_list;
+						Array!uint remove_list;
 						foreach (ref const DWFolderInfo folder; m_dwFolders) {
 							if (folder.fd == fi.fd && folder.wi.path.startsWith(fi.wi.path)) {
 
@@ -1075,7 +1075,7 @@ package:
 					}
 					return true;
 				} catch (Exception e) { 
-					try setInternalError!"inotify_rm_watch"(Status.ERROR, "Could not remove directory  " ~ path.toNativeString() ~ ": " ~ e.msg); catch {}
+					try setInternalError!"inotify_rm_watch"(Status.ERROR, "Could not unwatch directory: " ~ e.toString()); catch {}
 					return false; 
 				}
 			}
@@ -1083,8 +1083,8 @@ package:
 			DWFolderInfo info;
 
 			try {
-				info = m_dwFolders.get(wd, 0);
-				if (info == 0) {
+				info = m_dwFolders.get(wd, DWFolderInfo.init);
+				if (info == DWFolderInfo.init) {
 					setInternalError!"dwFolders.get(wd)"(Status.ERROR, "Could not find watch info for wd " ~ wd.to!string);
 					return false;
 				}
@@ -1186,16 +1186,17 @@ package:
 
 			/// starts (recursively) watching all newly created folders in a recursive entry,
 			/// creates events for additional files/folders founds, and unwatches all deleted folders
-			void recurseInto(DWFolderInfo fi, DWFileEvent ev) {
+			void recurseInto(DWFolderInfo fi, DWFileEvent ev, ref Array!DWChangeInfo changes) {
+				import std.file : dirEntries, SpanMode, isDir;
 				assert(fi.wi.recursive);
 				// get a list of stuff in the created/moved folder
 				if (ev == DWFileEvent.CREATED || ev == DWFileEvent.MOVED_TO) {
-					foreach (de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
-						Path entryPath = path ~ Path(de.name);
+					foreach (de; dirEntries(fi.wi.path.toNativeString(), SpanMode.shallow)) {
+						Path entryPath = fi.wi.path ~ Path(de.name);
 						
 						if (fi.wi.recursive && isDir(entryPath.toNativeString())) {
 							
-							watch(fd, WatchInfo(fi.wi.events, entryPath, fi.wi.recursive, wd) );
+							watch(fd, WatchInfo(fi.wi.events, entryPath, fi.wi.recursive, 0) );
 							void genEvents(Path subpath) {
 								foreach (de; dirEntries(subpath.toNativeString(), SpanMode.shallow)) {
 									auto subsubpath = subpath ~ Path(de.name);
@@ -1237,7 +1238,8 @@ package:
 						evtype = DWFileEvent.MOVED_TO;
 
 					import std.path : buildPath;
-					string name = cast(string) ev.name.ptr[0 .. cast(size_t) ev.len];
+					import core.stdc.string : strlen;
+					string name = cast(string) ev.name.ptr[0 .. cast(size_t) ev.name.ptr.strlen];
 					DWFolderInfo fi;
 					Path path;
 					try {
@@ -1252,11 +1254,22 @@ package:
 					dst[i] = DWChangeInfo(evtype, path);
 
 					if (fi.wi.recursive) {
-						try recurseInto(fi, evtype);
+
+						try {
+							Array!DWChangeInfo changes;
+							recurseInto(fi, evtype, changes);
+							foreach (change; changes[]) {
+								i++;
+								if (dst.length <= i)
+									dst ~= change;
+								else dst[i] = change;
+							}
+						}
 						catch (Exception e) {
 							setInternalError!"recurseInto"(Status.ERROR, "Failed to watch/unwatch contents of folder recursively."); 
 							return 0; 
 						}
+
 					}
 
 					p += inotify_event.sizeof + ev.len;
@@ -1392,7 +1405,7 @@ private:
 	/// In kqueue/vnode, all we get is the folder in which changes occured.
 	/// We have to figure out what changed exactly and put the results in a container 
 	/// for the readChanges call.
-	bool compareFolderFiles(DWFolderInfo fi, DWFileEvent events) {
+	static if (!EPOLL) bool compareFolderFiles(DWFolderInfo fi, DWFileEvent events) {
 		import std.file;
 		import std.path : buildPath;
 		try {
