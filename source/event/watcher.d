@@ -33,28 +33,6 @@ public:
 	uint readChanges(ref DWChangeInfo[] dst) {
 		uint cnt = m_evLoop.readChanges(m_fd, dst);
 
-		try foreach (DWChangeInfo change; dst) {
-
-			import std.file : isDir;
-			DWFileEvent ev;
-			if (change.event == DWFileEvent.CREATED && change.path.toNativeString().isDir) {
-				bool found;
-				foreach (dir; m_directories[]) {
-					if (dir.path == change.path.parentPath() && dir.recursive)
-					{
-						found = true;
-						ev = dir.events;
-						break;
-					}
-				}
-				if (found)
-					watchDir(change.path.toNativeString(), ev, true);
-			}
-		} catch (Exception e) {
-			import std.stdio;
-			try writeln("Error finding recursive directories to add..."); catch {}
-		}
-
 		debug {
 			if (cnt < dst.length)
 				m_dataRemaining = false;
@@ -98,10 +76,10 @@ public:
 			path = Path(path).toNativeString();
 			import std.stdio;
 			writeln("Watching ", path);
-			bool addWatch(string subPath) {
+			bool addWatch() {
 				WatchInfo info;
 				info.events = ev;
-				try info.path = Path(subPath); catch {}
+				try info.path = Path(path); catch {}
 				info.recursive = recursive;
 
 				writeln("Watch: ", info.path.toNativeString());
@@ -113,20 +91,15 @@ public:
 				return true;
 			}
 
-			if (!addWatch(path))
+			if (!addWatch())
 				return false;
 
-			if (recursive && path.isDir) {
-				foreach (de; path.dirEntries(SpanMode.shallow)) {
-					writeln("De: ", de.name);
-					if (de.isDir){
-						if (!addWatch(Path(de.name).toNativeString()))
-							return false;
-					}
-				}
-			} 
 		}
-		catch {}
+		catch (Exception e) {
+			import std.stdio;
+			try writeln("Could not add directory: " ~ e.toString()); catch {}
+			return false;
+		}
 
 		return true;
 	}

@@ -334,8 +334,8 @@ mixin template RunKill()
 			eobj.dwHandler = del;
 			
 			EventInfo* evinfo;
-			
-			assert (!ctxt.evInfo);
+
+			assert (!ctxt.evInfo, "Cannot run the same DirectoryWatcher again. This should have been caught earlier...");
 			
 			try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
 			catch (Exception e) {
@@ -366,7 +366,7 @@ mixin template RunKill()
 			
 			EventInfo* evinfo;
 
-			assert (!ctxt.evInfo);
+			assert (!ctxt.evInfo, "Cannot run the same DirectoryWatcher again. This should have been caught earlier...");
 
 			try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
 			catch (Exception e) {
@@ -375,12 +375,12 @@ mixin template RunKill()
 			ctxt.evInfo = evinfo;
 			try m_watchers[fd] = evinfo; catch {}
 
-			static if (!EPOLL) {
-				try m_changes[fd] = FreeListObjectAlloc!(Array!DWChangeInfo).alloc();
-				catch (Exception e) {
-					assert(false, "Failed to allocate resources: " ~ e.msg);
-				}
+			try m_changes[fd] = FreeListObjectAlloc!(Array!DWChangeInfo).alloc();
+			catch (Exception e) {
+				assert(false, "Failed to allocate resources: " ~ e.msg);
 			}
+
+			/// events will be created in watch()
 
 			return fd;
 
@@ -388,31 +388,52 @@ mixin template RunKill()
 	}
 	
 	bool kill(AsyncDirectoryWatcher ctxt) {
-		import core.sys.posix.unistd : close;
-		try 
-		{
-			static if (!EPOLL) {
-				foreach (ref const fd_t wd, ref const WatchInfo info; m_dwFolders)
-					unwatch(ctxt.fd, wd);
-				try m_watchers.remove(ctxt.fd); catch {}
 
-				static if (!EPOLL) {
-					try {
-						FreeListObjectAlloc!(Array!DWChangeInfo).free(m_changes[ctxt.fd]);
-						m_changes.remove(ctxt.fd);
-					}
-					catch (Exception e) {
-						assert(false, "Failed to free resources: " ~ e.msg);
-					}
+		static if (EPOLL) {
+			import core.sys.posix.unistd : close;
+			try 
+			{
+				Array!uint remove_list;
+				foreach (ref const uint wd, ref const DWFolderInfo info; m_dwFolders) {
+					if (info.fd == ctxt.fd)
+						remove_list.insertBack(wd);
 				}
+
+				foreach (wd; remove_list[]) {
+					unwatch(ctxt.fd, wd);
+				}
+
+				close(ctxt.fd);
+				FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+				ctxt.evInfo = null;
 			}
-			close(ctxt.fd);
-			FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
-			ctxt.evInfo = null;
-		}
-		catch (Exception e)
-		{ 
-			assert(false, "Error killing directory watcher"); 
+			catch (Exception e)
+			{ 
+				setInternalError!"Kill.DirectoryWatcher"(Status.ERROR, "Error killing directory watcher"); 
+				return false;
+			}
+
+		} else /* if KQUEUE */ {
+			try {
+				Array!fd_t remove_list;
+
+				foreach (ref const fd_t wd, ref const DWFolderInfo info; m_dwFolders) {
+					if (info.fd == ctxt.fd)
+						remove_list.insertBack(wd);
+				}
+				
+				foreach (wd; remove_list[]) {
+					unwatch(ctxt.fd, wd); // deletes all related m_dwFolders and m_dwFiles entries
+				}
+
+				FreeListObjectAlloc!(Array!DWChangeInfo).free(m_changes[ctxt.fd]);
+				m_watchers.remove(ctxt.fd);	
+				m_changes.remove(ctxt.fd);		
+			}
+			catch (Exception e) {
+				setInternalError!"Kill.DirectoryWatcher"(Status.ERROR, "Error killing directory watcher"); 
+				return false;
+			}
 		}
 		return true;
 	}

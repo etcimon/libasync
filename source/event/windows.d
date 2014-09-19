@@ -701,6 +701,7 @@ package:
 			foreach (DWChangeInfo change; (*changes)[0 .. cnt]) {
 				try log("reading change: " ~ change.path.toNativeString()); catch {}
 				dst[i] = (*changes)[i];
+				i++;
 			}
 			changes.linearRemove((*changes)[0 .. cnt]);
 		}
@@ -727,7 +728,7 @@ package:
 			DWHandlerInfo handler = (*m_dwHandlers).get(fd, DWHandlerInfo.init);
 			assert(handler !is null);
 			log("Watching: " ~ info.path.toNativeString());
-			(*m_dwFolders)[wd] = FreeListObjectAlloc!DWFolderWatcher.alloc(m_evLoop, fd, hndl, info.path, info.events, handler);
+			(*m_dwFolders)[wd] = FreeListObjectAlloc!DWFolderWatcher.alloc(m_evLoop, fd, hndl, info.path, info.events, handler, info.recursive);
 		} catch (Exception e) {
 			setInternalError!"watch"(Status.ERROR, "Could not start watching directory: " ~ e.msg);
 			return 0;
@@ -1575,6 +1576,7 @@ private final class DWFolderWatcher {
 private:
 	EventLoop m_evLoop;
 	fd_t m_fd;
+	bool m_recursive;
 	HANDLE m_handle;
 	Path m_path;
 	DWFileEvent m_events;
@@ -1583,9 +1585,11 @@ private:
 	ubyte[FILE_NOTIFY_INFORMATION.sizeof + MAX_PATH + 1] m_buffer;
 	DWORD m_bytesTransferred;
 public:
-	this(EventLoop evl, in fd_t fd, in HANDLE hndl, in Path path, in DWFileEvent events, DWHandlerInfo handler) {
+	this(EventLoop evl, in fd_t fd, in HANDLE hndl, in Path path, in DWFileEvent events, DWHandlerInfo handler, bool recursive) {
+		import std.stdio : writeln;
+		try writeln("Creating directory watcher for path: " ~ path.toNativeString()); catch {}
 		m_fd = fd;
-		import std.stdio;
+		m_recursive = recursive;
 		m_handle = cast(HANDLE)hndl;
 		m_evLoop = evl;
 		m_path = path;
@@ -1643,8 +1647,8 @@ package:
 		overlapped.Pointer = cast(void*)this;
 		import std.stdio;
 		DWORD bytesReturned;
-		BOOL success = ReadDirectoryChangesW(m_handle, m_buffer.ptr, m_buffer.length, FALSE, notifications, &bytesReturned, overlapped, &onIOCompleted);
-		
+		BOOL success = ReadDirectoryChangesW(m_handle, m_buffer.ptr, m_buffer.length, cast(BOOL) m_recursive, notifications, &bytesReturned, overlapped, &onIOCompleted);
+
 		import std.stdio;
 		if (!success)
 			writeln("Failed to call ReadDirectoryChangesW: " ~ EWSAMessages[GetLastError().to!EWIN]);
