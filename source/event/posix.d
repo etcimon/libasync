@@ -1070,13 +1070,13 @@ package:
 					if (!inotify_unwatch(fi.wi.wd))
 						return false;
 
-					foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles)
+					/*foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles)
 					{
 						if (file.folder == fi.wi.wd) {
 							inotify_unwatch(id);
 							m_dwFiles.remove(id);
 						}
-					}
+					}*/
 					m_dwFolders.remove(tuple(cast(fd_t)fd, fi.wi.wd)); 
 
 					if (fi.wi.recursive) {
@@ -1266,7 +1266,7 @@ package:
 
 					import std.path : buildPath;
 					import core.stdc.string : strlen;
-					string name = cast(string) ev.name.ptr[0 .. cast(size_t) ev.name.ptr.strlen];
+					string name = cast(string) ev.name.ptr[0 .. cast(size_t) ev.name.ptr.strlen].idup;
 					DWFolderInfo fi;
 					Path path;
 					try {
