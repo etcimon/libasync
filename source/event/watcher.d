@@ -17,7 +17,6 @@ final nothrow class AsyncDirectoryWatcher
 nothrow:
 private:
 	EventLoop m_evLoop;
-	DWHandler m_evh;
 	Array!WatchInfo m_directories;
 	fd_t m_fd;
 	debug bool m_dataRemaining;
@@ -48,22 +47,12 @@ public:
 		handler.ctxt = this;
 		
 		m_fd = m_evLoop.run(this, handler);
+		// import std.stdio;
+		// try writeln("Running with FD: ", m_fd); catch {}
 		
 		if (m_fd == fd_t.init)
 			return false;
 		return true;
-	}
-
-
-	private bool run(DWHandler del)
-	in { assert(m_fd == fd_t.init, "Cannot rebind"); }
-	body {
-		m_evh = del;
-		m_fd = m_evLoop.run(this, del);
-		if (m_fd == fd_t.init)
-			return false;
-		else
-			return true;
 	}
 
 	/// Starts watching for file events in the specified directory, 
@@ -74,16 +63,17 @@ public:
 		try 
 		{
 			path = Path(path).toNativeString();
-			import std.stdio;
-			writeln("Watching ", path);
+			//import std.stdio;
+			//writeln("Watching ", path);
 			bool addWatch() {
 				WatchInfo info;
 				info.events = ev;
 				try info.path = Path(path); catch {}
 				info.recursive = recursive;
 
-				writeln("Watch: ", info.path.toNativeString());
+				//writeln("Watch: ", info.path.toNativeString());
 				uint wd = m_evLoop.watch(m_fd, info);
+				//writeln("Watching WD: ", wd);
 				if (wd == 0 && m_evLoop.status.code != Status.OK)
 					return false;
 				info.wd = wd;

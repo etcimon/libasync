@@ -14,6 +14,7 @@ private:
 	EventLoop m_evLoop;
 	TimerHandler m_evh;
 	Duration m_timeout;
+	bool m_shooting = false;
 	bool m_rearmed = false;
 
 public:
@@ -59,6 +60,7 @@ public:
 	bool rearm(Duration dur)
 	in { 
 		assert(m_timeout > 0.seconds);
+		assert(m_shooting);
 		assert(m_oneshot, "Cannot rearm a periodic timer, it must fist be killed.");
 	}
 	body {
@@ -141,7 +143,9 @@ package struct TimerHandler {
 	void opCall() {
 		assert(ctxt !is null);
 		ctxt.m_rearmed = false;
+		ctxt.m_shooting = true;
 		del();
+		ctxt.m_shooting = false;
 		return;
 	}
 }

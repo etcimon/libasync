@@ -321,7 +321,7 @@ mixin template RunKill()
 			import core.sys.linux.sys.inotify;
 			enum IN_NONBLOCK = 0x800; // value in core.sys.linux.sys.inotify is incorrect
 			assert(ctxt.fd == fd_t.init);
-			int fd = inotify_init1(IN_NONBLOCK);	
+			int fd = inotify_init1(IN_NONBLOCK);
 			if (catchError!"inotify_init1"(fd)) {
 				return fd_t.init;
 			}
@@ -393,14 +393,14 @@ mixin template RunKill()
 			import core.sys.posix.unistd : close;
 			try 
 			{
-				Array!uint remove_list;
-				foreach (ref const uint wd, ref const DWFolderInfo info; m_dwFolders) {
+				Array!(Tuple!(fd_t, uint)) remove_list;
+				foreach (ref const Tuple!(fd_t, uint) key, ref const DWFolderInfo info; m_dwFolders) {
 					if (info.fd == ctxt.fd)
-						remove_list.insertBack(wd);
+						remove_list.insertBack(key);
 				}
 
-				foreach (wd; remove_list[]) {
-					unwatch(ctxt.fd, wd);
+				foreach (Tuple!(fd_t, uint) key; remove_list[]) {
+					unwatch(key[0] /*fd_t*/, key[1]);
 				}
 
 				close(ctxt.fd);

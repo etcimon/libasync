@@ -93,7 +93,7 @@ private:
 	static if (EPOLL){
 		fd_t m_epollfd;
 
-		HashMap!(uint, DWFolderInfo) m_dwFolders; // uint = inotify_add_watch(Path)
+		HashMap!(Tuple!(fd_t, uint), DWFolderInfo) m_dwFolders; // uint = inotify_add_watch(Path)
 	}
 	else /* if KQUEUE */
 	{
@@ -230,7 +230,7 @@ package:
 				assert(false, "Add SIGXCPU failed at kevent call");
 		}
 
-		log("init");
+		try log("init in thread " ~ Thread.getThis().name); catch {}
 
 		return true;
 	}
@@ -924,18 +924,17 @@ package:
 			nothrow fd_t addFolderRecursive(Path path) {
 				fd_t ret;
 				try {
-					ret = inotify_add_watch(fd, info.path.toNativeString().toStringz, events);
+					ret = inotify_add_watch(fd, path.toNativeString().toStringz, events);
 					if (catchError!"inotify_add_watch"(ret))
 						return fd_t.init;
-					m_dwFolders[cast(size_t)ret] = DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd);
-
+					try log("inotify_add_watch(" ~ DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd).to!string ~ ")"); catch {}
+					assert(m_dwFolders.get(tuple(cast(fd_t) fd, cast(uint)ret), DWFolderInfo.init) == DWFolderInfo.init, "Could not get a unique watch descriptor for path, got: " ~ m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)].to!string);
+					m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)] = DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd);
 					if (info.recursive) {
 						foreach (de; path.toNativeString().dirEntries(SpanMode.shallow))
 						{
-							Path de_path;
-							if (Path(de.name).absolute)
-								de_path = Path(de.name);
-							else
+							Path de_path = Path(de.name);
+							if (!de_path.absolute)
 								de_path = path ~ Path(de.name);
 							if (isDir(de_path.toNativeString()))
 								if (addFolderRecursive(de_path) == 0)
@@ -1059,7 +1058,7 @@ package:
 					if (!inotify_unwatch(fi.wi.wd))
 						return false;
 
-					m_dwFolders.remove(fi.wi.wd); 
+					m_dwFolders.remove(tuple(cast(fd_t)fd, fi.wi.wd)); 
 
 					if (fi.wi.recursive) {
 						// find all subdirectories by comparing the path
@@ -1074,7 +1073,7 @@ package:
 							}
 						}
 						foreach (rm_wd; remove_list[])
-							m_dwFolders.remove(rm_wd);
+							m_dwFolders.remove(tuple(cast(fd_t) fd, rm_wd));
 
 					}
 					return true;
@@ -1087,7 +1086,7 @@ package:
 			DWFolderInfo info;
 
 			try {
-				info = m_dwFolders.get(wd, DWFolderInfo.init);
+				info = m_dwFolders.get(tuple(cast(fd_t) fd, cast(uint) wd), DWFolderInfo.init);
 				if (info == DWFolderInfo.init) {
 					setInternalError!"dwFolders.get(wd)"(Status.ERROR, "Could not find watch info for wd " ~ wd.to!string);
 					return false;
@@ -1183,6 +1182,8 @@ package:
 			ssize_t nread = read(fd, buf.ptr, cast(uint)buf.sizeof);
 			if (catchError!"read()"(nread))
 			{
+				if (m_error == EWOULDBLOCK)
+					m_status.code = Status.ASYNC;
 				return 0;
 			}
 			assert(nread > 0);
@@ -1215,13 +1216,7 @@ package:
 						}
 					}
 				}
-				else if (ev == DWFileEvent.DELETED || ev == DWFileEvent.MOVED_FROM) {
-					// unwatch the stuff in the deleted/moved folder
-
-				}
 			}
-
-
 
 			size_t i;
 			do
@@ -1229,17 +1224,20 @@ package:
 				for (auto p = buf.ptr; p < buf.ptr + nread; )
 				{
 					inotify_event* ev = cast(inotify_event*)p;
+					p += inotify_event.sizeof + ev.len;
+
 					DWFileEvent evtype;
+					evtype = DWFileEvent.CREATED;
 					if (ev.mask & IN_CREATE)
 						evtype = DWFileEvent.CREATED;
-					else if (ev.mask & (IN_DELETE|IN_DELETE_SELF))
+					if (ev.mask & IN_DELETE || ev.mask & IN_DELETE_SELF)
 						evtype = DWFileEvent.DELETED;
-					else if (ev.mask & IN_MODIFY)
-						evtype = DWFileEvent.MODIFIED;
-					else if (ev.mask & (IN_MOVED_FROM | IN_MOVE_SELF))
+					if (ev.mask & IN_MOVED_FROM || ev.mask & IN_MOVE_SELF)
 						evtype = DWFileEvent.MOVED_FROM;
-					else if (ev.mask & (IN_MOVED_TO))
+					if (ev.mask & (IN_MOVED_TO))
 						evtype = DWFileEvent.MOVED_TO;
+					if (ev.mask & IN_MODIFY)
+						evtype = DWFileEvent.MODIFIED;
 
 					import std.path : buildPath;
 					import core.stdc.string : strlen;
@@ -1247,7 +1245,11 @@ package:
 					DWFolderInfo fi;
 					Path path;
 					try {
-						fi = m_dwFolders[cast(uint)ev.wd];
+						fi = m_dwFolders.get(tuple(cast(fd_t)fd,cast(uint)ev.wd), DWFolderInfo.init);
+						if (fi == DWFolderInfo.init) {
+							setInternalError!"m_dwFolders[ev.wd]"(Status.ERROR, "Could not retrieve wd index in folders: " ~ ev.wd.to!string); 
+							continue;
+						}
 						path = fi.wi.path ~ Path(name); 
 					}
 					catch (Exception e) { 
@@ -1256,12 +1258,18 @@ package:
 					}
 
 					dst[i] = DWChangeInfo(evtype, path);
-
-					if (fi.wi.recursive) {
+					import std.file : isDir;
+					bool is_dir;
+					try is_dir = isDir(path.toNativeString()); catch {}
+					if (fi.wi.recursive && is_dir) {
 
 						try {
 							Array!DWChangeInfo changes;
 							recurseInto(fi, evtype, changes);
+							// stop watching if the folder was deleted
+							if (evtype == DWFileEvent.DELETED || evtype == DWFileEvent.MOVED_FROM) {
+								unwatch(fi.fd, fi.wi.wd);
+							}
 							foreach (change; changes[]) {
 								i++;
 								if (dst.length <= i)
@@ -1276,16 +1284,22 @@ package:
 
 					}
 
-					p += inotify_event.sizeof + ev.len;
+
 					i++;
-					if (! (i < dst.length))
+					if (i >= dst.length)
 						return cast(uint) i;
 				}
+				static if (LOG) foreach (j; 0 .. i) {
+					try log("Change occured for FD#" ~ fd.to!string ~ ": " ~ dst[j].to!string); catch {}
+				}
 				nread = read(fd, buf.ptr, buf.sizeof);
-				if (catchError!"read()"(nread))
+				if (catchError!"read()"(nread)) {
+					if (m_error == EWOULDBLOCK)
+						m_status.code = Status.ASYNC;
 					return cast(uint) i;
-			} while (nread > 0 && i < dst.length);
-			 
+				}
+			} while (nread > 0);
+
 			return cast(uint) i;
 		}
 		else /* if KQUEUE */ {
