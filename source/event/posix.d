@@ -5,7 +5,7 @@ version (Posix):
 import event.types;
 import std.string : toStringz;
 import std.conv : to;
-import std.datetime : Duration, msecs, seconds;
+import std.datetime : Duration, msecs, seconds, SysTime;
 import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
 import std.container : Array;
@@ -60,6 +60,8 @@ static if (!EPOLL) {
 	private struct DWFileInfo {
 		fd_t folder;
 		Path path;
+		SysTime lastModified;
+		bool is_dir;
 	}
 }
 
@@ -356,8 +358,6 @@ package:
 					static if (!EPOLL) {
 						// in KQUEUE all events will be consumed here, because they must be pre-processed
 						try {
-							DWFolderInfo fi = m_dwFolders.get(cast(fd_t)_event.ident, DWFolderInfo.init);
-							assert(fi != DWFolderInfo.init, "The event loop returned an invalid folder file descriptor for the directory watcher");
 							DWFileEvent fevent;
 							if (_event.fflags & (NOTE_LINK | NOTE_WRITE))
 								fevent = DWFileEvent.CREATED;
@@ -372,15 +372,25 @@ package:
 							else
 								assert(false, "No event found?");
 
+							DWFolderInfo fi = m_dwFolders.get(cast(fd_t)_event.ident, DWFolderInfo.init);
+
+							if (fi == DWFolderInfo.init) {
+								DWFileInfo tmp = m_dwFiles.get(cast(fd_t)_event.ident, DWFileInfo.init);
+								assert(tmp != DWFileInfo.init, "The event loop returned an invalid file's file descriptor for the directory watcher");
+								fi = m_dwFolders.get(cast(fd_t) tmp.folder, DWFolderInfo.init);
+								assert(fi != DWFolderInfo.init, "The event loop returned an invalid folder file descriptor for the directory watcher");
+							}
+
 							// all recursive events will be generated here
 							if (!compareFolderFiles(fi, fevent)) {
-								// check for this error in the callback...
+								continue;
 							}
 
 						} catch (Exception e) {
 							log("Could not process DirectoryWatcher event: " ~ e.msg);
 							break;
 						}
+
 					}
 
 					try info.evObj.dwHandler();
@@ -984,31 +994,33 @@ package:
 					if (catchError!"open(watch)"(ret))
 						return 0;
 
-					if (info.recursive && is_dir) {
-
+					if (is_dir)
 						m_dwFolders[ret] = DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd);
 
-						kevent_t _event;
-						
-						EV_SET(&_event, ret, EVFILT_VNODE, EV_ADD | EV_CLEAR, events, 0, cast(void*) evinfo);
-						
-						int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
-						
-						if (catchError!"kevent_timer_add"(err))
-							return 0;
+					kevent_t _event;
+					
+					EV_SET(&_event, ret, EVFILT_VNODE, EV_ADD | EV_CLEAR, events, 0, cast(void*) evinfo);
+					
+					int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
+					
+					if (catchError!"kevent_timer_add"(err))
+						return 0;
 
-						foreach (de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
-							Path filePath = path ~ Path(de.name);
-							fd_t fwd;
-							if (isDir(filePath.toNativeString()))
-								fwd = addRecursive(filePath, true);
-							else {
-								fwd = addRecursive(filePath, false);
-								m_dwFiles[fwd] = DWFileInfo(ret, filePath);
-							}
-							
+
+					if (is_dir) foreach (de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
+						Path filePath = Path(de.name);
+						if (!filePath.absolute)
+							filePath = path ~ filePath;
+						fd_t fwd;
+						if (info.recursive && isDir(filePath.toNativeString()))
+							fwd = addRecursive(filePath, true);
+						else {
+							fwd = addRecursive(filePath, false); // gets an ID but will not scan
+							m_dwFiles[fwd] = DWFileInfo(ret, filePath, de.timeLastModified, isDir(filePath.toNativeString()));
 						}
+						
 					}
+
 				} catch (Exception e) { 
 					try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add directory " ~ path.toNativeString() ~ ": " ~ e.msg);  catch {}
 					return 0; 
@@ -1058,6 +1070,13 @@ package:
 					if (!inotify_unwatch(fi.wi.wd))
 						return false;
 
+					foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles)
+					{
+						if (file.folder == fi.wi.wd) {
+							inotify_unwatch(id);
+							m_dwFiles.remove(id);
+						}
+					}
 					m_dwFolders.remove(tuple(cast(fd_t)fd, fi.wi.wd)); 
 
 					if (fi.wi.recursive) {
@@ -1127,7 +1146,8 @@ package:
 					removeFolder(fi.wi.wd);
 
 					if (fi.wi.recursive) {
-						Array!wd remove_list; // keep track of unwatched folders recursively
+						import std.container.array;
+						Array!fd_t remove_list; // keep track of unwatched folders recursively
 						Array!fd_t remove_file_list;
 						// search for subfolders and unset them / close their wd
 						foreach (ref const DWFolderInfo folder; m_dwFolders) {
@@ -1436,18 +1456,34 @@ private:
 			auto wd = fi.wi.wd;
 			auto path = fi.wi.path;
 			auto fd = fi.fd;
-			Array!(DWChangeInfo)* changes = m_changes.get(wd, null);
+			Array!(DWChangeInfo)* changes = m_changes.get(fd, null);
 			assert(changes !is null, "Invalid wd, could not find changes array.");
-
+			//import std.stdio : writeln;
+			//writeln("Scanning path: ", path.toNativeString());
+			//writeln("m_dwFiles length: ", m_dwFiles.length);
+		
 			// get a list of the folder
 			foreach (de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
-				Path entryPath = path ~ Path(de.name);
+				//writeln(de.name);
+				Path entryPath = Path(de.name);
+				if (!entryPath.absolute)
+					entryPath = path ~ entryPath;
 				bool found;
+
 				// compare it to the cached list fixme: make it faster using another container?
 				foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles) {
 					if (file.folder != wd) continue; // this file isn't in the evented folder
 					if (file.path == entryPath) {
 						found = true;
+						log("File modified? " ~ entryPath.toNativeString() ~ " at: " ~ de.timeLastModified.to!string ~ " vs: " ~ file.lastModified.to!string);
+						// Check if it was modified
+						if (!isDir(entryPath.toNativeString()) && de.timeLastModified > file.lastModified)
+						{
+							DWFileInfo dwf = file;
+							dwf.lastModified = de.timeLastModified;
+							m_dwFiles[id] = dwf;
+							changes.insertBack(DWChangeInfo(DWFileEvent.MODIFIED, file.path));
+						}
 						break;
 					}
 				}
@@ -1463,7 +1499,9 @@ private:
 						watch(fd, WatchInfo(fi.wi.events, entryPath, fi.wi.recursive, wd) );
 						void genEvents(Path subpath) {
 							foreach (de; dirEntries(subpath.toNativeString(), SpanMode.shallow)) {
-								auto subsubpath = subpath ~ Path(de.name);
+								auto subsubpath = Path(de.name);
+								if (!subsubpath.absolute())
+									subsubpath = subpath ~ subsubpath;
 								changes.insertBack(DWChangeInfo(DWFileEvent.CREATED, subsubpath));
 								if (isDir(subsubpath.toNativeString()))
 									genEvents(subsubpath);
@@ -1473,10 +1511,33 @@ private:
 						genEvents(entryPath);
 
 					}
+					else {
+						EventInfo* evinfo;
+						try evinfo = m_watchers[fd]; catch { assert(false, "Could retrieve event info, directory watcher was not initialized properly, or you are operating on a closed directory watcher."); }
+
+						log("Adding path: " ~ path.toNativeString());
+
+						import core.sys.posix.fcntl : open;
+						fd_t fwd = open(entryPath.toNativeString().toStringz, O_EVTONLY);
+						if (catchError!"open(watch)"(fwd))
+							return 0;
+
+						kevent_t _event;
+						
+						EV_SET(&_event, fwd, EVFILT_VNODE, EV_ADD | EV_CLEAR, fi.wi.events, 0, cast(void*) evinfo);
+						
+						int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
+
+						if (catchError!"kevent_timer_add"(err))
+							return 0;
+
+						m_dwFiles[fwd] = DWFileInfo(fi.wi.wd, entryPath, de.timeLastModified, false);
+						
+					}
 				}
 
 				// This file/folder is now current. This avoids a deletion event.
-				currFiles.insert(tmp);
+				currFiles.insert(entryPath);
 			}
 
 			/// Now search for files/folders that were deleted in this directory (no recursivity needed). 
@@ -1492,21 +1553,34 @@ private:
 				}
 				// this file/folder was in the folder but it's not there anymore
 				if (!found) {
+					// writeln("Deleting: ", file.path.toNativeString());
+					kevent_t _event;
+					EV_SET(&_event, cast(int) id, EVFILT_VNODE, EV_DELETE, 0, 0, null);
+					int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
+					if (catchError!"kevent_unwatch"(err))
+						return false;
+					import core.sys.posix.unistd : close;
+					err = close(id);
+					if (catchError!"close(dwFile)"(err))
+						return false;
 					changes.insert(DWChangeInfo(DWFileEvent.DELETED, file.path));
 
-					if (isDir(file.path.toNativeString())) {
+					if (fi.wi.recursive && file.is_dir) 
 						unwatch(fd, id);
-					}
+
+					m_dwFiles.remove(id);
 
 				}
 				
 			}
+			if(changes.empty)
+				return false; // unhandled event, skip the callback
 
 			// fixme: how to implement moved_from moved_to for rename?
 		}
 		catch (Exception e) 
 		{
-			setInternalError!"compareFiles"(Status.ERROR, "Fatal error in file comparison: " ~ e.msg);
+			try setInternalError!"compareFiles"(Status.ERROR, "Fatal error in file comparison: " ~ e.toString()); catch {}
 			return false;
 		}
 		return true;

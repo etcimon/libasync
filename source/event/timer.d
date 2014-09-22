@@ -60,7 +60,7 @@ public:
 	bool rearm(Duration dur)
 	in { 
 		assert(m_timeout > 0.seconds);
-		assert(m_shooting);
+		// assert(m_shooting);
 		assert(m_oneshot, "Cannot rearm a periodic timer, it must fist be killed.");
 	}
 	body {
