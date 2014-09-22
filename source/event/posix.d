@@ -986,7 +986,7 @@ package:
 
 					if (info.recursive && is_dir) {
 
-						m_dwFolders[ret] = DWFolderInfo(WatchInfo(info.events, path, recursive, ret), fd);
+						m_dwFolders[ret] = DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd);
 
 						kevent_t _event;
 						
@@ -997,7 +997,7 @@ package:
 						if (catchError!"kevent_timer_add"(err))
 							return 0;
 
-						foreach (de; dirEntries(dirPath, SpanMode.shallow)) {
+						foreach (de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
 							Path filePath = path ~ Path(de.name);
 							fd_t fwd;
 							if (isDir(filePath.toNativeString()))
@@ -1104,18 +1104,23 @@ package:
 				import core.sys.posix.unistd : close;
 
 
-				void event_unset(uint id) {
+				bool event_unset(uint id) {
 					kevent_t _event;
 					EV_SET(&_event, cast(int) id, EVFILT_VNODE, EV_DELETE, 0, 0, null);
 					int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 					if (catchError!"kevent_unwatch"(err))
 						return false;
+					return true;
 				}
 
-				void removeFolder(uint wd) {
-					event_unset(fi.wi.wd);
+				bool removeFolder(uint wd) {
+					if (!event_unset(fi.wi.wd))
+						return false;
 					m_dwFolders.remove(fi.wi.wd);
-					close(fi.wi.wd);
+					int err = close(fi.wi.wd);
+					if (catchError!"close dir"(err))
+						return false;
+					return true;
 				}
 
 				try {
@@ -1127,7 +1132,7 @@ package:
 						// search for subfolders and unset them / close their wd
 						foreach (ref const DWFolderInfo folder; m_dwFolders) {
 							if (folder.fd == fi.fd && folder.wi.path.startsWith(fi.wi.path)) {
-								
+								 
 								if (!event_unset(folder.wi.wd))
 									return false;
 
