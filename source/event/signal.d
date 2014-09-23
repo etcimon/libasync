@@ -12,7 +12,7 @@ shared final class AsyncSignal
 	private void delegate() m_sgh;
 nothrow:
 private:
-	debug Thread m_owner;
+	Thread m_owner;
 	EventLoop m_evLoop;
 	fd_t m_evId;
 
@@ -24,10 +24,9 @@ public:
 	}
 	body {
 		m_evLoop = cast(shared) evl;
-		debug {
-			import core.thread : Thread;
-			m_owner = cast(shared) Thread.getThis();
-		}
+		import core.thread : Thread;
+		m_owner = cast(shared) Thread.getThis();
+
 		version(Posix) {
 			static if (EPOLL) {
 				import core.sys.posix.pthread : pthread_self;
@@ -88,13 +87,13 @@ public:
 		return (cast(EventLoop)m_evLoop).notify(m_evId, this);
 	}
 
+	/// Returns the Thread that created this object.
+	synchronized @property Thread owner() const {
+		return cast(Thread) m_owner;
+	}
 package:
 	
-	/*
-	 * Returns the Thread that created this object.
-	debug synchronized @property Thread owner() const {
-		return cast(Thread) m_owner;
-	}*/
+
 
 	version(Posix) mixin EvInfoMixinsShared;
 

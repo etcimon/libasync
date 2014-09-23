@@ -201,8 +201,8 @@ package:
 				if (g_evIdxAvailable.empty) {
 					g_evIdxAvailable.reserve(32);
 					
-					foreach (j; g_evIdxAvailable.length .. g_evIdxAvailable.capacity) {
-						g_evIdxAvailable.insertBack(j + 1);
+					foreach (k; g_evIdxAvailable.length .. g_evIdxAvailable.capacity) {
+						g_evIdxAvailable.insertBack(k + 1);
 					}
 					g_evIdxCapacity = 32;
 					g_idxCapacity = 32;
