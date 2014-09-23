@@ -1,9 +1,9 @@
-﻿[![Build Status](https://travis-ci.org/etcimon/event.d.png)](https://travis-ci.org/etcimon/event.d)
+﻿[![Build Status](https://travis-ci.org/etcimon/libasync.png)](https://travis-ci.org/etcimon/libasync)
 
 About
 -----
 
-The event.d asynchroneous library (beta) is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchroneous tasks. It embeds naturally to D projects (version >= 2.066.0), compiles statically with your project and has an open source license (MIT).
+The libasync asynchroneous library (beta) is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchroneous tasks. It embeds naturally to D projects (version >= 2.066.0), compiles statically with your project and has an open source license (MIT).
 
 A fully functional, tested vibe.d driver is available on [this fork](https://github.com/etcimon/vibe.d/tree/native-events).
 
@@ -48,7 +48,7 @@ Installation Instructions
 - Download and install dub 0.9.22-rc.2+ from [code.dlang.org](http://code.dlang.org/download)
 - Use Git to clone this repository
 - Run `dub test` to test the library on your operating system (submit any issue with a log report by uncommenting `enum LOG = true` in `types.d`)
-- Add the library to your project by including it in the dependencies, using `import event.d`
+- Add the library to your project by including it in the dependencies, using `import async.all`
 - The recommended editor is MonoDevelop with [Mono-D](http://wiki.dlang.org/Mono-D) due to its Mixin Template resolver (must be enabled manually), with auto-completion and comment-resolved summary tooltips.
 
 Tutorial
@@ -56,6 +56,6 @@ Tutorial
 
 Only 2 examples are available at the moment, they are located in `examples/tcp_listener` and `examples/tcp_client`. They must be tested by starting the server before the client.
 
-All current usage examples are available in `source/test.d`. 
+All current usage examples are available in `source/async/test.d`. 
 
 Documentation has been written thoughout the code.
