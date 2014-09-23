@@ -1,7 +1,7 @@
-﻿module event.timer;
+﻿module async.timer;
 
-import event.types;
-import event.events;
+import async.types;
+import async.events;
 import std.datetime;
 
 final class AsyncTimer

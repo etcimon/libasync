@@ -1,7 +1,7 @@
-﻿module event.notifier;
+﻿module async.notifier;
 
-import event.types;
-import event.events;
+import async.types;
+import async.events;
 
 /// Thread-local event dispatcher/handler, used to wake up the associated 
 /// callback in a new call stack originating from the event loop.

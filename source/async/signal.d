@@ -1,8 +1,8 @@
-module event.signal;
+module async.signal;
 import std.traits;
 
-import event.types;
-import event.events;
+import async.types;
+import async.events;
 import core.thread;
 
 /// Enqueues a signal in the event loop of the AsyncSignal owner's thread, 

@@ -1,7 +1,7 @@
-module event.tcp;
+module async.tcp;
 import std.traits : isPointer;
-import event.types;
-import event.events;
+import async.types;
+import async.events;
 import std.typecons : Tuple;
 
 /// Wraps a TCP stream between 2 network adapters, using a custom handler to

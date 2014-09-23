@@ -1,8 +1,8 @@
-module event.posix;
+module async.posix;
 
 version (Posix):
 
-import event.types;
+import async.types;
 import std.string : toStringz;
 import std.conv : to;
 import std.datetime : Duration, msecs, seconds, SysTime;
@@ -11,17 +11,17 @@ import std.typecons : Tuple, tuple;
 import std.container : Array;
 
 import core.stdc.errno;
-import event.events;
-import event.internals.memory : FreeListObjectAlloc;
-import event.internals.hashmap;
+import async.events;
+import async.internals.memory : FreeListObjectAlloc;
+import async.internals.hashmap;
 import core.sys.posix.signal;
-import event.posix2;
+import async.posix2;
 enum SOCKET_ERROR = -1;
 alias fd_t = int;
 
 
 version(linux) {
-	import event.internals.epoll;
+	import async.internals.epoll;
 	const EPOLL = true;
 	extern(C) nothrow @nogc {
 		int __libc_current_sigrtmin();
@@ -48,11 +48,11 @@ version(linux) {
 	}
 }
 version(OSX) {
-	import event.internals.kqueue;
+	import async.internals.kqueue;
 	const EPOLL = false;
 }
 version(FreeBSD) {
-	import event.internals.kqueue;
+	import async.internals.kqueue;
 	const EPOLL = false;
 }
 
@@ -269,7 +269,7 @@ package:
 	//in { assert(Fiber.getThis() is null); }
 	{
 
-		import event.internals.memory;
+		import async.internals.memory;
 		bool success = true;
 		int num;
 
@@ -543,7 +543,7 @@ package:
 		m_status = StatusInfo.init;
 		import std.traits : isIntegral;
 
-		import event.internals.socket_compat : socklen_t, setsockopt, SO_REUSEADDR, SO_KEEPALIVE, SO_RCVBUF, SO_SNDBUF, SO_RCVTIMEO, SO_SNDTIMEO, SO_LINGER, SOL_SOCKET, IPPROTO_TCP, TCP_NODELAY, TCP_QUICKACK, TCP_KEEPCNT, TCP_KEEPINTVL, TCP_KEEPIDLE, TCP_CONGESTION, TCP_CORK, TCP_DEFER_ACCEPT;
+		import async.internals.socket_compat : socklen_t, setsockopt, SO_REUSEADDR, SO_KEEPALIVE, SO_RCVBUF, SO_SNDBUF, SO_RCVTIMEO, SO_SNDTIMEO, SO_LINGER, SOL_SOCKET, IPPROTO_TCP, TCP_NODELAY, TCP_QUICKACK, TCP_KEEPCNT, TCP_KEEPINTVL, TCP_KEEPIDLE, TCP_CONGESTION, TCP_CORK, TCP_DEFER_ACCEPT;
 		int err;
 		nothrow bool errorHandler() {
 			if (catchError!"setOption:"(err)) {
@@ -575,7 +575,7 @@ package:
 						return false;
 					// BSD systems have SO_REUSEPORT
 					static if (!EPOLL) {
-						import event.internals.socket_compat : SO_REUSEPORT;
+						import async.internals.socket_compat : SO_REUSEPORT;
 						err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
 					}
 					return errorHandler();
@@ -752,7 +752,7 @@ package:
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
 		m_status = StatusInfo.init;
-		import event.internals.socket_compat : recv;
+		import async.internals.socket_compat : recv;
 		int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
 		
 		static if (LOG) log(".recv " ~ ret.to!string ~ " bytes of " ~ data.length.to!string ~ " @ " ~ fd.to!string);
@@ -771,7 +771,7 @@ package:
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		m_status = StatusInfo.init;
-		import event.internals.socket_compat : send;
+		import async.internals.socket_compat : send;
 		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
 
 		if (catchError!"send"(ret)) { // ret == -1
@@ -786,7 +786,7 @@ package:
 
 	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
 	{
-		import event.internals.socket_compat : recvfrom, AF_INET6, AF_INET, socklen_t;
+		import async.internals.socket_compat : recvfrom, AF_INET6, AF_INET, socklen_t;
 
 		m_status = StatusInfo.init;
 
@@ -812,7 +812,7 @@ package:
 	
 	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
 	{
-		import event.internals.socket_compat : sendto;
+		import async.internals.socket_compat : sendto;
 
 		m_status = StatusInfo.init;
 
@@ -832,7 +832,7 @@ package:
 
 	NetworkAddress localAddr(in fd_t fd, bool ipv6) {
 		NetworkAddress ret;
-		import event.internals.socket_compat : getsockname, AF_INET, AF_INET6, socklen_t, sockaddr;
+		import async.internals.socket_compat : getsockname, AF_INET, AF_INET6, socklen_t, sockaddr;
 
 		if (ipv6)
 			ret.family = AF_INET6;
@@ -970,7 +970,7 @@ package:
 			/// Manually handle recursivity & file tracking. Each folder is an event! 
 			/// E.g. file creation shows up as a folder change, we must be prepared to seek the file.
 			import core.sys.posix.fcntl;
-			import event.internals.kqueue;
+			import async.internals.kqueue;
 
 			uint events;
 			if (info.events & DWFileEvent.CREATED)
@@ -1355,7 +1355,7 @@ package:
 	bool broadcast(in fd_t fd, bool b) {
 		m_status = StatusInfo.init;
 
-		import event.internals.socket_compat : socklen_t, setsockopt, SO_BROADCAST, SOL_SOCKET;
+		import async.internals.socket_compat : socklen_t, setsockopt, SO_BROADCAST, SOL_SOCKET;
 
 		int val = b?1:0;
 		socklen_t len = val.sizeof;
@@ -1370,7 +1370,7 @@ package:
 		
 		int err;
 		log("shutdown");
-		import event.internals.socket_compat : shutdown, SHUT_WR, SHUT_RDWR;
+		import async.internals.socket_compat : shutdown, SHUT_WR, SHUT_RDWR;
 		if (forced) 
 			err = shutdown(fd, SHUT_RDWR);
 		else
@@ -1414,11 +1414,11 @@ package:
 	
 	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true) 
 	in {
-		debug import event.internals.validator : validateIPv4, validateIPv6;
+		debug import async.internals.validator : validateIPv4, validateIPv6;
 		debug assert(validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
 	}
 	body {
-		import event.internals.socket_compat : addrinfo, AI_NUMERICHOST, AI_NUMERICSERV;
+		import async.internals.socket_compat : addrinfo, AI_NUMERICHOST, AI_NUMERICSERV;
 		addrinfo hints;
 		hints.ai_flags |= AI_NUMERICHOST | AI_NUMERICSERV; // Specific to an IP resolver!
 
@@ -1428,11 +1428,11 @@ package:
 
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true)
 	/*in { 
-		debug import event.internals.validator : validateHost;
+		debug import async.internals.validator : validateHost;
 		debug assert(validateHost(host), "Trying to connect to an invalid domain"); 
 	}
 	body */{
-		import event.internals.socket_compat : addrinfo;
+		import async.internals.socket_compat : addrinfo;
 		addrinfo hints;
 		return getAddressInfo(host, port, ipv6, tcp, hints);
 	}
@@ -1605,7 +1605,7 @@ private:
 	
 	bool onTCPAccept(fd_t fd, TCPAcceptHandler del, int events)
 	{
-		import event.internals.socket_compat : AF_INET, AF_INET6, socklen_t, accept;
+		import async.internals.socket_compat : AF_INET, AF_INET6, socklen_t, accept;
 
 		static if (EPOLL) 
 		{
@@ -1707,7 +1707,7 @@ private:
 		if (error) { // socket failure
 			m_status.text = "listen socket error";
 			int err;
-			import event.internals.socket_compat : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
+			import async.internals.socket_compat : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
 			socklen_t len = int.sizeof;
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
 			m_error = cast(error_t) err;
@@ -1766,7 +1766,7 @@ private:
 		if (error) // socket failure
 		{ 
 
-			import event.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
+			import async.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			import core.sys.posix.unistd : close;
 			int err;
 			socklen_t errlen = err.sizeof;
@@ -1804,7 +1804,7 @@ private:
 
 		if (error) 
 		{
-			import event.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
+			import async.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			int err;
 			socklen_t errlen = err.sizeof;
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen);
@@ -1889,7 +1889,7 @@ private:
 	
 	bool initUDPSocket(fd_t fd, AsyncUDPSocket ctxt, UDPHandler del)
 	{
-		import event.internals.socket_compat : bind;
+		import async.internals.socket_compat : bind;
 		import core.sys.posix.unistd;
 
 		fd_t err;
@@ -1952,7 +1952,7 @@ private:
 		assert(ctxt.local !is NetworkAddress.init);
 	}
 	body {
-		import event.internals.socket_compat : bind, listen, SOMAXCONN;
+		import async.internals.socket_compat : bind, listen, SOMAXCONN;
 		fd_t err;
 
 		/// Create callback object
@@ -2027,7 +2027,7 @@ private:
 		fd_t err;
 
 		/// Create callback object
-		import event.internals.socket_compat : connect;
+		import async.internals.socket_compat : connect;
 		EventObject eo;
 		eo.tcpEvHandler = del;
 		EventInfo* ev;
@@ -2121,7 +2121,7 @@ private:
 	{
 		m_status.text = TRACE;
 		int err;
-		import event.internals.socket_compat : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
+		import async.internals.socket_compat : getsockopt, socklen_t, SOL_SOCKET, SO_ERROR;
 		socklen_t len = int.sizeof;
 		getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
 		m_error = cast(error_t) err;
@@ -2229,7 +2229,7 @@ private:
 	NetworkAddress getAddressInfo(addrinfo)(in string host, ushort port, bool ipv6, bool tcp, ref addrinfo hints) 
 	{
 		m_status = StatusInfo.init;
-		import event.internals.socket_compat : AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, IPPROTO_TCP, IPPROTO_UDP, freeaddrinfo, getaddrinfo;
+		import async.internals.socket_compat : AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, IPPROTO_TCP, IPPROTO_UDP, freeaddrinfo, getaddrinfo;
 
 		NetworkAddress addr;
 		addrinfo* infos;
@@ -2634,7 +2634,7 @@ struct EventInfo {
 		Represents a network/socket address. (taken from vibe.core.net)
 */
 public struct NetworkAddress {
-	import event.internals.socket_compat : sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6;
+	import async.internals.socket_compat : sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6;
 	private union {
 		sockaddr addr;
 		sockaddr_in addr_ip4;

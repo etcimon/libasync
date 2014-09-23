@@ -1,8 +1,8 @@
-﻿module event.threads;
+﻿module async.threads;
 import core.sync.mutex;
 import core.sync.condition;
 import core.thread;
-import event.events;
+import async.events;
 import std.stdio;
 import std.container : Array;
 

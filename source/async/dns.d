@@ -1,12 +1,12 @@
-﻿module event.dns;
+﻿module async.dns;
 
-import event.types;
-import event.events;
+import async.types;
+import async.events;
 import core.thread : Thread, ThreadGroup;
 import core.sync.mutex;
 import core.sync.condition;
 import core.atomic;
-import event.threads;
+import async.threads;
 
 enum DNSCmd {
 	RESOLVEHOST,

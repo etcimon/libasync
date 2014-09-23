@@ -1,12 +1,12 @@
 {
-	"name": "event-d",
-	"description": "A cross-platform D event loop.",
+	"name": "libasync",
+	"description": "A cross-platform event loop library of asynchroneous objects.",
 	"license": "MIT",
 	"authors": ["Etienne Cimon", "Sönke Ludwig"],
 	"targetType": "staticLibrary",
 	"targetPath": "build",
 	"workingDirectory": "build",
-	"sourcePaths": ["source/event"],
+	"sourcePaths": ["source/async"],
 	"libs-windows": ["ws2_32", "advapi32", "user32"],
 	"sourceFiles-windows": ["ws2_32_ex.lib"],
 	"libs-linux": ["rt"]

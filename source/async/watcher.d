@@ -1,9 +1,9 @@
-﻿module event.watcher;
+﻿module async.watcher;
 
-import event.types;
+import async.types;
 
-import event.events;
-public import event.internals.path;
+import async.events;
+public import async.internals.path;
 import std.container : Array;
 import std.file;
 

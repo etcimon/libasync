@@ -1,5 +1,5 @@
 /// [internal]
-module event.internals.win32;
+module async.internals.win32;
 
 version(Windows):
 

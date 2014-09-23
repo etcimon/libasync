@@ -1,4 +1,4 @@
-﻿module event.posix2;
+﻿module async.posix2;
 
 // workaround for IDE indent bug on too big files
 mixin template RunKill()
@@ -8,7 +8,7 @@ mixin template RunKill()
 	in { assert(ctxt.socket == fd_t.init, "TCP Connection is active. Use another instance."); }
 	body {
 		m_status = StatusInfo.init;
-		import event.internals.socket_compat : socket, SOCK_STREAM;
+		import async.internals.socket_compat : socket, SOCK_STREAM;
 		import core.sys.posix.unistd : close;
 		
 		fd_t fd = socket(cast(int)ctxt.peer.family, SOCK_STREAM, 0);
@@ -48,7 +48,7 @@ mixin template RunKill()
 	}
 	body {
 		m_status = StatusInfo.init;
-		import event.internals.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR;
+		import async.internals.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR;
 		import core.sys.posix.unistd : close;
 		
 		/// Create the listening socket
@@ -90,7 +90,7 @@ mixin template RunKill()
 	fd_t run(AsyncUDPSocket ctxt, UDPHandler del) {
 		m_status = StatusInfo.init;
 		
-		import event.internals.socket_compat : socket, SOCK_DGRAM, IPPROTO_UDP;
+		import async.internals.socket_compat : socket, SOCK_DGRAM, IPPROTO_UDP;
 		import core.sys.posix.unistd;
 
 		try log("Address: " ~ ctxt.local.toString()); catch {}

@@ -1,4 +1,4 @@
-﻿module event.internals.path;
+﻿module async.internals.path;
 
 /**
 Contains routines for high level path handling.

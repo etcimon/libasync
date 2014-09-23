@@ -5,8 +5,8 @@
 	License: Subject to the terms of the MIT license, as written in the included LICENSE.txt file.
 	Authors: Sönke Ludwig
 */
-module event.internals.hashmap;
-import event.internals.memory;
+module async.internals.hashmap;
+import async.internals.memory;
 
 import std.conv : emplace;
 import std.traits;

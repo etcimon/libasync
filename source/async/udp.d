@@ -1,8 +1,8 @@
-﻿module event.udp;
+﻿module async.udp;
 
-import event.types;
+import async.types;
 
-import event.events;
+import async.events;
 
 /// Wrapper for a UDP Stream which must be bound to a socket.
 final nothrow class AsyncUDPSocket

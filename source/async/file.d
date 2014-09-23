@@ -1,13 +1,13 @@
-﻿module event.file;
-import event.types;
-import event.events;
+﻿module async.file;
+import async.types;
+import async.events;
 import core.thread : Thread, ThreadGroup;
 import core.sync.mutex;
 import core.sync.condition;
 import std.stdio : File;
 import core.atomic;
-public import event.internals.path;
-import event.threads;
+public import async.internals.path;
+import async.threads;
 
 /// Runs all blocking file I/O commands in a thread pool and calls the handler
 /// upon completion.

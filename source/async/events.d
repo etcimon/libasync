@@ -1,4 +1,4 @@
-module event.events;
+module async.events;
 
 import std.stdio;
 
@@ -6,25 +6,25 @@ import core.thread;
 import std.container : Array;
 import std.datetime : Duration;
 import std.typecons : Flag;
-import event.internals.memory : FreeListObjectAlloc;
+import async.internals.memory : FreeListObjectAlloc;
 
-public import event.types;
-public import event.tcp;
-public import event.udp;
-public import event.notifier;
-public import event.dns;
-public import event.timer;
-public import event.signal;
-public import event.watcher;
-public import event.file;
-public import event.threads;
+public import async.types;
+public import async.tcp;
+public import async.udp;
+public import async.notifier;
+public import async.dns;
+public import async.timer;
+public import async.signal;
+public import async.watcher;
+public import async.file;
+public import async.threads;
 
 version(Windows) {
-	public import event.windows;
+	public import async.windows;
 }
 
 version(Posix) {
-	public import event.posix;
+	public import async.posix;
 }
 
 /// Event handlers can be registered to the event loop by being run(), all events

@@ -1,4 +1,4 @@
-﻿module event.types;
+﻿module async.types;
 package:
 enum LOG = false;
 

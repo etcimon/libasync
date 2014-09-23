@@ -1,9 +1,9 @@
-module event.test;
+module async.test;
 version(unittest):
-import event.events;
+import async.events;
 import std.stdio;
 import std.datetime;
-import event.file;
+import async.file;
 //
 AsyncDirectoryWatcher g_watcher;
 shared AsyncDNS g_dns;
