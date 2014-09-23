@@ -12,7 +12,7 @@ mixin template DefStatus() {
 	/// Check this property to make sure the event loop hasn't failed
 	@property bool hasError() const 
 	{
-		return m_evLoop.status.code != Status.OK;
+		return m_evLoop.status.code != Status.OK && m_evLoop.status.code != Status.ASYNC;
 	}
 
 	/* 
