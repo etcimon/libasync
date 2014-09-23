@@ -51,6 +51,16 @@ public:
 		return this;
 	}
 
+	/// Sets the local network address to which this UDP Socket will be bound.
+	@property void local(NetworkAddress l) 
+	in { 
+		assert(l != NetworkAddress.init, "The local address is empty");
+		assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); 
+	}
+	body {
+		m_local = l;
+	}
+
 	/// Registers the UDP socket in the underlying OS event loop, forwards
 	/// all related events to the specified delegate.
 	bool run(void delegate(UDPEvent) del) 

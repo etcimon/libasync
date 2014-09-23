@@ -92,9 +92,13 @@ mixin template RunKill()
 		
 		import event.internals.socket_compat : socket, SOCK_DGRAM, IPPROTO_UDP;
 		import core.sys.posix.unistd;
+
+		try log("Address: " ~ ctxt.local.toString()); catch {}
+
 		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP);
-		
-		if (catchSocketError!("run AsyncUDPSocket")(fd))
+
+
+		if (catchError!("run AsyncUDPSocket")(fd))
 			return 0;
 		
 		if (!setNonBlock(fd))
@@ -102,7 +106,7 @@ mixin template RunKill()
 		
 		if (!initUDPSocket(fd, ctxt, del))
 			return 0;
-		
+
 		try log("UDP Socket started FD#" ~ fd.to!string);
 		catch{}
 		/*
