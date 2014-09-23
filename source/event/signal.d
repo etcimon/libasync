@@ -12,11 +12,8 @@ shared final class AsyncSignal
 	private void delegate() m_sgh;
 nothrow:
 private:
-	Thread m_owner;
-	shared(size_t)* m_owner_id;
+	debug Thread m_owner;
 	EventLoop m_evLoop;
-
-	version(Posix) EventInfo* m_evInfo;
 	fd_t m_evId;
 
 public:
@@ -26,10 +23,19 @@ public:
 		assert(evl !is null);
 	}
 	body {
-		import core.thread : Thread;
 		m_evLoop = cast(shared) evl;
-		m_owner = cast(shared) Thread.getThis();
-		version(Posix) static if (!EPOLL) m_owner_id = cast(shared) g_threadId;
+		debug {
+			import core.thread : Thread;
+			m_owner = cast(shared) Thread.getThis();
+		}
+		version(Posix) {
+			static if (EPOLL) {
+				import core.sys.posix.pthread : pthread_self;
+				m_pthreadId = cast(shared)pthread_self();
+			} else /* if KQUEUE */ {
+				m_owner_id = cast(shared) g_threadId;
+			}
+		}
 	}
 
 	@property bool hasError() const 
@@ -50,7 +56,7 @@ public:
 	/// Registers the signal handler in the event loop
 	bool run(void delegate() del) 
 	in {
-		assert(Thread.getThis() is cast(Thread)m_owner);
+		debug assert(Thread.getThis() is cast(Thread)m_owner);
 	}
 	body {
 
@@ -66,7 +72,7 @@ public:
 	/// Cleans up underlying resources. This object must be run() again afterwards to be valid
 	bool kill() 
 	in {
-		assert(Thread.getThis() is cast(Thread)m_owner);
+		debug assert(Thread.getThis() is cast(Thread)m_owner);
 	}
 	body {
 		return (cast(EventLoop)m_evLoop).kill(cast(shared AsyncSignal) this);
@@ -82,24 +88,16 @@ public:
 		return (cast(EventLoop)m_evLoop).notify(m_evId, this);
 	}
 
-	/// Returns the Thread that created this object.
-	synchronized @property Thread owner() const {
-		return cast(Thread) m_owner;
-	}
-
 package:
-	synchronized @property size_t threadId() {
-		return cast(size_t) *m_owner_id;
-	}
-	version(Posix) {
-		@property shared(EventInfo*) evInfo() {
-			return m_evInfo;
-		}
-		
-		@property void evInfo(shared(EventInfo*) info) {
-			m_evInfo = info;
-		}
-	}
+	
+	/*
+	 * Returns the Thread that created this object.
+	debug synchronized @property Thread owner() const {
+		return cast(Thread) m_owner;
+	}*/
+
+	version(Posix) mixin EvInfoMixinsShared;
+
 	@property id() const {
 		return m_evId;
 	}

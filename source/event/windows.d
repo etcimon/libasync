@@ -61,7 +61,10 @@ package:
 	in { assert(!m_started); }
 	body
 	{
-		
+
+		static ushort j;
+		assert (j == 0, "Current implementation is only tested with 1 event loop per thread. There are known issues with signals on linux.");
+		j += 1;
 		m_status = StatusInfo.init;
 		
 		import core.thread;

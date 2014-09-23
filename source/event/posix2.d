@@ -189,7 +189,7 @@ mixin template RunKill()
 			
 			ctxt.evInfo = cast(shared) m_evSignal;
 			
-			return cast(fd_t) (__libc_current_sigrtmin() + m_instanceId);
+			return cast(fd_t) (__libc_current_sigrtmin());
 		}
 		else
 		{

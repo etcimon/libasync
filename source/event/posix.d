@@ -32,13 +32,14 @@ version(linux) {
 		try {
 			/// Block signals to reserve SIGRTMIN .. " +30 for AsyncSignal
 			sigset_t mask;
-			foreach (j; __libc_current_sigrtmin() .. __libc_current_sigrtmax() + 1) {
+			// todo: use more signals for more event loops per thread.. (is this necessary?)
+			//foreach (j; __libc_current_sigrtmin() .. __libc_current_sigrtmax() + 1) {
 				//import std.stdio : writeln; 
 				//try writeln("Blocked signal " ~ (__libc_current_sigrtmin() + j).to!string ~ " in instance " ~ m_instanceId.to!string); catch {}
-				sigemptyset(&mask);
-				sigaddset(&mask, cast(int) j);
-				pthread_sigmask(SIG_BLOCK, &mask, null);
-			}
+			sigemptyset(&mask);
+			sigaddset(&mask, cast(int) __libc_current_sigrtmin());
+			pthread_sigmask(SIG_BLOCK, &mask, null);
+			//}
 		} catch {}
 	}
 	static this() {
@@ -123,6 +124,9 @@ package:
 
 		import core.atomic;
 		shared static ushort i;
+		static ushort j;
+		assert (j == 0, "Current implementation is only tested with 1 event loop per thread. There are known issues with signals on linux.");
+		j += 1;
 		m_instanceId = i;
 		static if (!EPOLL) g_threadId = new size_t(cast(size_t)m_instanceId);
 
@@ -153,10 +157,11 @@ package:
 
 			try {
 				sigemptyset(&mask);
-				sigaddset(&mask, __libc_current_sigrtmin() + m_instanceId);
+				sigaddset(&mask, __libc_current_sigrtmin());
 				err = pthread_sigmask(SIG_BLOCK, &mask, null);
 				if (catchError!"sigprocmask"(err))
 				{
+					m_status.code = Status.EVLOOP_FAILURE;
 					return false;
 				}
 			} catch { }
@@ -879,8 +884,7 @@ package:
 			sigval sigvl;
 			fd_t err;
 			sigvl.sival_ptr = cast(void*) ctxt;
-			import core.thread : getpid;
-			try err = sigqueue(getpid(), fd, sigvl); catch {}
+			try err = pthread_sigqueue(ctxt.pthreadId, fd, sigvl); catch {}
 			if (catchError!"sigqueue"(err)) {
 				return false;
 			}
@@ -2535,6 +2539,48 @@ mixin template TCPConnectionMixins() {
 		m_impl.evInfo = info;
 	}
 	
+}
+
+mixin template EvInfoMixinsShared() {
+
+	private CleanupData m_impl;
+	
+	shared struct CleanupData {
+		EventInfo* evInfo;
+	}
+
+	static if (EPOLL) {
+		import core.sys.posix.pthread : pthread_t;
+		private pthread_t m_pthreadId;
+		synchronized @property pthread_t pthreadId() {
+			return cast(pthread_t) m_pthreadId;
+		}
+		/* todo: support multiple event loops per thread?
+		private ushort m_sigId;
+		synchronized @property ushort sigId() {
+			return cast(ushort)m_loopId;
+		}
+		synchronized @property void sigId(ushort id) {
+			m_loopId = cast(shared)id;
+		}
+		*/
+	} 
+	else /* if KQUEUE */
+	{
+		private shared(size_t)* m_owner_id;
+		synchronized @property size_t threadId() {
+			return cast(size_t) *m_owner_id;
+		}
+	}
+
+	@property shared(EventInfo*) evInfo() {
+		return m_impl.evInfo;
+	}
+	
+	@property void evInfo(shared(EventInfo*) info) {
+		m_impl.evInfo = info;
+	}
+
 }
 
 mixin template EvInfoMixins() {

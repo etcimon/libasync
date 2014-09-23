@@ -71,3 +71,7 @@ int eventfd (uint initval, int flags);
 int timerfd_create (int clockid, int flags);
 import core.sys.posix.time : itimerspec;
 int timerfd_settime (int fd, int flags, itimerspec* new_value, itimerspec* old_value);
+
+import core.sys.posix.pthread : pthread_t;
+import core.sys.posix.signal : sigval;
+int pthread_sigqueue(pthread_t, int sig, in sigval);
