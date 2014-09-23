@@ -1,4 +1,4 @@
-module async.events;
+module libasync.events;
 
 import std.stdio;
 
@@ -6,25 +6,25 @@ import core.thread;
 import std.container : Array;
 import std.datetime : Duration;
 import std.typecons : Flag;
-import async.internals.memory : FreeListObjectAlloc;
+import libasync.internals.memory : FreeListObjectAlloc;
 
-public import async.types;
-public import async.tcp;
-public import async.udp;
-public import async.notifier;
-public import async.dns;
-public import async.timer;
-public import async.signal;
-public import async.watcher;
-public import async.file;
-public import async.threads;
+public import libasync.types;
+public import libasync.tcp;
+public import libasync.udp;
+public import libasync.notifier;
+public import libasync.dns;
+public import libasync.timer;
+public import libasync.signal;
+public import libasync.watcher;
+public import libasync.file;
+public import libasync.threads;
 
 version(Windows) {
-	public import async.windows;
+	public import libasync.windows;
 }
 
 version(Posix) {
-	public import async.posix;
+	public import libasync.posix;
 }
 
 /// Event handlers can be registered to the event loop by being run(), all events

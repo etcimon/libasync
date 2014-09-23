@@ -1,7 +1,7 @@
-module async.tcp;
+module libasync.tcp;
 import std.traits : isPointer;
-import async.types;
-import async.events;
+import libasync.types;
+import libasync.events;
 import std.typecons : Tuple;
 
 /// Wraps a TCP stream between 2 network adapters, using a custom handler to

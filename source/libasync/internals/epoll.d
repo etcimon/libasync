@@ -6,7 +6,7 @@
  * License : $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0) 
  * Authors  : Adil Baig (github.com/adilbaig)
  */
-module async.internals.epoll;
+module libasync.internals.epoll;
 
 version (linux):
 

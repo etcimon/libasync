@@ -1,8 +1,8 @@
-﻿module async.udp;
+﻿module libasync.udp;
 
-import async.types;
+import libasync.types;
 
-import async.events;
+import libasync.events;
 
 /// Wrapper for a UDP Stream which must be bound to a socket.
 final nothrow class AsyncUDPSocket

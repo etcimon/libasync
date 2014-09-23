@@ -1,5 +1,5 @@
 /// [internal]
-module async.internals.win32;
+module libasync.internals.win32;
 
 version(Windows):
 

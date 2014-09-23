@@ -1,9 +1,9 @@
-﻿module async.watcher;
+﻿module libasync.watcher;
 
-import async.types;
+import libasync.types;
 
-import async.events;
-public import async.internals.path;
+import libasync.events;
+public import libasync.internals.path;
 import std.container : Array;
 import std.file;
 

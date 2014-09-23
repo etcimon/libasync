@@ -1,13 +1,13 @@
-﻿module async.file;
-import async.types;
-import async.events;
+﻿module libasync.file;
+import libasync.types;
+import libasync.events;
 import core.thread : Thread, ThreadGroup;
 import core.sync.mutex;
 import core.sync.condition;
 import std.stdio : File;
 import core.atomic;
-public import async.internals.path;
-import async.threads;
+public import libasync.internals.path;
+import libasync.threads;
 
 /// Runs all blocking file I/O commands in a thread pool and calls the handler
 /// upon completion.

@@ -1,9 +1,9 @@
-module async.test;
+module libasync.test;
 version(unittest):
-import async.events;
+import libasync.events;
 import std.stdio;
 import std.datetime;
-import async.file;
+import libasync.file;
 //
 AsyncDirectoryWatcher g_watcher;
 shared AsyncDNS g_dns;

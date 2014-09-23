@@ -1,22 +1,22 @@
-module async.windows;
+module libasync.windows;
 
 version (Windows):
 
 import core.atomic;
 import core.thread : Fiber;
-import async.types;
-import async.internals.hashmap;
-import async.internals.memory;
+import libasync.types;
+import libasync.internals.hashmap;
+import libasync.internals.memory;
 import std.container : Array;
 import std.string : toStringz;
 import std.conv : to;
 import std.datetime : Duration, msecs, seconds;
 import std.algorithm : min;
-import async.internals.win32;
+import libasync.internals.win32;
 import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
 import std.utf : toUTFz;
-import async.events;
+import libasync.events;
 pragma(lib, "ws2_32");
 pragma(lib, "ole32");
 alias fd_t = SIZE_T;
@@ -865,7 +865,7 @@ package:
 	
 	NetworkAddress localAddr(in fd_t fd, bool ipv6) {
 		NetworkAddress ret;
-		import async.internals.win32 : getsockname, AF_INET, AF_INET6, socklen_t, sockaddr;
+		import libasync.internals.win32 : getsockname, AF_INET, AF_INET6, socklen_t, sockaddr;
 		if (ipv6)
 			ret.family = AF_INET6;
 		else
@@ -951,7 +951,7 @@ package:
 	
 	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true)
 	in {
-		debug import async.internals.validator : validateIPv4, validateIPv6;
+		debug import libasync.internals.validator : validateIPv4, validateIPv6;
 		debug assert( validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
 	}
 	body {
@@ -989,7 +989,7 @@ package:
 	
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true, in bool force = true)
 		/*in { 
-		debug import async.internals.validator : validateHost;
+		debug import libasync.internals.validator : validateHost;
 		debug assert(validateHost(host), "Trying to connect to an invalid domain");
 	}
 	body */{

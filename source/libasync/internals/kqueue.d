@@ -1,4 +1,4 @@
-﻿module async.internals.kqueue;
+﻿module libasync.internals.kqueue;
 nothrow:
 import core.stdc.stdint;    // intptr_t, uintptr_t
 import core.stdc.time : time_t;

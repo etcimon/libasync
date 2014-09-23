@@ -1,7 +1,7 @@
-﻿module async.notifier;
+﻿module libasync.notifier;
 
-import async.types;
-import async.events;
+import libasync.types;
+import libasync.events;
 
 /// Thread-local event dispatcher/handler, used to wake up the associated 
 /// callback in a new call stack originating from the event loop.

@@ -1,7 +1,7 @@
-﻿module async.timer;
+﻿module libasync.timer;
 
-import async.types;
-import async.events;
+import libasync.types;
+import libasync.events;
 import std.datetime;
 
 final class AsyncTimer

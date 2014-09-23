@@ -1,4 +1,4 @@
-﻿module async.internals.validator;
+﻿module libasync.internals.validator;
 
 import std.regex : regex, Regex, matchAll;
 private:

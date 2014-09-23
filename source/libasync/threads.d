@@ -1,8 +1,8 @@
-﻿module async.threads;
+﻿module libasync.threads;
 import core.sync.mutex;
 import core.sync.condition;
 import core.thread;
-import async.events;
+import libasync.events;
 import std.stdio;
 import std.container : Array;
 

@@ -1,12 +1,12 @@
-﻿module async.dns;
+﻿module libasync.dns;
 
-import async.types;
-import async.events;
+import libasync.types;
+import libasync.events;
 import core.thread : Thread, ThreadGroup;
 import core.sync.mutex;
 import core.sync.condition;
 import core.atomic;
-import async.threads;
+import libasync.threads;
 
 enum DNSCmd {
 	RESOLVEHOST,

@@ -1,4 +1,4 @@
-﻿module async.types;
+﻿module libasync.types;
 package:
 enum LOG = false;
 

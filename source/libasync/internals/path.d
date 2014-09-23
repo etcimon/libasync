@@ -1,4 +1,4 @@
-﻿module async.internals.path;
+﻿module libasync.internals.path;
 
 /**
 Contains routines for high level path handling.
