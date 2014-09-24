@@ -1,4 +1,4 @@
-import async.all;
+import libasync.all;
 import std.stdio;
 
 EventLoop g_evl;
