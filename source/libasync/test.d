@@ -408,7 +408,7 @@ shared AsyncFile gs_file;
 __gshared SysTime gs_start;
 string g_message = "Some message here";
 shared Msg* gs_hshr = new shared Msg("Hello from shared!");
-shared bool g_cbCheck[];
+shared bool[] g_cbCheck;
 int g_cbTimerCnt;
 int g_writes;
 SysTime g_lastTimer;
