@@ -2,6 +2,6 @@
     "name": "tcp_client",
     "description": "A simple TCP client",
     "dependencies": {
-        "event-d": {"version": "~master", "path": "../../"}
+        "libasync": {"version": "~master", "path": "../../"}
     }
 }
