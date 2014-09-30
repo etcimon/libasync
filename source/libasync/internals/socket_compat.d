@@ -115,6 +115,7 @@ SHUT_RDWR
 SHUT_WR
 
 int     accept(int, sockaddr*, socklen_t*);
+int     accept4(int, sockaddr*, socklen_t*, int flags);
 int     bind(int, in sockaddr*, socklen_t);
 int     connect(int, in sockaddr*, socklen_t);
 int     getpeername(int, sockaddr*, socklen_t*);
@@ -238,6 +239,7 @@ version( linux )
 			SO_RCVLOWAT     = 18,
 			SO_RCVTIMEO     = 20,
 			SO_REUSEADDR    = 2,
+			SO_REUSEPORT	= 15,
 			SO_SNDBUF       = 7,
 			SO_SNDLOWAT     = 19,
 			SO_SNDTIMEO     = 21,
@@ -272,6 +274,7 @@ version( linux )
 			SO_RCVLOWAT     = 18,
 			SO_RCVTIMEO     = 20,
 			SO_REUSEADDR    = 2,
+			SO_REUSEPORT	= 15,
 			SO_SNDBUF       = 7,
 			SO_SNDLOWAT     = 19,
 			SO_SNDTIMEO     = 21,
@@ -306,6 +309,7 @@ version( linux )
 			SO_RCVLOWAT     = 0x1004,
 			SO_RCVTIMEO     = 0x1006,
 			SO_REUSEADDR    = 0x0004,
+			SO_REUSEPORT	= 0x0200,
 			SO_SNDBUF       = 0x1001,
 			SO_SNDLOWAT     = 0x1003,
 			SO_SNDTIMEO     = 0x1005,
@@ -340,6 +344,7 @@ version( linux )
 			SO_RCVLOWAT     = 0x1004,
 			SO_RCVTIMEO     = 0x1006,
 			SO_REUSEADDR    = 0x0004,
+			SO_REUSEPORT	= 0x0200,
 			SO_SNDBUF       = 0x1001,
 			SO_SNDLOWAT     = 0x1003,
 			SO_SNDTIMEO     = 0x1005,
@@ -374,6 +379,7 @@ version( linux )
 			SO_RCVLOWAT     = 16,
 			SO_RCVTIMEO     = 18,
 			SO_REUSEADDR    = 2,
+			SO_REUSEPORT	= 15,
 			SO_SNDBUF       = 7,
 			SO_SNDLOWAT     = 17,
 			SO_SNDTIMEO     = 19,
@@ -408,6 +414,7 @@ version( linux )
 			SO_RCVLOWAT     = 16,
 			SO_RCVTIMEO     = 18,
 			SO_REUSEADDR    = 2,
+			SO_REUSEPORT	= 15,
 			SO_SNDBUF       = 7,
 			SO_SNDLOWAT     = 17,
 			SO_SNDTIMEO     = 19,
@@ -442,6 +449,7 @@ version( linux )
 			SO_RCVLOWAT     = 18,
 			SO_RCVTIMEO     = 20,
 			SO_REUSEADDR    = 2,
+			SO_REUSEPORT	= 15,
 			SO_SNDBUF       = 7,
 			SO_SNDLOWAT     = 19,
 			SO_SNDTIMEO     = 21,
@@ -482,6 +490,7 @@ version( linux )
 	}
 	
 	int     accept(int, sockaddr*, socklen_t*);
+	int     accept4(int, sockaddr*, socklen_t*, int flags);
 	int     bind(int, in sockaddr*, socklen_t);
 	int     connect(int, in sockaddr*, socklen_t);
 	int     getpeername(int, sockaddr*, socklen_t*);
@@ -633,6 +642,7 @@ else version( OSX )
 	}
 	
 	int     accept(int, sockaddr*, socklen_t*);
+	int     accept4(int, sockaddr*, socklen_t*, int flags);
 	int     bind(int, in sockaddr*, socklen_t);
 	int     connect(int, in sockaddr*, socklen_t);
 	int     getpeername(int, sockaddr*, socklen_t*);
@@ -806,6 +816,7 @@ else version( FreeBSD )
 	}
 	
 	int     accept(int, sockaddr*, socklen_t*);
+	int     accept4(int, sockaddr*, socklen_t*, int flags);
 	int     bind(int, in sockaddr*, socklen_t);
 	int     connect(int, in sockaddr*, socklen_t);
 	int     getpeername(int, sockaddr*, socklen_t*);
@@ -904,6 +915,7 @@ else version (Solaris)
 		SO_RCVLOWAT = 0x1004,
 		SO_RCVTIMEO = 0x1006,
 		SO_REUSEADDR = 0x0004,
+		SO_REUSEPORT	= 0x0200,
 		SO_SNDBUF = 0x1001,
 		SO_SNDLOWAT = 0x1003,
 		SO_SNDTIMEO = 0x1005,
@@ -941,6 +953,7 @@ else version (Solaris)
 	}
 	
 	int accept(int, sockaddr*, socklen_t*);
+	int     accept4(int, sockaddr*, socklen_t*, int flags);
 	int bind(int, in sockaddr*, socklen_t);
 	int connect(int, in sockaddr*, socklen_t);
 	int getpeername(int, sockaddr*, socklen_t*);
@@ -1061,6 +1074,7 @@ else version( Android )
 			SO_RCVLOWAT     = 18,
 			SO_RCVTIMEO     = 20,
 			SO_REUSEADDR    = 2,
+			SO_REUSEPORT	= 15,
 			SO_SNDBUF       = 7,
 			SO_SNDLOWAT     = 19,
 			SO_SNDTIMEO     = 21,
@@ -1110,8 +1124,9 @@ else version( Android )
 	enum IPPROTO_PUP  = 12;
 	enum IPPROTO_IDP  = 22;
 	enum INADDR_NONE  = 0xFFFFFFFF;
-	
+
 	int     accept(int, sockaddr*, socklen_t*);
+	int     accept4(int, sockaddr*, socklen_t*, int flags);
 	int     bind(int, in sockaddr*, int);
 	int     connect(int, in sockaddr*, socklen_t);
 	int     getpeername(int, sockaddr*, socklen_t*);

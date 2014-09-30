@@ -26,8 +26,8 @@ Allocator defaultAllocator()
 		static __gshared Allocator alloc;
 		if( !alloc ){
 			alloc = new GCAllocator;
-			//alloc = new AutoFreeListAllocator(alloc);
-			//alloc = new DebugAllocator(alloc);
+			alloc = new AutoFreeListAllocator(alloc);
+			alloc = new DebugAllocator(alloc);
 			alloc = new LockAllocator(alloc);
 		}
 		return alloc;
@@ -165,7 +165,7 @@ final class DebugAllocator : Allocator {
 		assert(*pb == mem.length, "realloc() called with block of wrong size.");
 		auto ret = m_baseAlloc.realloc(mem, new_size);
 		assert(ret.length == new_size, "base.realloc() returned block with wrong size.");
-		assert(ret.ptr !in m_blocks, "base.realloc() returned block that is already allocated.");
+		assert(ret.ptr is mem.ptr || ret.ptr !in m_blocks, "base.realloc() returned block that is already allocated.");
 		m_bytes -= *pb;
 		m_blocks.remove(mem.ptr);
 		m_blocks[ret.ptr] = new_size;
@@ -650,7 +650,12 @@ struct FreeListRef(T, bool INIT = true)
 					//logInfo("ref %s destroyed", T.stringof);
 				}
 				static if( hasIndirections!T ) GC.removeRange(cast(void*)m_object);
-				manualAllocator().free((cast(void*)m_object)[0 .. ElemSize+int.sizeof]);
+				version(LDC) {
+					static if (!INIT)
+						manualAllocator().free((cast(void*)m_object)[0 .. ElemSize+int.sizeof]);
+				} else {
+					manualAllocator().free((cast(void*)m_object)[0 .. ElemSize+int.sizeof]);
+				}
 			}
 		}
 

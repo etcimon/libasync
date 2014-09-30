@@ -193,7 +193,7 @@ nothrow:
 
 public:
 
-	this(EventLoop evl) { m_evLoop = evl; }
+	this(EventLoop evl, fd_t sock = fd_t.init) { m_evLoop = evl; m_socket = sock; }
 
 	mixin DefStatus;
 
@@ -243,7 +243,6 @@ public:
 
 	private bool run(TCPAcceptHandler del)
 	in { 
-		assert(m_socket == fd_t.init, "Cannot rebind a listening socket");
 		assert(m_local != NetworkAddress.init, "Cannot bind without an address. Please run .host() or .ip()");
 	}
 	body {
@@ -252,6 +251,11 @@ public:
 			return false;
 		else
 			return true;
+	}
+
+	/// Use to implement distributed servicing of connections
+	@property fd_t socket() const {
+		return m_socket;
 	}
 
 	/// Stops accepting connections and cleans up the underlying OS resources.
@@ -264,11 +268,6 @@ public:
 
 package:
 	version(Posix) mixin EvInfoMixins;
-
-	/// Not available publicly to encourage cross-platform conformity
-	@property fd_t socket() const {
-		return m_socket;
-	}
 
 	@property bool noDelay() const
 	{
@@ -285,6 +284,8 @@ package struct TCPEventHandler {
 
 	void opCall(TCPEvent ev){
 		assert(conn !is null, "Connection was disposed before shutdown could be completed");
+		if (!conn.isConnected)
+			return;
 		debug conn.m_dataRemaining = true;
 		del(ev);
 		//debug assert(!conn.m_dataRemaining, "You must recv the whole buffer, because TCP events are edge triggered!");

@@ -1032,6 +1032,7 @@ version(linux) enum EPosix : int {
 	ENOANO			=		55,      /* No anode */
 	EBADRQC			=		56,      /* Invalid request code */
 	EBADSLT			=		57,      /* Invalid slot */
+	ESHUTDOWN2		=		58,
 	EDEADLOCK		=		EDEADLK,
 	EBFONT			=		59,      /* Bad font file format */
 	ENOSTR			=		60,      /* Device not a stream */

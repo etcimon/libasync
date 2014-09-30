@@ -18,6 +18,7 @@ mixin template RunKill()
 		
 		/// Make sure the socket doesn't block on recv/send
 		if (!setNonBlock(fd)) {
+			log("Close socket");
 			close(fd);
 			return 0;
 		}
@@ -48,41 +49,55 @@ mixin template RunKill()
 	}
 	body {
 		m_status = StatusInfo.init;
-		import libasync.internals.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR;
+		import libasync.internals.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR, IPPROTO_TCP;
 		import core.sys.posix.unistd : close;
-		
-		/// Create the listening socket
-		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_STREAM, 0);
-		if (catchError!("run AsyncTCPAccept")(fd))
-			return 0;
-		
-		/// Make sure the socket returns instantly when calling listen()
-		if (!setNonBlock(fd)) {
-			close(fd);
-			return 0;
-		}
-		
-		/// Allow multiple threads to listen on this address
-		if (!setOption(fd, TCPOption.REUSEADDR, true))
-			return 0;
-		
-		// todo: defer accept
-		
-		/// Automatically starts connections with noDelay if specified
-		if (ctxt.noDelay) {
-			if (!setOption(fd, TCPOption.NODELAY, true)) {
-				try log("Closing connection"); catch {}
+		import core.sync.mutex;
+		__gshared Mutex g_mtx;
+		fd_t fd = ctxt.socket;
+		bool reusing = true;
+		try if (fd == 0) {
+			reusing = false;
+			/// Create the listening socket
+			synchronized(g_mutex) {
+				fd = socket(cast(int)ctxt.local.family, SOCK_STREAM, IPPROTO_TCP);
+				if (catchError!("run AsyncTCPAccept")(fd))
+					return 0;
+				/// Allow multiple threads to listen on this address
+				if (!setOption(fd, TCPOption.REUSEADDR, true)) {
+					log("Close socket");
+					close(fd);
+					return 0;
+				}
+			} 
+
+			/// Make sure the socket returns instantly when calling listen()
+			if (!setNonBlock(fd)) {
+				log("Close socket");
 				close(fd);
 				return 0;
 			}
-		}
-		
-		/// Setup the listening mechanism
-		if (!initTCPListener(fd, ctxt, del)) {
+
+			// todo: defer accept
+			
+			/// Automatically starts connections with noDelay if specified
+			if (ctxt.noDelay) {
+				if (!setOption(fd, TCPOption.NODELAY, true)) {
+					try log("Closing connection"); catch {}
+					close(fd);
+					return 0;
+				}
+			}
+
+		} catch { assert(false, "Error in synchronized listener starter"); }
+
+		/// Setup the event polling
+		if (!initTCPListener(fd, ctxt, del, reusing)) {
+			log("Close socket");
 			close(fd);
 			return 0;
 		}
-		
+
+
 		return fd;
 		
 	}
@@ -444,6 +459,7 @@ mixin template RunKill()
 	
 	bool kill(AsyncTCPConnection ctxt, bool forced = false)
 	{
+		log("Kill socket");
 		m_status = StatusInfo.init;
 			fd_t fd = ctxt.socket;
 				scope(exit) {
@@ -461,6 +477,7 @@ mixin template RunKill()
 
 	bool kill(AsyncTCPListener ctxt)
 	{
+		log("Kill listener");
 		m_status = StatusInfo.init;
 		nothrow void cleanup() {
 			try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);

@@ -27,6 +27,13 @@ version(Posix) {
 	public import libasync.posix;
 }
 
+EventLoop getThreadEventLoop() {
+	static EventLoop evLoop;
+	if (!evLoop) 
+		evLoop = new EventLoop;
+	return evLoop;
+}
+
 /// Event handlers can be registered to the event loop by being run(), all events
 /// associated with them will trigger the OS to resume the underlying thread which
 /// enables the existence of all the asynchroneous event objects in this library. 

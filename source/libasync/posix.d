@@ -16,6 +16,7 @@ import libasync.internals.memory : FreeListObjectAlloc;
 import libasync.internals.hashmap;
 import core.sys.posix.signal;
 import libasync.posix2;
+import core.sync.mutex;
 enum SOCKET_ERROR = -1;
 alias fd_t = int;
 
@@ -46,6 +47,7 @@ version(linux) {
 		blockSignals();
 		g_signalsBlocked = true;
 	}
+	__gshared Mutex g_mutex;
 }
 version(OSX) {
 	import libasync.internals.kqueue;
@@ -95,7 +97,6 @@ private:
 	EventInfo* m_evSignal;
 	static if (EPOLL){
 		fd_t m_epollfd;
-
 		HashMap!(Tuple!(fd_t, uint), DWFolderInfo) m_dwFolders; // uint = inotify_add_watch(Path)
 	}
 	else /* if KQUEUE */
@@ -105,7 +106,7 @@ private:
 		HashMap!(fd_t, DWFolderInfo) m_dwFolders; // fd_t = open(folder)
 		HashMap!(fd_t, DWFileInfo) m_dwFiles; // fd_t = open(file)
 		HashMap!(fd_t, Array!(DWChangeInfo)*) m_changes; // fd_t = id++ per AsyncDirectoryWatcher
-	
+
 	}
 
 package:
@@ -116,7 +117,7 @@ package:
 	@property bool started() const {
 		return m_started;
 	}
-	
+
 	bool init(EventLoop evl)
 	in { assert(!m_started); }
 	body
@@ -124,9 +125,9 @@ package:
 
 		import core.atomic;
 		shared static ushort i;
-		static ushort j;
-		assert (j == 0, "Current implementation is only tested with 1 event loop per thread. There are known issues with signals on linux.");
-		j += 1;
+		string* failer = null;
+
+
 		m_instanceId = i;
 		static if (!EPOLL) g_threadId = new size_t(cast(size_t)m_instanceId);
 
@@ -139,6 +140,11 @@ package:
 
 		static if (EPOLL)
 		{
+
+			try
+			if (!g_mutex)
+				g_mutex = new Mutex;
+			catch {}
 			if (!g_signalsBlocked)
 				blockSignals();
 			assert(m_instanceId <= __libc_current_sigrtmax(), "An additional event loop is unsupported due to SIGRTMAX restrictions in Linux Kernel");
@@ -289,7 +295,7 @@ package:
 			else timeout_ms = cast(int)timeout.total!"msecs";
 
 			/// Retrieve pending events
-			num = epoll_wait(m_epollfd, cast(epoll_event*)events.ptr, 128, timeout_ms);
+			num = epoll_wait(m_epollfd, cast(epoll_event*)&events[0], 128, timeout_ms);
 
 			assert(events !is null && events.length <= 128);
 
@@ -511,9 +517,9 @@ package:
 
 						/// Kill the connection after an internal error
 						else {
-							closeAll();
 							try info.evObj.tcpEvHandler(TCPEvent.ERROR);
 							catch (Exception e) { }
+							closeAll();
 						}
 
 						if (info.evObj.tcpEvHandler.conn.inbound) {
@@ -574,10 +580,9 @@ package:
 					if (!errorHandler())
 						return false;
 					// BSD systems have SO_REUSEPORT
-					static if (!EPOLL) {
-						import libasync.internals.socket_compat : SO_REUSEPORT;
-						err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
-					}
+					import libasync.internals.socket_compat : SO_REUSEPORT;
+					err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
+
 					return errorHandler();
 				}
 			case TCPOption.QUICK_ACK:
@@ -751,13 +756,14 @@ package:
 
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
+		try log("Recv from FD: " ~ fd.to!string); catch {}
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : recv;
 		int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
 		
 		static if (LOG) log(".recv " ~ ret.to!string ~ " bytes of " ~ data.length.to!string ~ " @ " ~ fd.to!string);
 		if (catchError!".recv"(ret)){ // ret == SOCKET_ERROR == -1 ?
-			if (m_error == EWOULDBLOCK)
+			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 				m_status.code = Status.ASYNC;
 
 			return 0; // TODO: handle some errors more specifically
@@ -770,12 +776,13 @@ package:
 	
 	uint send(in fd_t fd, in ubyte[] data)
 	{
+		try log("Send to FD: " ~ fd.to!string); catch {}
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : send;
 		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
 
 		if (catchError!"send"(ret)) { // ret == -1
-			if (m_error == EWOULDBLOCK) {
+			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
 				m_status.code = Status.ASYNC;
 				return 0;
 			}
@@ -800,7 +807,7 @@ package:
 		
 		try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
 		if (catchError!".recvfrom"(ret)) { // ret == -1
-			if (m_error == EWOULDBLOCK)
+			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 				m_status.code = Status.ASYNC;
 			return 0;
 		}
@@ -821,7 +828,7 @@ package:
 		long ret = sendto(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, addr.sockAddrLen);
 		
 		if (catchError!".sendto"(ret)) { // ret == -1
-			if (m_error == EWOULDBLOCK)
+			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 				m_status.code = Status.ASYNC;
 			return 0;
 		}
@@ -1211,7 +1218,7 @@ package:
 			ssize_t nread = read(fd, buf.ptr, cast(uint)buf.sizeof);
 			if (catchError!"read()"(nread))
 			{
-				if (m_error == EWOULDBLOCK)
+				if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) 
 					m_status.code = Status.ASYNC;
 				return 0;
 			}
@@ -1323,7 +1330,7 @@ package:
 				}
 				nread = read(fd, buf.ptr, buf.sizeof);
 				if (catchError!"read()"(nread)) {
-					if (m_error == EWOULDBLOCK)
+					if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 						m_status.code = Status.ASYNC;
 					return cast(uint) i;
 				}
@@ -1370,7 +1377,7 @@ package:
 		
 		int err;
 		log("shutdown");
-		import libasync.internals.socket_compat : shutdown, SHUT_WR, SHUT_RDWR;
+		import libasync.internals.socket_compat : shutdown, SHUT_WR, SHUT_RDWR, SHUT_RD;
 		if (forced) 
 			err = shutdown(fd, SHUT_RDWR);
 		else
@@ -1394,7 +1401,7 @@ package:
 	// for connected sockets
 	bool closeSocket(fd_t fd, bool connected, bool forced = false)
 	{
-
+		log("closeSocket");
 		if (connected && !closeRemoteSocket(fd, forced) && !forced)
 			return false;
 		
@@ -1404,7 +1411,6 @@ package:
 			import core.sys.posix.unistd : close;
 			log("close");
 			int err = close(fd);
-
 			if (catchError!"closesocket"(err)) 
 				return false;
 		}
@@ -1605,7 +1611,8 @@ private:
 	
 	bool onTCPAccept(fd_t fd, TCPAcceptHandler del, int events)
 	{
-		import libasync.internals.socket_compat : AF_INET, AF_INET6, socklen_t, accept;
+		import libasync.internals.socket_compat : AF_INET, AF_INET6, socklen_t, accept4;
+		enum O_NONBLOCK     = 0x800;    // octal    04000
 
 		static if (EPOLL) 
 		{
@@ -1622,85 +1629,87 @@ private:
 		}
 		
 		if (incoming) { // accept incoming connection
-			NetworkAddress addr;
-			addr.family = AF_INET;
-			socklen_t addrlen = addr.sockAddrLen;
+			do {
+				NetworkAddress addr;
+				addr.family = AF_INET;
+				socklen_t addrlen = addr.sockAddrLen;
 
-			bool ret;
+				bool ret;
 
-			/// Accept the connection and create a client socket
-			fd_t csock = accept(fd, addr.sockAddr, &addrlen); // todo: use accept4 to set SOCK_NONBLOCK
+				/// Accept the connection and create a client socket
+				fd_t csock = accept4(fd, addr.sockAddr, &addrlen, O_NONBLOCK); // todo: use accept4 to set SOCK_NONBLOCK
 
-
-			if (catchError!".accept"(csock)) {
-				ret = false;
-				return ret;
-			}
-
-			// Make non-blocking so subsequent calls to recv/send return immediately
-			if (!setNonBlock(csock)) {
-				ret = false;
-				return ret;
-			}
-
-			// Set client address family based on address length
-			if (addrlen > addr.sockAddrLen)
-				addr.family = AF_INET6;
-			if (addrlen == socklen_t.init) {
-				setInternalError!"addrlen"(Status.ABORT);
-				import core.sys.posix.unistd : close;
-				close(csock);
-				{
+				if (catchError!".accept"(csock)) {
 					ret = false;
 					return ret;
 				}
-			}
 
-			// Allocate a new connection handler object
-			AsyncTCPConnection conn;
-			try conn = FreeListObjectAlloc!AsyncTCPConnection.alloc(m_evLoop);
-			catch (Exception e){ assert(false, "Allocation failure"); }
-			conn.peer = addr;
-			conn.socket = csock;
-			conn.inbound = true;
-
-			nothrow bool closeClient() {
-				try FreeListObjectAlloc!AsyncTCPConnection.free(conn);
-				catch (Exception e){ assert(false, "Free failure"); }
-				closeSocket(csock, true, true);
-				{
+				// Make non-blocking so subsequent calls to recv/send return immediately
+				/*if (!setNonBlock(csock)) {
 					ret = false;
 					return ret;
-				}
-			}
+				}*/
 
-			// Get the connection handler from the callback
-			TCPEventHandler evh;
-			try {
-				evh = del(conn);
-				if (evh == TCPEventHandler.init || !initTCPConnection(csock, conn, evh, true)) {
+				// Set client address family based on address length
+				if (addrlen > addr.sockAddrLen)
+					addr.family = AF_INET6;
+				if (addrlen == socklen_t.init) {
+					setInternalError!"addrlen"(Status.ABORT);
+					import core.sys.posix.unistd : close;
+					close(csock);
+					{
+						ret = false;
+						return ret;
+					}
+				}
+
+				// Allocate a new connection handler object
+				AsyncTCPConnection conn;
+				try conn = FreeListObjectAlloc!AsyncTCPConnection.alloc(m_evLoop);
+				catch (Exception e){ assert(false, "Allocation failure"); }
+				conn.peer = addr;
+				conn.socket = csock;
+				conn.inbound = true;
+
+				nothrow bool closeClient() {
+					try FreeListObjectAlloc!AsyncTCPConnection.free(conn);
+					catch (Exception e){ assert(false, "Free failure"); }
+					closeSocket(csock, true, true);
+					{
+						ret = false;
+						return ret;
+					}
+				}
+
+				// Get the connection handler from the callback
+				TCPEventHandler evh;
+				try {
+					evh = del(conn);
+					if (evh == TCPEventHandler.init || !initTCPConnection(csock, conn, evh, true)) {
+						try log("Failed to connect"); catch {}
+						return closeClient();
+					}
+					try log("Connection Started with " ~ csock.to!string); catch {}
+				}
+				catch (Exception e) {
+					log("Close socket");
 					return closeClient();
 				}
-				log("Connection Started");
-			}
-			catch (Exception e) {
-				return closeClient();
-			}
 
-			// Announce connection state to the connection handler
-			try {
-				log("Connected to: " ~ addr.toString());
-				evh.conn.connected = true;
-				evh(TCPEvent.CONNECT);
-			}
-			catch (Exception e) {
-				setInternalError!"del@TCPEvent.CONNECT"(Status.ABORT);
-				{
-					ret = false;
-					return ret;
+				// Announce connection state to the connection handler
+				try {
+					log("Connected to: " ~ addr.toString());
+					evh.conn.connected = true;
+					evh(TCPEvent.CONNECT);
 				}
-			}
-
+				catch (Exception e) {
+					setInternalError!"del@TCPEvent.CONNECT"(Status.ABORT);
+					{
+						ret = false;
+						return ret;
+					}
+				}
+			} while(true);
 
 		}
 		
@@ -1786,7 +1795,7 @@ private:
 		{
 			const uint epoll_events = cast(uint) events;
 			const bool connect = ((cast(bool) (epoll_events & EPOLLIN)) || (cast(bool) (epoll_events & EPOLLOUT))) && !conn.disconnecting && !conn.connected;
-			const bool read = cast(bool) (epoll_events & EPOLLIN);
+			bool read = cast(bool) (epoll_events & EPOLLIN);
 			const bool write = cast(bool) (epoll_events & EPOLLOUT);
 			const bool error = cast(bool) (epoll_events & EPOLLERR);
 			const bool close = (cast(bool) (epoll_events & EPOLLRDHUP)) || (cast(bool) (events & EPOLLHUP));
@@ -1806,6 +1815,7 @@ private:
 		{
 			import libasync.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			int err;
+			try log("Also got events: " ~ connect.to!string ~ " c " ~ read.to!string ~ " r " ~ write.to!string ~ " write"); catch {}
 			socklen_t errlen = err.sizeof;
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen);
 			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t)err);
@@ -1819,6 +1829,7 @@ private:
 			return false;
 		}
 
+		
 		if (connect) 
 		{
 			try log("!connect"); catch {}
@@ -1831,15 +1842,6 @@ private:
 			return true;
 		}
 
-		if (read && conn.connected && !conn.disconnecting)
-		{
-			try log("!read"); catch {}
-			try del(TCPEvent.READ);
-			catch (Exception e) {
-				setInternalError!"del@TCPEvent.READ"(Status.ABORT);
-				return false;
-			}
-		}
 
 		if (write && conn.connected && !conn.disconnecting && conn.writeBlocked) 
 		{
@@ -1851,39 +1853,49 @@ private:
 				return false;
 			}
 		}
-		
+		else {
+			read = true;
+		}
+
+		if (read && conn.connected && !conn.disconnecting)
+		{
+			try log("!read"); catch {}
+			try del(TCPEvent.READ);
+			catch (Exception e) {
+				setInternalError!"del@TCPEvent.READ"(Status.ABORT);
+				return false;
+			}
+		}
+
 		if (close && conn.connected && !conn.disconnecting) 
 		{
 			try log("!close"); catch {}
 			// todo: See if this hack is still necessary
 			if (!conn.connected && conn.disconnecting)
 				return true;
-
+			
 			try del(TCPEvent.CLOSE);
 			catch (Exception e) {
 				setInternalError!"del@TCPEvent.CLOSE"(Status.ABORT);
 				return false;
 			}
 			closeSocket(fd, !conn.disconnecting, conn.connected);
-
+			
 			m_status.code = Status.ABORT;
 			conn.disconnecting = true;
 			conn.connected = false;
 			conn.writeBlocked = true;
 			del.conn.socket = 0;
-
+			
 			try FreeListObjectAlloc!EventInfo.free(del.conn.evInfo);
 			catch (Exception e){ assert(false, "Error freeing resources"); }
-
+			
 			if (del.conn.inbound) {
 				log("Freeing inbound connection");
 				try FreeListObjectAlloc!AsyncTCPConnection.free(del.conn);
 				catch (Exception e){ assert(false, "Error freeing resources"); }
 			}
-
-			return true;
 		}
-
 		return true;
 	}
 	
@@ -1947,7 +1959,7 @@ private:
 	}
 
 
-	bool initTCPListener(fd_t fd, AsyncTCPListener ctxt, TCPAcceptHandler del)
+	bool initTCPListener(fd_t fd, AsyncTCPListener ctxt, TCPAcceptHandler del, bool reusing = false)
 	in {
 		assert(ctxt.local !is NetworkAddress.init);
 	}
@@ -2002,19 +2014,20 @@ private:
 		}
 
 		/// Bind and listen to socket
+		if (!reusing) {
+			err = bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
+			if (catchError!"bind"(err)) {
+				deregisterEvent();
+				return closeAll();
+			}
 
-		err = bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
-		if (catchError!"bind"(err)) {
-			deregisterEvent();
-			return closeAll();
+			err = listen(fd, SOMAXCONN);
+			if (catchError!"listen"(err)) {
+				deregisterEvent();
+				return closeAll();
+			}
+
 		}
-
-		err = listen(fd, SOMAXCONN);
-		if (catchError!"listen"(err)) {
-			deregisterEvent();
-			return closeAll();
-		}
-
 		return true;
 	}
 

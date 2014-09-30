@@ -4,18 +4,18 @@ import libasync.events;
 import std.stdio;
 import std.datetime;
 import libasync.file;
-//
+
 AsyncDirectoryWatcher g_watcher;
 shared AsyncDNS g_dns;
 
 
 unittest {
-	//writeln("Unit test started");
+	// writeln("Unit test started");
 	g_cbCheck = new shared bool[19];
 	g_lastTimer = Clock.currTime();
 	gs_start = Clock.currTime();
-	g_evl = new EventLoop;
-	//writeln("Loading objects...");
+	g_evl = getThreadEventLoop();
+	// writeln("Loading objects...");
 	testDirectoryWatcher();
 	testDNS();
 	testFile();
@@ -26,7 +26,7 @@ unittest {
 	testEvents();
 	testTCPListen("localhost", 8081);
 	testHTTPConnect();
-	//writeln("Loaded. Running event loop...");
+	// writeln("Loaded. Running event loop...");
 
 	testTCPConnect("localhost", 8081);
 
@@ -38,7 +38,7 @@ unittest {
 		assert(b, "Callback not triggered: g_cbCheck[" ~ i.to!string ~ "]");
 		i++;
 	}
-	//writeln("Callback triggers were successful, run time: ", Clock.currTime - gs_start);
+	// writeln("Callback triggers were successful, run time: ", Clock.currTime - gs_start);
 
 	assert(g_cbTimerCnt >= 3, "Multitimer expired only " ~ g_cbTimerCnt.to!string ~ " times"); // MultiTimer expired 3-4 times
 
@@ -53,7 +53,7 @@ void testDNS() {
 	g_swDns.start();
 	g_dns.handler((NetworkAddress addr) {
 		g_cbCheck[17] = true;
-		//writeln("Resolved to: ", addr.toString(), ", it took: ", g_swDns.peek().usecs, " usecs");
+		// writeln("Resolved to: ", addr.toString(), ", it took: ", g_swDns.peek().usecs, " usecs");
 	}).resolveHost("127.0.0.1");
 }
 
@@ -69,7 +69,7 @@ void testDirectoryWatcher() {
 		DWChangeInfo[] changeRef = change.ptr[0..1];
 		while(g_watcher.readChanges(changeRef)){
 			g_cbCheck[18] = true;
-			//writeln(change);
+			// writeln(change);
 		}
 	});
 	g_watcher.watchDir(".");
@@ -77,7 +77,7 @@ void testDirectoryWatcher() {
 	tm.duration(1.seconds).run({
 		mkdir("./hey");
 		if (!g_watcher.watchDir("./hey/"))
-			writeln("ERROR: ", g_watcher.status);
+			// writeln("ERROR: ", g_watcher.status);
 		tm.duration(1.seconds).run({
 			// writeln("Writing to ./hey/tmp.tmp");
 			std.file.write("./hey/tmp.tmp", "some string");
@@ -106,8 +106,8 @@ void testFile() {
 			g_cbCheck[7] = true;
 		}
 		else {
-			import std.stdio : writeln;
-			writeln("ERROR: ", cast(string)file.buffer);
+			//import std.stdio :  writeln;
+			// writeln("ERROR: ", cast(string)file.buffer);
 			assert(false);
 		}
 		import std.file : remove;
@@ -207,7 +207,7 @@ void testMultiTimer() {
 
 
 void trafficHandler(TCPEvent ev){
-	//writeln("##TrafficHandler!");
+	// writeln("##TrafficHandler!");
 	void doRead() {
 		static ubyte[] bin = new ubyte[4092];
 		while (true) {
@@ -216,7 +216,7 @@ void trafficHandler(TCPEvent ev){
 			// import std.file;
 			if (len > 0) {
 				auto res = cast(string)bin[0..len];
-				//writeln(res);
+				// writeln(res);
 				import std.algorithm : canFind;
 				if (res.canFind("Client Hello"))
 					g_cbCheck[8] = true;
@@ -255,6 +255,8 @@ void trafficHandler(TCPEvent ev){
 				g_conn.send(cast(ubyte[])"Server WRITE");
 			break;
 		case TCPEvent.CLOSE:
+			doRead();
+			// writeln("!!Server Disconnect!");
 			g_cbCheck[12] = true;
 			break;
 		case TCPEvent.ERROR:
@@ -291,8 +293,8 @@ void testTCPConnect(string ip, ushort port) {
 				assert(conn.socket > 0);
 				uint len = conn.recv(bin);
 				// writeln("!!Client Received " ~ len.to!string ~ " bytes");
-				//if (len > 0)
-				//	writeln(cast(string)bin[0..len]);
+				// if (len > 0)
+					// writeln(cast(string)bin[0..len]);
 				if (len < bin.length)
 					break;
 			}
@@ -308,7 +310,7 @@ void testTCPConnect(string ip, ushort port) {
 				assert(conn.socket > 0);
 				break;
 			case TCPEvent.READ:
-				// writeln("!!Client Read is ready");
+				// writeln("!!Client Read is ready at writes: ", g_writes);
 				doRead();
 
 				// respond
