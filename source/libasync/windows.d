@@ -189,26 +189,32 @@ package:
 	fd_t run(AsyncTCPListener ctxt, TCPAcceptHandler del)
 	{
 		m_status = StatusInfo.init;
-		fd_t fd = WSASocketW(cast(int)ctxt.local.family, SOCK_STREAM, IPPROTO_TCP, null, 0, WSA_FLAG_OVERLAPPED);
-		
-		if (catchSocketError!("run AsyncTCPConnection")(fd, INVALID_SOCKET))
-			return 0;
-		
-		if (!setOption(fd, TCPOption.REUSEADDR, true))
-			return 0;
-		
-		// todo: defer accept?
-		
-		if (ctxt.noDelay) {
-			if (!setOption(fd, TCPOption.NODELAY, true))
-				return 0;
-		}
+		fd_t fd = ctxt.socket;
+		bool reusing;
+		if (fd == fd_t.init) {
 
-		if (initTCPListener(fd, ctxt))
+			fd = WSASocketW(cast(int)ctxt.local.family, SOCK_STREAM, IPPROTO_TCP, null, 0, WSA_FLAG_OVERLAPPED);
+			
+			if (catchSocketError!("run AsyncTCPConnection")(fd, INVALID_SOCKET))
+				return 0;
+			
+			if (!setOption(fd, TCPOption.REUSEADDR, true))
+				return 0;
+			
+			// todo: defer accept?
+			
+			if (ctxt.noDelay) {
+				if (!setOption(fd, TCPOption.NODELAY, true))
+					return 0;
+			}
+		} else reusing = true;
+
+		if (initTCPListener(fd, ctxt, reusing))
 		{
 			try {
 				log("Running listener on socket fd#" ~ fd.to!string);
 				(*m_connHandlers)[fd] = del;
+				ctxt.init(m_hwnd, fd);
 			}
 			catch (Exception e) {
 				setInternalError!"m_connHandlers assign"(Status.ERROR, e.msg);
@@ -221,8 +227,7 @@ package:
 			return 0;
 		}
 
-		try log("Listener started FD#" ~ fd.to!string);
-		catch{}
+
 		return fd;
 	}
 	
@@ -1255,14 +1260,30 @@ private:
 				conn.socket = csock;
 				conn.inbound = true;
 				try {
-					cb = (*m_connHandlers)[sock](conn); 
+
+					TCPAcceptHandler list = (*m_connHandlers)[sock];
+
+					/// Let another listener take the next connection
+					HWND hwnd = list.ctxt.next(m_hwnd);
+					if (hwnd !is HWND.init) {
+						int error = WSAAsyncSelect(sock, hwnd, WM_TCP_SOCKET, FD_ACCEPT);
+						if (catchSocketError!"WSAAsyncSelect.NEXT()=> HWND"(error)) {
+							error = WSAAsyncSelect(sock, m_hwnd, WM_TCP_SOCKET, FD_ACCEPT);
+							if (catchSocketError!"WSAAsyncSelect"(error))
+								assert(false, "Could not set listener back to window HANDLE " ~ m_hwnd.to!string); 
+						}
+					}
+					else log("Returned init!!");
+					// Do the callback to get a handler
+					cb = list(conn); 
 				} 
 				catch(Exception e) {
 					setInternalError!"onConnected"(Status.EVLOOP_FAILURE); 
 					return false; 
 				}
+
 				try {
-					(*m_tcpHandlers)[csock] = cb;
+					(*m_tcpHandlers)[csock] = cb; // keep the handler to setup the connection
 					log("ACCEPT&CONNECT FD#" ~ csock.to!string);
 					*conn.connecting = true;
 					//cb(TCPEvent.CONNECT);
@@ -1389,23 +1410,24 @@ private:
 	}
 	body {
 		INT err;
+		if (!reusing) {
+			err = bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
+			if (catchSocketError!"bind"(err)) {
+				closesocket(fd);
+				return false;
+			}
 
-		err = bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
-		if (catchSocketError!"bind"(err)) {
-			closesocket(fd);
-			return false;
-		}
-
-		err = listen(fd, 128);
-		if (catchSocketError!"listen"(err)) {
-			closesocket(fd);
-			return false;
-		}
-
-		err = WSAAsyncSelect(fd, m_hwnd, WM_TCP_SOCKET, FD_ACCEPT);
-		if (catchSocketError!"WSAAsyncSelect"(err)) {
-			closesocket(fd);
-			return false;
+			err = listen(fd, 128);
+			if (catchSocketError!"listen"(err)) {
+				closesocket(fd);
+				return false;
+			}
+			
+			err = WSAAsyncSelect(fd, m_hwnd, WM_TCP_SOCKET, FD_ACCEPT);
+			if (catchSocketError!"WSAAsyncSelect"(err)) {
+				closesocket(fd);
+				return false;
+			}
 		}
 		
 		return true;
@@ -1577,6 +1599,102 @@ mixin template TCPConnectionMixins() {
 	
 }
 
+mixin template TCPListenerDistMixins()
+{
+	import std.c.windows.windows : HWND;
+	import libasync.internals.hashmap : HashMap;
+	import core.sync.mutex;
+	import std.stdio : writeln;
+	private {
+		bool m_dist;
+		
+		Tuple!(WinReference, bool*) m_handles;
+		__gshared HashMap!(fd_t, Tuple!(WinReference, bool*)) gs_dist;
+		__gshared Mutex gs_mutex;
+	}
+
+	class WinReference {
+		private {
+			struct Item {
+				HWND handle;
+				bool active;
+			}
+
+			Item[] m_items;
+		}
+
+		this(HWND hndl, bool b) {
+			append(hndl, b);
+		}
+
+		void append(HWND hndl, bool b) {
+			m_items ~= Item(hndl, b);
+		}
+
+		HWND next(HWND me) {
+			foreach (i, item; m_items) {
+				if (item.handle == me) {
+					m_items[i].active = false; // remove responsibility
+					if (m_items.length <= i + 1) {
+						m_items[0].active = true; // set responsibility
+						auto ret = m_items[0].handle;
+						writeln("returning zero: " ~ ret.to!string);
+						writeln(m_items);
+						return ret;
+					}
+					else {
+						m_items[i + 1].active = true;
+						auto ret = m_items[i + 1].handle;
+						writeln("returning: " ~ ret.to!string);
+						writeln(m_items);
+						return ret;
+					}
+				}
+				
+			}
+			assert(false);
+		}
+
+	}
+
+	void init(HWND hndl, fd_t sock) {
+		try {
+			if (!gs_mutex) {
+				gs_mutex = new Mutex;
+			}
+			synchronized(gs_mutex) {
+				m_handles = gs_dist.get(sock);
+				if (m_handles == typeof(m_handles).init) {
+					gs_dist[sock] = Tuple!(WinReference, bool*)(new WinReference(hndl, true), &m_dist);
+					m_handles = gs_dist.get(sock);
+					assert(m_handles != typeof(m_handles).init);
+				}
+				else {
+					m_handles[0].append(hndl, false);
+					*m_handles[1] = true; // set first thread to dist
+					m_dist = true; // set this thread to dist
+				}
+			}
+		} catch (Exception e) {
+			assert(false, e.toString());
+		}
+		
+	}
+	
+	HWND next(HWND me) {
+		try {
+			if (!m_dist)
+				return HWND.init;
+			synchronized(gs_mutex) {
+				return m_handles[0].next(me);
+			}
+		}
+		catch (Exception e) {
+			assert(false, e.toString());
+		}
+	}
+	
+}
 private class DWHandlerInfo {
 	DWHandler handler;
 	Array!DWChangeInfo buffer;
