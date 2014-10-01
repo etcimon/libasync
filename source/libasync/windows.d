@@ -203,10 +203,11 @@ package:
 			if (!setOption(fd, TCPOption.NODELAY, true))
 				return 0;
 		}
-		
+
 		if (initTCPListener(fd, ctxt))
 		{
 			try {
+				log("Running listener on socket fd#" ~ fd.to!string);
 				(*m_connHandlers)[fd] = del;
 			}
 			catch (Exception e) {
@@ -215,6 +216,11 @@ package:
 				return 0;
 			}
 		}
+		else
+		{
+			return 0;
+		}
+
 		try log("Listener started FD#" ~ fd.to!string);
 		catch{}
 		return fd;
@@ -228,7 +234,6 @@ package:
 	body {
 		m_status = StatusInfo.init;
 		fd_t fd = WSASocketW(cast(int)ctxt.peer.family, SOCK_STREAM, IPPROTO_TCP, null, 0, WSA_FLAG_OVERLAPPED);
-		
 		log("Starting connection at: " ~ fd.to!string);
 		if (catchSocketError!("run AsyncTCPConnection")(fd, INVALID_SOCKET))
 			return 0;
@@ -803,9 +808,9 @@ package:
 		//catch{}
 		int ret = .send(fd, cast(const(void)*) data.ptr, cast(INT) data.length, 0);
 		
-		if (catchSocketError!"send"(ret)) // ret == -1
+		if (catchSocketError!"send"(ret)) {
 			return 0; // TODO: handle some errors more specifically
-		
+		}
 		m_status.code = Status.ASYNC;
 		return cast(uint) ret;
 	}
@@ -900,6 +905,7 @@ package:
 			if (evh && evh.conn.inbound) {
 				try FreeListObjectAlloc!AsyncTCPConnection.free(evh.conn);
 				catch(Exception e) { assert(false, "Failed to free resources"); }
+				evh.conn = null;
 				//log("Remove event handler for " ~ fd.to!string);
 				m_tcpHandlers.remove(fd);
 			}
@@ -1227,6 +1233,8 @@ private:
 		switch(evt) {
 			default: break;
 			case FD_ACCEPT:
+
+				log("TCP Handlers: " ~ m_tcpHandlers.length.to!string);
 				log("Accepting connection");
 				NetworkAddress addr;
 				addr.family = AF_INET;
@@ -1374,23 +1382,26 @@ private:
 		return true;
 	}
 	
-	bool initTCPListener(fd_t fd, AsyncTCPListener ctxt)
+	bool initTCPListener(fd_t fd, AsyncTCPListener ctxt, bool reusing = false)
 	in { 
 		assert(m_threadId == GetCurrentThreadId());
 		assert(ctxt.local !is NetworkAddress.init);
 	}
 	body {
 		INT err;
+
 		err = bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
 		if (catchSocketError!"bind"(err)) {
 			closesocket(fd);
 			return false;
 		}
+
 		err = listen(fd, 128);
 		if (catchSocketError!"listen"(err)) {
 			closesocket(fd);
 			return false;
 		}
+
 		err = WSAAsyncSelect(fd, m_hwnd, WM_TCP_SOCKET, FD_ACCEPT);
 		if (catchSocketError!"WSAAsyncSelect"(err)) {
 			closesocket(fd);

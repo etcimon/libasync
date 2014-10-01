@@ -29,8 +29,9 @@ version(Posix) {
 
 EventLoop getThreadEventLoop() {
 	static EventLoop evLoop;
-	if (!evLoop) 
+	if (!evLoop)  {
 		evLoop = new EventLoop;
+	}
 	return evLoop;
 }
 

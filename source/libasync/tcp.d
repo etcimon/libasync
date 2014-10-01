@@ -190,6 +190,7 @@ nothrow:
 	fd_t m_socket;
 	NetworkAddress m_local;
 	bool m_noDelay;
+	bool m_started;
 
 public:
 
@@ -199,7 +200,7 @@ public:
 
 	/// Sets the default value for nagle's algorithm on new connections.
 	@property void noDelay(bool b)
-	in { assert(m_socket == fd_t.init, "Cannot set noDelay on a running object."); }
+	in { assert(!m_started, "Cannot set noDelay on a running object."); }
 	body {
 		m_noDelay = b;
 	}
@@ -212,14 +213,14 @@ public:
 
 	/// Sets the local internet address as an OS-specific structure.
 	@property void local(NetworkAddress addr)
-	in { assert(m_socket == fd_t.init, "Cannot rebind a listening socket"); }
+	in { assert(!m_started, "Cannot rebind a listening socket"); }
 	body {
 		m_local = addr;
 	}
 
 	/// Sets the local listening interface to the specified hostname/port.
 	typeof(this) host(string hostname, size_t port)
-	in { assert(m_socket == fd_t.init, "Cannot rebind a listening socket"); }
+	in { assert(!m_started, "Cannot rebind a listening socket"); }
 	body {
 		m_local = m_evLoop.resolveHost(hostname, cast(ushort) port);
 		return this;
@@ -227,7 +228,7 @@ public:
 
 	/// Sets the local listening interface to the specified ip/port.
 	typeof(this) ip(string ip, size_t port)
-	in { assert(m_socket == fd_t.init, "Cannot rebind a listening socket"); }
+	in { assert(!m_started, "Cannot rebind a listening socket"); }
 	body {
 		m_local = m_evLoop.resolveIP(ip, cast(ushort) port);
 		return this;
@@ -249,8 +250,10 @@ public:
 		m_socket = m_evLoop.run(this, del);
 		if (m_socket == fd_t.init)
 			return false;
-		else
+		else {
+			m_started = true;
 			return true;
+		}
 	}
 
 	/// Use to implement distributed servicing of connections
@@ -263,6 +266,8 @@ public:
 	in { assert(m_socket != 0); }
 	body {
 		bool ret = m_evLoop.kill(this);
+		if (ret)
+			m_started = false;
 		return ret;
 	}
 
@@ -283,7 +288,9 @@ package struct TCPEventHandler {
 	void delegate(TCPEvent) del;
 
 	void opCall(TCPEvent ev){
-		assert(conn !is null, "Connection was disposed before shutdown could be completed");
+		if (conn is null)
+			return;
+		//assert(conn !is null, "Connection was disposed before shutdown could be completed");
 		if (!conn.isConnected)
 			return;
 		debug conn.m_dataRemaining = true;
