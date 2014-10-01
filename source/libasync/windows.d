@@ -16,6 +16,7 @@ import libasync.internals.win32;
 import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
 import std.utf : toUTFz;
+import core.sync.mutex;
 import libasync.events;
 pragma(lib, "ws2_32");
 pragma(lib, "ole32");
@@ -52,7 +53,7 @@ private:
 	ushort m_instanceId;
 	StatusInfo m_status;
 	error_t m_error = EWIN.WSA_OK;
-	
+	__gshared Mutex gs_mtx;
 package:
 	@property bool started() const {
 		return m_started;
@@ -61,7 +62,8 @@ package:
 	in { assert(!m_started); }
 	body
 	{
-
+		try if (!gs_mtx)
+			gs_mtx = new Mutex; catch {}
 		static ushort j;
 		assert (j == 0, "Current implementation is only tested with 1 event loop per thread. There are known issues with signals on linux.");
 		j += 1;
@@ -177,7 +179,10 @@ package:
 		while (PeekMessageW(&msg, null, 0, 0, PM_REMOVE)) {
 			m_status = StatusInfo.init;
 			TranslateMessage(&msg);
-			DispatchMessageW(&msg);
+
+			if (!onMessage(msg))
+				DispatchMessageW(&msg);
+
 			if (m_status.code == Status.ERROR) {
 				log(m_status.text);
 				return false;
@@ -421,7 +426,8 @@ package:
 			}
 		} catch (Exception e) {
 			setInternalError!"in m_tcpHandlers"(Status.ERROR, e.msg);
-			return false;
+			assert(false);
+			//return false;
 		}
 		
 		return true;
@@ -900,8 +906,10 @@ package:
 		
 		try log("Shutdown FD#" ~ fd.to!string);
 		catch{}
-		if (forced)
+		if (forced) {
 			err = shutdown(fd, SD_BOTH);
+			closesocket(fd);
+		}
 		else
 			err = shutdown(fd, SD_SEND);
 		
@@ -940,11 +948,9 @@ package:
 				return false;
 			}
 		}
-		else if (connected && !closeRemoteSocket(fd, forced)){
-			// invokes m_tcpHandlers.remove()
-			return false;
-		}
-		
+		else if (connected)
+			closeRemoteSocket(fd, forced);
+
 		if (!connected || forced) {
 			// todo: flush the socket here?
 			
@@ -1077,8 +1083,9 @@ private:
 				auto err = HIWORD(msg.lParam);
 				if (!onTCPEvent(evt, err, cast(fd_t)msg.wParam)) {
 					try {
-						TCPEventHandler cb = m_tcpHandlers.get(cast(fd_t)msg.wParam);
-						cb(TCPEvent.ERROR);
+						assert(false, evt.to!string ~ " & " ~ m_status.to!string ~ " & " ~ m_error.to!string); 
+						/*TCPEventHandler cb = m_tcpHandlers.get(cast(fd_t)msg.wParam);
+						cb(TCPEvent.ERROR);*/
 					}
 					catch (Exception e) {
 						// An Error callback should never fail...
@@ -1218,11 +1225,11 @@ private:
 		m_status = StatusInfo.init;
 		try{
 			if (m_tcpHandlers.get(sock) == TCPEventHandler.init && m_connHandlers.get(sock) == TCPAcceptHandler.init)
-				return false;
+				assert( false ); 
 		}	catch {}
 		if (sock == 0) { // highly unlikely...
 			setInternalError!"onTCPEvent"(Status.ERROR, "no socket defined");
-			return false;
+			assert(false);
 		}
 		if (err) {
 			setInternalError!"onTCPEvent"(Status.ERROR, string.init, cast(error_t)err);
@@ -1238,32 +1245,14 @@ private:
 		switch(evt) {
 			default: break;
 			case FD_ACCEPT:
+				gs_mtx.lock_nothrow();
 
 				log("TCP Handlers: " ~ m_tcpHandlers.length.to!string);
 				log("Accepting connection");
-				NetworkAddress addr;
-				addr.family = AF_INET;
-				int addrlen = addr.sockAddrLen;
-				fd_t csock = WSAAccept(sock, addr.sockAddr, &addrlen, null, 0);
-				log("Connection accepted: " ~ csock.to!string);
-				if (addrlen > addr.sockAddrLen)
-					addr.family = AF_INET6;
-				if (addrlen == typeof(addrlen).init) {
-					setInternalError!"addrlen"(Status.ABORT);
-					return false;
-				}
-				catchSocketError!"WSAAccept"(csock, INVALID_SOCKET);
-				AsyncTCPConnection conn;
-				try conn = FreeListObjectAlloc!AsyncTCPConnection.alloc(m_evLoop);
-				catch (Exception e) { assert(false, "Failed allocation"); }
-				conn.peer = addr;
-				conn.socket = csock;
-				conn.inbound = true;
-				try {
-
-					TCPAcceptHandler list = (*m_connHandlers)[sock];
-
-					/// Let another listener take the next connection
+				/// Let another listener take the next connection
+				TCPAcceptHandler list;
+				try list = (*m_connHandlers)[sock]; catch { assert(false, "Listening on an invalid socket..."); }
+				scope(exit) {
 					HWND hwnd = list.ctxt.next(m_hwnd);
 					if (hwnd !is HWND.init) {
 						int error = WSAAsyncSelect(sock, hwnd, WM_TCP_SOCKET, FD_ACCEPT);
@@ -1274,57 +1263,93 @@ private:
 						}
 					}
 					else log("Returned init!!");
-					// Do the callback to get a handler
-					cb = list(conn); 
-				} 
-				catch(Exception e) {
-					setInternalError!"onConnected"(Status.EVLOOP_FAILURE); 
-					return false; 
+
+					gs_mtx.unlock_nothrow();
 				}
 
-				try {
-					(*m_tcpHandlers)[csock] = cb; // keep the handler to setup the connection
-					log("ACCEPT&CONNECT FD#" ~ csock.to!string);
-					*conn.connecting = true;
-					//cb(TCPEvent.CONNECT);
-				}
-				catch (Exception e) { 
-					setInternalError!"m_tcpHandlers.opIndexAssign"(Status.ABORT); 
-					return false; 
-				}
-				
-				int ok = WSAAsyncSelect(csock, m_hwnd, WM_TCP_SOCKET, FD_CONNECT|FD_READ|FD_WRITE|FD_CLOSE);
-				if ( catchSocketError!"WSAAsyncSelect"(ok) ) 
-					return false;
-				
+				do {
+					NetworkAddress addr;
+					addr.family = AF_INET;
+					int addrlen = addr.sockAddrLen;
+					fd_t csock = WSAAccept(sock, addr.sockAddr, &addrlen, null, 0);
+
+					if (catchSocketError!"WSAAccept"(csock, INVALID_SOCKET)) {
+						try assert(false, m_status.to!string ~ " & " ~ m_error.to!string); catch {}
+						break;
+					}
+
+					int ok = WSAAsyncSelect(csock, m_hwnd, WM_TCP_SOCKET, FD_CONNECT|FD_READ|FD_WRITE|FD_CLOSE);
+					if ( catchSocketError!"WSAAsyncSelect"(ok) ) 
+						assert(false);
+
+					log("Connection accepted: " ~ csock.to!string);
+					if (addrlen > addr.sockAddrLen)
+						addr.family = AF_INET6;
+					if (addrlen == typeof(addrlen).init) {
+						setInternalError!"addrlen"(Status.ABORT);
+						assert(false);
+					}
+					AsyncTCPConnection conn;
+					try conn = FreeListObjectAlloc!AsyncTCPConnection.alloc(m_evLoop);
+					catch (Exception e) { assert(false, "Failed allocation"); }
+					conn.peer = addr;
+					conn.socket = csock;
+					conn.inbound = true;
+
+					try {
+						// Do the callback to get a handler
+						cb = list(conn); 
+					} 
+					catch(Exception e) {
+						setInternalError!"onConnected"(Status.EVLOOP_FAILURE); 
+						assert(false); 
+					}
+
+					try {
+						(*m_tcpHandlers)[csock] = cb; // keep the handler to setup the connection
+						log("ACCEPT&CONNECT FD#" ~ csock.to!string);
+						*conn.connecting = true;
+						//cb(TCPEvent.CONNECT);
+					}
+					catch (Exception e) { 
+						setInternalError!"m_tcpHandlers.opIndexAssign"(Status.ABORT); 
+						assert(false); 
+					}
+				} while(true);
 				break;
 			case FD_CONNECT:
 				try {
 					//log("CONNECT FD#" ~ sock.to!string);
 					cb = m_tcpHandlers.get(sock);
-					assert(cb != TCPEventHandler.init, "Socket " ~ sock.to!string ~ " could not yield a callback");
+					if (cb == TCPEventHandler.init) break;//, "Socket " ~ sock.to!string ~ " could not yield a callback");
 					*cb.conn.connecting = true;
 				} 
 				catch(Exception e) {
 					setInternalError!"del@TCPEvent.CONNECT"(Status.ABORT);
-					return false;
+					assert(false);
 				}
 				break;
 			case FD_READ:
 				try {
 					//log("READ FD#" ~ sock.to!string);
 					cb = m_tcpHandlers.get(sock);
-					assert(cb != TCPEventHandler.init, "Socket " ~ sock.to!string ~ " could not yield a callback");
+					if (cb == TCPEventHandler.init) break; //, "Socket " ~ sock.to!string ~ " could not yield a callback");
 					if (cb.conn.socket == 0){
-						//log("READ NO SOCKET!");
+						import std.stdio : writeln;
+						writeln("Returning no socket");
 						return true;
 					}
-					if (*cb.conn.connected)
+					if (*(cb.conn.connected) == false) {
+						*cb.conn.connecting = false;
+						*cb.conn.connected = true;
+						cb(TCPEvent.CONNECT);
+					}
+					else 
 						cb(TCPEvent.READ);
 				}
 				catch (Exception e) {
 					setInternalError!"del@TCPEvent.READ"(Status.ABORT); 
-					return false;
+					assert(false);
 				}
 				break;
 			case FD_WRITE:
@@ -1334,9 +1359,10 @@ private:
 					//import std.stdio;
 					log("WRITE FD#" ~ sock.to!string);
 					cb = m_tcpHandlers.get(sock);
-					assert(cb != TCPEventHandler.init, "Socket " ~ sock.to!string ~ " could not yield a callback");
+					if (cb == TCPEventHandler.init) break;//assert(cb != TCPEventHandler.init, "Socket " ~ sock.to!string ~ " could not yield a callback");
 					if (cb.conn.socket == 0){
-						//log("WRITE NO SOCKET!");
+						import std.stdio : writeln;
+						writeln("Returning no socket");
 						return true;
 					}
 					if (*(cb.conn.connected) == false) {
@@ -1350,7 +1376,7 @@ private:
 				}
 				catch (Exception e) {
 					setInternalError!"del@TCPEvent.WRITE"(Status.ABORT); 
-					return false;
+					assert(false);
 				}
 				break;
 			case FD_CLOSE:
@@ -1371,7 +1397,7 @@ private:
 				catch (Exception e) {
 					if (m_status.code == Status.OK)
 						setInternalError!"del@TCPEvent.CLOSE"(Status.ABORT); 
-					return false;
+					assert(false);
 				}
 				
 				closeSocket(sock, connected, true); // as necessary: invokes m_tcpHandlers.remove(fd), shutdown, closesocket
@@ -1604,7 +1630,6 @@ mixin template TCPListenerDistMixins()
 	import std.c.windows.windows : HWND;
 	import libasync.internals.hashmap : HashMap;
 	import core.sync.mutex;
-	import std.stdio : writeln;
 	private {
 		bool m_dist;
 		
@@ -1632,21 +1657,20 @@ mixin template TCPListenerDistMixins()
 		}
 
 		HWND next(HWND me) {
-			foreach (i, item; m_items) {
-				if (item.handle == me) {
+			Item[] items;
+			synchronized(gs_mutex)
+				items = m_items;
+			foreach (i, item; items) {
+				if (item.active == true) {
 					m_items[i].active = false; // remove responsibility
 					if (m_items.length <= i + 1) {
 						m_items[0].active = true; // set responsibility
 						auto ret = m_items[0].handle;
-						writeln("returning zero: " ~ ret.to!string);
-						writeln(m_items);
 						return ret;
 					}
 					else {
 						m_items[i + 1].active = true;
 						auto ret = m_items[i + 1].handle;
-						writeln("returning: " ~ ret.to!string);
-						writeln(m_items);
 						return ret;
 					}
 				}
@@ -1685,9 +1709,7 @@ mixin template TCPListenerDistMixins()
 		try {
 			if (!m_dist)
 				return HWND.init;
-			synchronized(gs_mutex) {
-				return m_handles[0].next(me);
-			}
+			return m_handles[0].next(me);
 		}
 		catch (Exception e) {
 			assert(false, e.toString());

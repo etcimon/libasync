@@ -288,9 +288,7 @@ package struct TCPEventHandler {
 	void delegate(TCPEvent) del;
 
 	void opCall(TCPEvent ev){
-		if (conn is null)
-			return;
-		//assert(conn !is null, "Connection was disposed before shutdown could be completed");
+		assert(conn !is null, "Connection was disposed before shutdown could be completed");
 		if (!conn.isConnected)
 			return;
 		debug conn.m_dataRemaining = true;
