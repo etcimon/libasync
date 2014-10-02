@@ -128,6 +128,8 @@ private:
 				break;
 				
 			case FileCmd.WRITE:
+				import std.stdio;
+				writeln("Writing ", ctxt.buffer);
 				File file = File(ctxt.filePath.toNativeString(), "r+b");
 				if (ctxt.offset != -1)
 					file.seek(cast(long)ctxt.offset);

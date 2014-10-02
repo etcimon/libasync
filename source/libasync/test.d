@@ -112,7 +112,7 @@ void testFile() {
 		}
 		import std.file : remove;
 		remove("test.txt");
-	}).read(Path("test.txt"));
+	}).read("test.txt");
 
 }
 

@@ -44,7 +44,7 @@ mixin template RunKill()
 	
 	fd_t run(AsyncTCPListener ctxt, TCPAcceptHandler del)
 	in { 
-		assert(ctxt.socket == fd_t.init, "TCP Listener already bound. Please run another instance."); 
+		//assert(ctxt.socket == fd_t.init, "TCP Listener already bound. Please run another instance."); 
 		assert(ctxt.local.addr !is typeof(ctxt.local.addr).init, "No locally binding address specified. Use AsyncTCPListener.local = EventLoop.resolve*"); 
 	}
 	body {

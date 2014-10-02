@@ -1083,9 +1083,9 @@ private:
 				auto err = HIWORD(msg.lParam);
 				if (!onTCPEvent(evt, err, cast(fd_t)msg.wParam)) {
 					try {
-						assert(false, evt.to!string ~ " & " ~ m_status.to!string ~ " & " ~ m_error.to!string); 
-						/*TCPEventHandler cb = m_tcpHandlers.get(cast(fd_t)msg.wParam);
-						cb(TCPEvent.ERROR);*/
+						//assert(false, evt.to!string ~ " & " ~ m_status.to!string ~ " & " ~ m_error.to!string); 
+						TCPEventHandler cb = m_tcpHandlers.get(cast(fd_t)msg.wParam);
+						cb(TCPEvent.ERROR);
 					}
 					catch (Exception e) {
 						// An Error callback should never fail...
@@ -1274,20 +1274,20 @@ private:
 					fd_t csock = WSAAccept(sock, addr.sockAddr, &addrlen, null, 0);
 
 					if (catchSocketError!"WSAAccept"(csock, INVALID_SOCKET)) {
-						try assert(false, m_status.to!string ~ " & " ~ m_error.to!string); catch {}
+						return false;//try assert(false, m_status.to!string ~ " & " ~ m_error.to!string); catch {}
 						break;
 					}
 
 					int ok = WSAAsyncSelect(csock, m_hwnd, WM_TCP_SOCKET, FD_CONNECT|FD_READ|FD_WRITE|FD_CLOSE);
 					if ( catchSocketError!"WSAAsyncSelect"(ok) ) 
-						assert(false);
+						return false;
 
 					log("Connection accepted: " ~ csock.to!string);
 					if (addrlen > addr.sockAddrLen)
 						addr.family = AF_INET6;
 					if (addrlen == typeof(addrlen).init) {
 						setInternalError!"addrlen"(Status.ABORT);
-						assert(false);
+						return false;
 					}
 					AsyncTCPConnection conn;
 					try conn = FreeListObjectAlloc!AsyncTCPConnection.alloc(m_evLoop);
@@ -1302,7 +1302,7 @@ private:
 					} 
 					catch(Exception e) {
 						setInternalError!"onConnected"(Status.EVLOOP_FAILURE); 
-						assert(false); 
+						return false; 
 					}
 
 					try {
@@ -1313,7 +1313,7 @@ private:
 					}
 					catch (Exception e) { 
 						setInternalError!"m_tcpHandlers.opIndexAssign"(Status.ABORT); 
-						assert(false); 
+						return false; 
 					}
 				} while(true);
 				break;
@@ -1326,7 +1326,7 @@ private:
 				} 
 				catch(Exception e) {
 					setInternalError!"del@TCPEvent.CONNECT"(Status.ABORT);
-					assert(false);
+					return false;
 				}
 				break;
 			case FD_READ:
@@ -1349,7 +1349,7 @@ private:
 				}
 				catch (Exception e) {
 					setInternalError!"del@TCPEvent.READ"(Status.ABORT); 
-					assert(false);
+					return false;
 				}
 				break;
 			case FD_WRITE:
@@ -1376,7 +1376,7 @@ private:
 				}
 				catch (Exception e) {
 					setInternalError!"del@TCPEvent.WRITE"(Status.ABORT); 
-					assert(false);
+					return false;
 				}
 				break;
 			case FD_CLOSE:
@@ -1397,7 +1397,7 @@ private:
 				catch (Exception e) {
 					if (m_status.code == Status.OK)
 						setInternalError!"del@TCPEvent.CLOSE"(Status.ABORT); 
-					assert(false);
+					return false;
 				}
 				
 				closeSocket(sock, connected, true); // as necessary: invokes m_tcpHandlers.remove(fd), shutdown, closesocket

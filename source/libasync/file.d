@@ -6,7 +6,7 @@ import core.sync.mutex;
 import core.sync.condition;
 import std.stdio : File;
 import core.atomic;
-public import libasync.internals.path;
+import libasync.internals.path;
 import libasync.threads;
 
 /// Runs all blocking file I/O commands in a thread pool and calls the handler
@@ -73,12 +73,12 @@ public:
 
 	/// Creates a new buffer with the specified length and uses it to read the
 	/// file data at the specified path starting at the specified offset byte.
-	bool read(Path file_path, size_t len = 128, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false) {
+	bool read(string file_path, size_t len = 128, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false) {
 		return read(file_path, new shared ubyte[len], off, create_if_not_exists, truncate_if_exists);
 	}
 
 	/// Reads the file into the buffer starting at offset byte position.
-	bool read(Path file_path, shared ubyte[] buffer, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false) 
+	bool read(string file_path, shared ubyte[] buffer, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false) 
 	in { 
 		assert(!m_busy, "File is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
@@ -89,15 +89,15 @@ public:
 			m_cmdInfo.command = FileCmd.READ;
 			m_cmdInfo.create_if_not_exists = create_if_not_exists;
 			m_cmdInfo.truncate_if_exists = truncate_if_exists;
+			filePath = Path(file_path);
 		} catch {}
-		filePath = file_path;
 		offset = off;
 		return sendCommand();
 	}
 
 	/// Writes the data from the buffer into the file at the specified path starting at the
 	/// given offset byte position.
-	bool write(Path file_path, shared const(ubyte)[] buffer, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false) 
+	bool write(string file_path, shared const(ubyte)[] buffer, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false) 
 	in { 
 		assert(!m_busy, "File is busy or closed"); 
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
@@ -108,15 +108,15 @@ public:
 			m_cmdInfo.command = FileCmd.WRITE;
 			m_cmdInfo.create_if_not_exists = create_if_not_exists;
 			m_cmdInfo.truncate_if_exists = truncate_if_exists;
+			filePath = Path(file_path);
 		} catch {}
-		filePath = file_path;
 		offset = off;
 		return sendCommand();
 
 	}
 
 	/// Appends the data from the buffer into a file at the specified path.
-	bool append(Path file_path, shared ubyte[] buffer, bool create_if_not_exists = true, bool truncate_if_exists = false)
+	bool append(string file_path, shared ubyte[] buffer, bool create_if_not_exists = true, bool truncate_if_exists = false)
 	in {
 		assert(!m_busy, "File is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
@@ -127,8 +127,8 @@ public:
 			m_cmdInfo.buffer = buffer;
 			m_cmdInfo.create_if_not_exists = create_if_not_exists;
 			m_cmdInfo.truncate_if_exists = truncate_if_exists;
+			filePath = Path(file_path);
 		} catch {}
-		filePath = file_path;
 		return sendCommand();
 	}
 

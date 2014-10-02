@@ -650,12 +650,7 @@ struct FreeListRef(T, bool INIT = true)
 					//logInfo("ref %s destroyed", T.stringof);
 				}
 				static if( hasIndirections!T ) GC.removeRange(cast(void*)m_object);
-				version(LDC) {
-					static if (!INIT)
-						manualAllocator().free((cast(void*)m_object)[0 .. ElemSize+int.sizeof]);
-				} else {
-					manualAllocator().free((cast(void*)m_object)[0 .. ElemSize+int.sizeof]);
-				}
+				static if (!INIT) manualAllocator().free((cast(void*)m_object)[0 .. ElemSize+int.sizeof]);
 			}
 		}
 

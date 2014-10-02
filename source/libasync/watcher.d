@@ -3,7 +3,7 @@
 import libasync.types;
 
 import libasync.events;
-public import libasync.internals.path;
+import libasync.internals.path;
 import std.container : Array;
 import std.file;
 
@@ -151,7 +151,16 @@ struct DWChangeInfo {
 	/// The event triggered by the file/folder
 	DWFileEvent event;
 	/// The os-independent address of the file/folder
-	Path path;
+	private Path m_path;
+
+	@property string path() {
+		return m_path.toNativeString();
+	}
+
+	@property void path(Path p) {
+		m_path = p;
+	}
+
 }
 
 /// List of events that can be watched for. They must be 'Or'ed together

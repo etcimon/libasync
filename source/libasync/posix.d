@@ -14,6 +14,7 @@ import core.stdc.errno;
 import libasync.events;
 import libasync.internals.memory : FreeListObjectAlloc;
 import libasync.internals.hashmap;
+import libasync.internals.path;
 import core.sys.posix.signal;
 import libasync.posix2;
 import core.sync.mutex;
