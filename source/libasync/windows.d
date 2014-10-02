@@ -336,7 +336,7 @@ package:
 		try log("Timer created: " ~ timer_id.to!string ~ " with timeout: " ~ timeout.total!"msecs".to!string ~ " msecs"); catch {}
 		
 		BOOL err;
-		try err = SetTimer(m_hwnd, timer_id, timeout.total!"msecs".to!uint, null);
+		try err = cast(int)SetTimer(m_hwnd, timer_id, timeout.total!"msecs".to!uint, null);
 		catch(Exception e) {
 			setInternalError!"SetTimer"(Status.ERROR);
 			return 0;
@@ -755,7 +755,8 @@ package:
 		return wd;
 	}
 	
-	bool unwatch(in fd_t fd, in uint wd) {
+	bool unwatch(in fd_t fd, in fd_t _wd) {
+		uint wd = cast(uint) _wd;
 		m_status = StatusInfo.init;
 		try {
 			DWFolderWatcher fw = (*m_dwFolders).get(wd, null);
