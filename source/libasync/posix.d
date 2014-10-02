@@ -1613,7 +1613,7 @@ private:
 	
 	bool onTCPAccept(fd_t fd, TCPAcceptHandler del, int events)
 	{
-		import libasync.internals.socket_compat : AF_INET, AF_INET6, socklen_t, accept4;
+		import libasync.internals.socket_compat : AF_INET, AF_INET6, socklen_t, accept4, accept;
 		enum O_NONBLOCK     = 0x800;    // octal    04000
 
 		static if (EPOLL) 
@@ -1637,20 +1637,28 @@ private:
 				socklen_t addrlen = addr.sockAddrLen;
 
 				bool ret;
+				static if (EPOLL) {
+					/// Accept the connection and create a client socket
+					fd_t csock = accept4(fd, addr.sockAddr, &addrlen, O_NONBLOCK);
 
-				/// Accept the connection and create a client socket
-				fd_t csock = accept4(fd, addr.sockAddr, &addrlen, O_NONBLOCK); // todo: use accept4 to set SOCK_NONBLOCK
-
-				if (catchError!".accept"(csock)) {
-					ret = false;
-					return ret;
+					if (catchError!".accept"(csock)) {
+						ret = false;
+						return ret;
+					}
+				} else /* if KQUEUE */ {
+					fd_t csock = accept(fd, addr.sockAddr, &addrlen);
+					
+					if (catchError!".accept"(csock)) {
+						ret = false;
+						return ret;
+					}
+					
+					// Make non-blocking so subsequent calls to recv/send return immediately
+					if (!setNonBlock(csock)) {
+						ret = false;
+						return ret;
+					}
 				}
-
-				// Make non-blocking so subsequent calls to recv/send return immediately
-				/*if (!setNonBlock(csock)) {
-					ret = false;
-					return ret;
-				}*/
 
 				// Set client address family based on address length
 				if (addrlen > addr.sockAddrLen)
