@@ -48,7 +48,6 @@ version(linux) {
 		blockSignals();
 		g_signalsBlocked = true;
 	}
-	__gshared Mutex g_mutex;
 }
 version(OSX) {
 	import libasync.internals.kqueue;
@@ -59,6 +58,7 @@ version(FreeBSD) {
 	const EPOLL = false;
 }
 
+__gshared Mutex g_mutex;
 
 static if (!EPOLL) {
 	private struct DWFileInfo {
@@ -139,13 +139,14 @@ package:
 		try Thread.getThis().priority = Thread.PRIORITY_MAX;
 		catch (Exception e) { assert(false, "Could not set thread priority"); }
 
+		try
+			if (!g_mutex)
+				g_mutex = new Mutex;
+		catch {}
+
 		static if (EPOLL)
 		{
 
-			try
-			if (!g_mutex)
-				g_mutex = new Mutex;
-			catch {}
 			if (!g_signalsBlocked)
 				blockSignals();
 			assert(m_instanceId <= __libc_current_sigrtmax(), "An additional event loop is unsupported due to SIGRTMAX restrictions in Linux Kernel");
@@ -312,7 +313,7 @@ package:
 			}
 			time_t secs = timeout.split!("seconds", "nsecs")().seconds;
 			c_long ns = timeout.split!("seconds", "nsecs")().nsecs;
-			auto tspec = event.internals.kqueue.timespec(secs, ns);
+			auto tspec = libasync.internals.kqueue.timespec(secs, ns);
 
 			num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, &tspec);
 
@@ -1806,7 +1807,7 @@ private:
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
 			const bool connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !conn.disconnecting && !conn.connected);
-			const bool read = cast(bool) (kqueue_events & EVFILT_READ) && !connect;
+			bool read = cast(bool) (kqueue_events & EVFILT_READ) && !connect;
 			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
 			const bool close = cast(bool) (kqueue_flags & EV_EOF);
@@ -1944,7 +1945,7 @@ private:
 			nothrow void deregisterEvent() {
 				EV_SET(&(_event[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
 				EV_SET(&(_event[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
-				kevent(m_kqueuefd, &(_event[0]), 2, null, 0, cast(event.internals.kqueue.timespec*) null);
+				kevent(m_kqueuefd, &(_event[0]), 2, null, 0, cast(libasync.internals.kqueue.timespec*) null);
 			}
 
 		}
