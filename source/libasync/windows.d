@@ -718,7 +718,7 @@ package:
 			import std.algorithm : min;
 			size_t cnt = min(dst.length, changes.length);
 			foreach (DWChangeInfo change; (*changes)[0 .. cnt]) {
-				try log("reading change: " ~ change.path.toNativeString()); catch {}
+				try log("reading change: " ~ change.path); catch {}
 				dst[i] = (*changes)[i];
 				i++;
 			}
@@ -1275,7 +1275,7 @@ private:
 
 					if (catchSocketError!"WSAAccept"(csock, INVALID_SOCKET)) {
 						return false;//try assert(false, m_status.to!string ~ " & " ~ m_error.to!string); catch {}
-						break;
+						//break;
 					}
 
 					int ok = WSAAsyncSelect(csock, m_hwnd, WM_TCP_SOCKET, FD_CONNECT|FD_READ|FD_WRITE|FD_CLOSE);
@@ -1316,7 +1316,7 @@ private:
 						return false; 
 					}
 				} while(true);
-				break;
+				//break;
 			case FD_CONNECT:
 				try {
 					//log("CONNECT FD#" ~ sock.to!string);
@@ -1335,8 +1335,8 @@ private:
 					cb = m_tcpHandlers.get(sock);
 					if (cb == TCPEventHandler.init) break; //, "Socket " ~ sock.to!string ~ " could not yield a callback");
 					if (cb.conn.socket == 0){
-						import std.stdio : writeln;
-						writeln("Returning no socket");
+						//import std.stdio : writeln;
+						//writeln("Returning no socket");
 						return true;
 					}
 					if (*(cb.conn.connected) == false) {
@@ -1361,8 +1361,8 @@ private:
 					cb = m_tcpHandlers.get(sock);
 					if (cb == TCPEventHandler.init) break;//assert(cb != TCPEventHandler.init, "Socket " ~ sock.to!string ~ " could not yield a callback");
 					if (cb.conn.socket == 0){
-						import std.stdio : writeln;
-						writeln("Returning no socket");
+						//import std.stdio : writeln;
+						//writeln("Returning no socket");
 						return true;
 					}
 					if (*(cb.conn.connected) == false) {
@@ -1727,6 +1727,7 @@ private class DWHandlerInfo {
 }
 
 private final class DWFolderWatcher {
+	import libasync.internals.path;
 private:
 	EventLoop m_evLoop;
 	fd_t m_fd;
