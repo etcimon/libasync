@@ -7,7 +7,6 @@
 	"targetType": "staticLibrary",
 	"targetPath": "build",
 	"workingDirectory": "build",
-	"sourcePaths": ["source/libasync"],
 	"libs-windows": ["ws2_32", "advapi32", "user32"],
 	"sourceFiles-windows-x86": ["ws2_32_ex.lib"],
 	"libs-linux": ["rt"]
