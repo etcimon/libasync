@@ -124,7 +124,6 @@ private:
 				if (res)
 					ctxt.offset = cast(ulong) (ctxt.offset + res.length);
 
-				file.close();
 				break;
 				
 			case FileCmd.WRITE:
@@ -137,7 +136,6 @@ private:
 				}
 				file.flush();
 				ctxt.offset = cast(ulong) (ctxt.offset + ctxt.buffer.length);
-				file.close();
 				break;
 
 			case FileCmd.APPEND:
@@ -145,7 +143,6 @@ private:
 				File file = File(ctxt.filePath.toNativeString(), "a+b");
 				synchronized(mutex) file.rawWrite(cast(ubyte[]) ctxt.buffer);
 				ctxt.offset = cast(ulong) file.size();
-				file.close();
 				break;
 		} catch (Throwable e) {
 			auto status = StatusInfo.init;
@@ -174,18 +171,18 @@ private:
 	
 	void run()
 	{
-		m_evLoop = new EventLoop;
 		try {
+			m_evLoop = new EventLoop;
 			synchronized(gs_wlock) {
 				gs_waiters.insertBack(m_waiter);
 			}
 			
 			gs_started.notifyAll();
-		} catch {
-			try writeln("Error inserting in waiters"); catch {}
-		}
 
-		process();
+			process();
+		} catch (Throwable e) {
+			try writeln("Error inserting in waiters " ~ e.toString()); catch {}
+		}
 	}
 	
 	synchronized void stop()

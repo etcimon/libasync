@@ -27,8 +27,8 @@ Allocator defaultAllocator()
 		static __gshared Allocator alloc;
 		if( !alloc ){
 			alloc = new GCAllocator;
-			//alloc = new AutoFreeListAllocator(alloc);
-			//alloc = new DebugAllocator(alloc);
+			alloc = new AutoFreeListAllocator(alloc);
+			alloc = new DebugAllocator(alloc);
 			alloc = new LockAllocator(alloc);
 		}
 		return alloc;
@@ -41,7 +41,7 @@ Allocator manualAllocator()
 	if( !alloc ){
 		alloc = new MallocAllocator;
 		alloc = new AutoFreeListAllocator(alloc);
-		//alloc = new DebugAllocator(alloc);
+		alloc = new DebugAllocator(alloc);
 		alloc = new LockAllocator(alloc);
 	}
 	return alloc;
@@ -223,6 +223,8 @@ final class MallocAllocator : Allocator {
 	
 	void free(void[] mem)
 	{
+		import std.stdio : writeln;
+		writeln("free: ", mem.ptr, " sz ", mem.length);
 		.free(extractUnalignedPointer(mem.ptr));
 	}
 }

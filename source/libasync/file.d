@@ -4,7 +4,7 @@ import libasync.events;
 import core.thread : Thread, ThreadGroup;
 import core.sync.mutex;
 import core.sync.condition;
-import std.stdio : File;
+import std.stdio;
 import core.atomic;
 import libasync.internals.path;
 import libasync.threads;
