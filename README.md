@@ -11,7 +11,9 @@ A fully functional, tested vibe.d driver is available on [this fork](https://git
 
 The following capabilities are now being tested and should not be used in any circumstance in a production environment.
 
-(*) _Tested on Mac, Linux, Windows and FreeBSD_ - Platforms used were Mac OS X (10.8), Linux (Fedora 20) and Windows (8.1), although it should be compatible to 99% of Desktop OS users.
+(*) _Unit tests confirmed on Mac, Linux, Windows_ - Platforms used were Mac OS X (10.8, 10.9), Linux (Fedora 20) and Windows 32/64 bit, although it should be compatible to 99% of Desktop OS users.
+
+(*) _Compiles with DMD (versions 2.066.0, 2.066.1) and LDC v0.15 alpha1+ with LLVM 3.4_
 
 - **Multi-threading** support - EventLoop can be launched and run from an unlimited number of threads!
 
@@ -45,7 +47,7 @@ Installation Instructions
 -------------------------
 
 - Download and install DMD 2.066.0+ from [dlang.org](http://dlang.org/download.html)
-- Download and install dub 0.9.22-rc.2+ from [code.dlang.org](http://code.dlang.org/download)
+- Download and install dub 0.9.22 from [code.dlang.org](http://code.dlang.org/download)
 - Use Git to clone this repository
 - Run `dub test` to test the library on your operating system (submit any issue with a log report by uncommenting `enum LOG = true` in `types.d`)
 - Add the library to your project by including it in the dependencies, using `import libasync.all`
