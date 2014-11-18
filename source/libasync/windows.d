@@ -103,7 +103,8 @@ package:
 		m_hwnd = CreateWindowW(wnz, clsn, 0, 0, 0, 385, 375, HWND_MESSAGE,
 		                       cast(HMENU) null, null, null);
 		try log("Window registered: " ~ m_hwnd.to!string); catch{}
-		SetWindowLongPtrA(m_hwnd, GWLP_USERDATA, cast(ULONG_PTR)cast(void*)&this);
+		auto ptr = cast(ULONG_PTR)cast(void*)&this;
+		SetWindowLongPtrA(m_hwnd, GWLP_USERDATA, ptr);
 		assert( cast(EventLoopImpl*)cast(void*)GetWindowLongPtrA(m_hwnd, GWLP_USERDATA) is &this );
 		WSADATA wd;
 		m_error = cast(error_t) WSAStartup(0x0202, &wd);
@@ -764,10 +765,13 @@ package:
 	{
 		m_status = StatusInfo.init;
 		import std.conv;
-		ubyte[4] ubwparam = ((cast(ubyte*)&payload)[0 .. 4]);
-		ubyte[4] ublparam = ((cast(ubyte*)&payload)[4 .. 8]);
-		WPARAM wparam = *cast(uint*)&ubwparam;
-		LPARAM lparam = *cast(uint*)&ubwparam;	
+
+		auto payloadPtr = cast(ubyte*)payload;
+		auto payloadAddr = cast(ulong)payloadPtr;
+
+		WPARAM wparam = payloadAddr & 0xffffffff;
+		LPARAM lparam = cast(uint) (payloadAddr >> 32);
+
 		BOOL err;
 		static if (is(T == AsyncNotifier))
 			err = PostMessageA(cast(HWND)fd, WM_USER_SIGNAL, wparam, lparam);
@@ -1123,11 +1127,15 @@ private:
 				break;
 			case WM_USER_EVENT:
 				log("User event");
-				ubyte[8] ptr;
-				ptr[0 .. 4] = (cast(ubyte*)&msg.lParam)[0 .. 4];
-				ptr[4 .. 8] = (cast(ubyte*)&msg.wParam)[4 .. 8];
-				shared AsyncSignal ctxt = cast(shared AsyncSignal) *cast(void**) &ptr;
-				try log("Got notification in : " ~ m_hwnd.to!string ~ " pointer: " ~ ptr.to!string); catch {}
+
+				ulong uwParam = cast(ulong)msg.wParam;
+				ulong ulParam = cast(ulong)msg.lParam;
+
+				ulong payloadAddr = (ulParam << 32) | uwParam;
+				void* payloadPtr = cast(void*) payloadAddr;
+				shared AsyncSignal ctxt = cast(shared AsyncSignal) payloadPtr;
+
+				try log("Got notification in : " ~ m_hwnd.to!string ~ " pointer: " ~ payloadPtr.to!string); catch {}
 				try {
 					assert(ctxt.id != 0);
 					ctxt.handler();
@@ -1138,10 +1146,14 @@ private:
 				break;
 			case WM_USER_SIGNAL:
 				log("User signal");
-				ubyte[8] ptr;
-				ptr[0 .. 4] = (cast(ubyte*)&msg.lParam)[0 .. 4];
-				ptr[4 .. 8] = (cast(ubyte*)&msg.wParam)[4 .. 8];
-				AsyncNotifier ctxt = cast(AsyncNotifier) *cast(void**) &ptr;
+
+				ulong uwParam = cast(ulong)msg.wParam;
+				ulong ulParam = cast(ulong)msg.lParam;
+
+				ulong payloadAddr = (ulParam << 32) | uwParam;
+				void* payloadPtr = cast(void*) payloadAddr;
+				AsyncNotifier ctxt = cast(AsyncNotifier) payloadPtr;
+
 				try {
 					ctxt.handler();
 				}
