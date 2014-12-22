@@ -1073,14 +1073,19 @@ private:
 				auto evt = LOWORD(msg.lParam);
 				auto err = HIWORD(msg.lParam);
 				if (!onTCPEvent(evt, err, cast(fd_t)msg.wParam)) {
-					try {
-						TCPEventHandler cb = m_tcpHandlers.get(cast(fd_t)msg.wParam);
-						cb(TCPEvent.ERROR);
-					}
-					catch (Exception e) {
-						// An Error callback should never fail...
-						setInternalError!"del@TCPEvent.ERROR"(Status.ERROR); 
-						// assert(false, evt.to!string ~ " & " ~ m_status.to!string ~ " & " ~ m_error.to!string); 
+
+					if (evt == FD_ACCEPT)
+						setInternalError!"del@TCPAccept.ERROR"(Status.ERROR); 
+					else {
+						try {
+							TCPEventHandler cb = m_tcpHandlers.get(cast(fd_t)msg.wParam);
+							cb(TCPEvent.ERROR);
+						}
+						catch (Exception e) {
+							// An Error callback should never fail...
+							setInternalError!"del@TCPEvent.ERROR"(Status.ERROR); 
+							// assert(false, evt.to!string ~ " & " ~ m_status.to!string ~ " & " ~ m_error.to!string); 
+						}
 					}
 				}
 				break;
@@ -1272,8 +1277,14 @@ private:
 				fd_t csock = WSAAccept(sock, addr.sockAddr, &addrlen, null, 0);
 
 				if (catchSocketError!"WSAAccept"(csock, INVALID_SOCKET)) {
-					return false;//try assert(false, m_status.to!string ~ " & " ~ m_error.to!string); catch {}
-					//break;
+					if (m_error == WSAEFAULT) { // not enough space for sockaddr
+						addr.family = AF_INET6;
+						addrlen = addr.sockAddrLen;
+						csock = WSAAccept(sock, addr.sockAddr, &addrlen, null, 0);
+						if (catchSocketError!"WSAAccept"(csock, INVALID_SOCKET))
+							return false;
+					}
+					else return false;
 				}
 
 				int ok = WSAAsyncSelect(csock, m_hwnd, WM_TCP_SOCKET, FD_CONNECT|FD_READ|FD_WRITE|FD_CLOSE);
@@ -1281,12 +1292,7 @@ private:
 					return false;
 
 				log("Connection accepted: " ~ csock.to!string);
-				if (addrlen > addr.sockAddrLen)
-					addr.family = AF_INET6;
-				if (addrlen == typeof(addrlen).init) {
-					setInternalError!"addrlen"(Status.ABORT);
-					return false;
-				}
+
 				AsyncTCPConnection conn;
 				try conn = FreeListObjectAlloc!AsyncTCPConnection.alloc(m_evLoop);
 				catch (Exception e) { assert(false, "Failed allocation"); }
