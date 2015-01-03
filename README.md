@@ -5,7 +5,7 @@ About
 
 The libasync asynchronous library (beta) is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchronous tasks. It embeds naturally to D projects (version >= 2.066.0), compiles statically with your project and has an open source license (MIT).
 
-A fully functional, tested vibe.d driver is available on [this fork](https://github.com/etcimon/vibe.d/tree/native-events).
+A fully functional, tested vibe.d driver is available on [this fork](https://github.com/etcimon/vibe.d/tree/fix-libasync).
 
 ### Features
 
