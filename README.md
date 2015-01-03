@@ -3,7 +3,7 @@
 About
 -----
 
-The libasync asynchroneous library (beta) is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchroneous tasks. It embeds naturally to D projects (version >= 2.066.0), compiles statically with your project and has an open source license (MIT).
+The libasync asynchronous library (beta) is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchronous tasks. It embeds naturally to D projects (version >= 2.066.0), compiles statically with your project and has an open source license (MIT).
 
 A fully functional, tested vibe.d driver is available on [this fork](https://github.com/etcimon/vibe.d/tree/native-events).
 
@@ -17,9 +17,9 @@ The following capabilities are now being tested and should not be used in any ci
 
 - **Multi-threading** support - EventLoop can be launched and run from an unlimited number of threads!
 
-- **Asynchroneous TCP connection** - handles multiple requests at a time in each individual thread
+- **Asynchronous TCP connection** - handles multiple requests at a time in each individual thread
 
-- **Asynchroneous TCP listener** - delivers a new connection to the delegate of your choice
+- **Asynchronous TCP listener** - delivers a new connection to the delegate of your choice
 
 - **File Operations** - executes file read/write/append commands in a thread pool, notifies of completion in a handler
 
