@@ -7,6 +7,8 @@ The libasync asynchronous library (beta) is written completely in D, features a 
 
 A fully functional, tested vibe.d driver is available on [this fork](https://github.com/etcimon/vibe.d/tree/fix-libasync).
 
+The benchmarks on vibe.d / DMD relative to libevent show a 20% slower performance, although it is probable that compiling with LDC once it is available will result in better performances for libasync. This is a small price to pay for fewer external dependencies.
+
 ### Features
 
 The following capabilities are now being tested and should not be used in any circumstance in a production environment.
