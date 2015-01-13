@@ -232,6 +232,7 @@ Waiter popWaiter() {
 		if (start_thread) {
 			Thread thr = new CmdProcessor;
 			thr.isDaemon = true;
+			thr.name = "CmdProcessor";
 			thr.start();
 			
 			core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
