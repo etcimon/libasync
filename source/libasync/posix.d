@@ -799,12 +799,12 @@ package:
 
 		m_status = StatusInfo.init;
 
-		socklen_t addrLen;
-		addr.family = AF_INET;
+		addr.family = AF_INET6;
+		socklen_t addrLen = addr.sockAddrLen;
 		long ret = recvfrom(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, &addrLen);
 		
-		if (addrLen > addr.sockAddrLen) {
-			addr.family = AF_INET6;
+		if (addrLen < addr.sockAddrLen) {
+			addr.family = AF_INET;
 		}
 		
 		try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
