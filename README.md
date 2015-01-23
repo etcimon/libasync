@@ -5,7 +5,7 @@ About
 
 The libasync asynchronous library (beta) is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchronous tasks. It embeds naturally to D projects (version >= 2.066.0), compiles statically with your project and has an open source license (MIT).
 
-A fully functional, tested vibe.d driver is available on [this fork](https://github.com/etcimon/vibe.d/tree/fix-libasync).
+A fully functional, tested vibe.d driver is available in [the latest version of vibe.d](https://github.com/rejectedsoftware/vibe.d/), you can enable it by appending `"subConfigurations": { "vibe-d": "libasync"}` in your project's dub.json configuration file.
 
 The benchmarks on vibe.d / DMD relative to libevent show a 20% slower performance, although it is probable that compiling with LDC once it is available will result in better performances for libasync. This is a small price to pay for fewer external dependencies.
 
@@ -54,6 +54,7 @@ Installation Instructions
 - Run `dub test` to test the library on your operating system (submit any issue with a log report by uncommenting `enum LOG = true` in `types.d`)
 - Add the library to your project by including it in the dependencies, using `import libasync.all`
 - The recommended editor is MonoDevelop with [Mono-D](http://wiki.dlang.org/Mono-D) due to its Mixin Template resolver (must be enabled manually), with auto-completion and comment-resolved summary tooltips.
+- You can also try libasync through vibe.d as a built-in driver.
 
 Tutorial
 --------
