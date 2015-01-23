@@ -17,13 +17,17 @@ private:
 
 nothrow:
 	fd_t m_socket;
+	fd_t m_preInitializedSocket;
 	bool m_noDelay;
 	bool m_inbound;
 	debug bool m_dataRemaining;
 public:
-	this(EventLoop evl)
+	this(EventLoop evl, fd_t preInitializedSocket = fd_t.init)
 	in { assert(evl !is null); }
-	body { m_evLoop = evl; }
+	body {
+		m_evLoop = evl;
+		m_preInitializedSocket = preInitializedSocket;
+	}
 
 	mixin DefStatus;
 
@@ -175,6 +179,9 @@ package:
 		m_socket = sock;
 	}
 
+	@property fd_t preInitializedSocket() const {
+		return m_preInitializedSocket;
+	}
 }
 
 /// Accepts connections on a single IP:PORT tuple by sending a new inbound AsyncTCPConnection 
