@@ -270,10 +270,10 @@ shared static this() {
 	gs_started = new Condition(gs_wlock);
 	foreach (i; 0 .. 4) {
 		Thread thr = new CmdProcessor;
+		gs_threads.add(thr);
 		thr.isDaemon = true;
 		thr.name = "CmdProcessor";
 		thr.start();
-		gs_threads.add(thr);
 		synchronized(gs_wlock)
 			gs_started.wait(1.seconds);
 	}
