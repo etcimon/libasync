@@ -16,8 +16,8 @@ nothrow {
 	__gshared Array!Waiter gs_waiters;
 	__gshared Array!CommandInfo gs_jobs;
 	__gshared Condition gs_started;
-	
-	__gshared Mutex gs_tlock;
+	__gshared bool gs_closing;
+
 	__gshared ThreadGroup gs_threads; // daemon threads
 	shared(int) gs_threadCnt;
 	
@@ -183,9 +183,11 @@ private:
 		} catch (Throwable e) {
 			try writeln("Error inserting in waiters " ~ e.toString()); catch {}
 		}
+
+		core.atomic.atomicOp!"-="(gs_threadCnt, cast(int) 1);
 	}
 	
-	synchronized void stop()
+	void stop()
 	{
 		m_stop = true;
 		try (cast(Waiter)m_waiter).cond.notifyAll();
@@ -195,18 +197,16 @@ private:
 	}
 	
 	private void process() {
-		while(true) {
+		while(!m_stop) {
 			CommandInfo cmd;
-
 			try synchronized(m_waiter.mtx)
 				m_waiter.cond.wait();
 			catch {}
 
-			if (m_stop)
-				break;
+			if (m_stop) break;
 
 			try synchronized(gs_wlock) {
-				if (gs_jobs.empty) return;
+				if (gs_jobs.empty) continue;
 				cmd = gs_jobs.back;
 				gs_jobs.removeBack();
 			} catch {}
@@ -234,7 +234,6 @@ Waiter popWaiter() {
 			thr.isDaemon = true;
 			thr.name = "CmdProcessor";
 			thr.start();
-			
 			core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
 			gs_threads.add(thr);
 		}
@@ -264,7 +263,6 @@ Waiter popWaiter() {
 
 shared static this() {
 	import std.stdio : writeln;
-	gs_tlock = new Mutex;
 	gs_wlock = new Mutex;
 	gs_threads = new ThreadGroup;
 	gs_started = new Condition(gs_wlock);
@@ -274,17 +272,26 @@ shared static this() {
 		thr.isDaemon = true;
 		thr.name = "CmdProcessor";
 		thr.start();
+		core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
 		synchronized(gs_wlock)
 			gs_started.wait(1.seconds);
 	}
-	gs_threadCnt = cast(int) 4;
 }
 
 void destroyAsyncThreads() {
-	synchronized(gs_tlock) foreach (thr; gs_threads) {
+	if (!gs_closing) gs_closing = true;
+	else return;
+	import core.memory : GC;
+	GC.disable();
+	synchronized(gs_wlock) foreach (thr; gs_threads) {
 		CmdProcessor thread = cast(CmdProcessor)thr;
-		(cast(shared)thread).stop();
+		thread.stop();
+		thread.join();
 	}
+}
+
+shared static ~this() {
+	assert(core.atomic.atomicLoad(gs_threadCnt) == 0, "You must call libasync.threads.destroyAsyncThreads() upon termination of the program to avoid segfaulting");
 }
 
 enum CmdInfoType {
