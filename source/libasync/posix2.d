@@ -10,8 +10,10 @@ mixin template RunKill()
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : socket, SOCK_STREAM;
 		import core.sys.posix.unistd : close;
-		
-		fd_t fd = socket(cast(int)ctxt.peer.family, SOCK_STREAM, 0);
+		fd_t fd = ctxt.preInitializedSocket;
+
+		if (fd == fd_t.init)
+			fd = socket(cast(int)ctxt.peer.family, SOCK_STREAM, 0);
 		
 		if (catchError!("run AsyncTCPConnection")(fd)) 
 			return 0;
