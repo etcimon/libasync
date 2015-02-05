@@ -17,8 +17,8 @@ unittest {
 	g_evl = getThreadEventLoop();
 	// writeln("Loading objects...");
 	testDirectoryWatcher();
-	testDNS();
 	testFile();
+	testDNS();
  	testOneshotTimer();
 	testMultiTimer();
 	gs_tlsEvent = new shared AsyncSignal(g_evl);
@@ -69,20 +69,20 @@ void testDirectoryWatcher() {
 		DWChangeInfo[] changeRef = change.ptr[0..1];
 		while(g_watcher.readChanges(changeRef)){
 			g_cbCheck[18] = true;
-			// writeln(change);
+			writeln(change);
 		}
 	});
 	g_watcher.watchDir(".");
 	AsyncTimer tm = new AsyncTimer(g_evl);
 	tm.duration(1.seconds).run({
+		writeln("Creating directory ./hey");
 		mkdir("./hey");
-		if (!g_watcher.watchDir("./hey/"))
-			// writeln("ERROR: ", g_watcher.status);
+		assert(g_watcher.watchDir("./hey/"));
 		tm.duration(1.seconds).run({
-			// writeln("Writing to ./hey/tmp.tmp");
+			writeln("Writing to ./hey/tmp.tmp for the first time");
 			std.file.write("./hey/tmp.tmp", "some string");
 			tm.duration(100.msecs).run({
-				// writeln("Removing ./hey/tmp.tmp");
+				writeln("Removing ./hey/tmp.tmp");
 				remove("./hey/tmp.tmp");
 			});
 		});
@@ -90,7 +90,6 @@ void testDirectoryWatcher() {
 }
 
 void testFile() {
-
 	gs_file = new shared AsyncFile(g_evl);
 
 	{
@@ -98,6 +97,7 @@ void testFile() {
 		file.rawWrite("This is the file content.");
 	}
 	gs_file.onReady({
+		writeln("Created and wrote to test.txt through AsyncFile");
 		auto file = gs_file;
 		if (file.status.code == Status.ERROR)
 			writeln("ERROR: ", file.status.text);
@@ -112,6 +112,7 @@ void testFile() {
 		}
 		import std.file : remove;
 		remove("test.txt");
+		writeln("Removed test.txt .. ");
 	}).read("test.txt");
 
 }

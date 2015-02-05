@@ -1745,8 +1745,6 @@ private:
 	DWORD m_bytesTransferred;
 public:
 	this(EventLoop evl, in fd_t fd, in HANDLE hndl, in Path path, in DWFileEvent events, DWHandlerInfo handler, bool recursive) {
-		import std.stdio : writeln;
-		try writeln("Creating directory watcher for path: " ~ path.toNativeString()); catch {}
 		m_fd = fd;
 		m_recursive = recursive;
 		m_handle = cast(HANDLE)hndl;
