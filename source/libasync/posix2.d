@@ -13,7 +13,7 @@ mixin template RunKill()
 		fd_t fd = ctxt.preInitializedSocket;
 
 		if (fd == fd_t.init)
-			fd = socket(cast(int)ctxt.peer.family, SOCK_STREAM, 0);
+			fd = socket(cast(int)ctxt.peer.family, SOCK_STREAM, IPPROTO_TCP);
 		
 		if (catchError!("run AsyncTCPConnection")(fd)) 
 			return 0;
