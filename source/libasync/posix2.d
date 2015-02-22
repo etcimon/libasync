@@ -233,8 +233,8 @@ mixin template RunKill()
 			fd_t fd = ctxt.id;
 			itimerspec its;
 			
-			its.it_value.tv_sec = timeout.split!("seconds", "nsecs")().seconds;
-			its.it_value.tv_nsec = timeout.split!("seconds", "nsecs")().nsecs;
+			its.it_value.tv_sec = cast(typeof(its.it_value.tv_sec)) timeout.split!("seconds", "nsecs")().seconds;
+			its.it_value.tv_nsec = cast(typeof(its.it_value.tv_nsec)) timeout.split!("seconds", "nsecs")().nsecs;
 			if (!ctxt.oneShot)
 			{
 				its.it_interval.tv_sec = its.it_value.tv_sec;
