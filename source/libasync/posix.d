@@ -663,7 +663,7 @@ package:
 					assert(false, "TIMEOUT_RECV value type must be Duration, not " ~ T.stringof);
 				else {
 					import core.sys.posix.sys.time : timeval;
-					time_t secs = value.split!("seconds", "usecs")().seconds;
+					time_t secs = cast(time_t) value.split!("seconds", "usecs")().seconds;
 					suseconds_t us;
 					try us = value.split!("seconds", "usecs")().usecs.to!suseconds_t; catch {}
 					timeval t = timeval(secs, us);
