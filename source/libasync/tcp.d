@@ -3,7 +3,6 @@ import std.traits : isPointer;
 import libasync.types;
 import libasync.events;
 import std.typecons : Tuple;
-import std.range : isInputRange, isOutputRange;
 
 /// Wraps a TCP stream between 2 network adapters, using a custom handler to
 /// signal related events. Many of these objects can be active concurrently 
@@ -128,7 +127,7 @@ public:
 
 	/// Receive data from the underlying stream. To be used when TCPEvent.READ is received by the
 	/// callback handler. IMPORTANT: This must be called until is returns a lower value than the buffer!
-	uint recv(R)(R ub) if (isOutputRange!(R, ubyte))
+	uint recv(ref ubyte[] ub)
 	in { assert(isConnected, "No socket to operate on"); }
 	body {
 		uint cnt = m_evLoop.recv(m_socket, ub);
@@ -140,7 +139,7 @@ public:
 	}
 
 	/// Send data through the underlying stream by moving it into the OS buffer.
-	uint send(R)(R ub) if (isInputRange!R)
+	uint send(in ubyte[] ub)
 	in { assert(isConnected, "No socket to operate on"); }
 	body {
 		version(Posix)
