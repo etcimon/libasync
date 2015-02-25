@@ -2734,7 +2734,7 @@ public struct NetworkAddress {
 				ret.reserve(40);
 				foreach (i; 0 .. 8) {
 					if (i > 0) ret.put(':');
-					ret.formattedWrite("%x", bigEndianToNative!ushort(cast(ubyte[2])ip[i*2 .. i*2+2]));
+					ret.formattedWrite("%x", bigEndianToNative!ushort(cast(ubyte[2])ip[i*2 .. i*2+2].ptr[0 .. 2]));
 				}
 				return ret.data;
 		}
