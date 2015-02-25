@@ -9,6 +9,7 @@ import std.typecons : Flag;
 import libasync.internals.memory : FreeListObjectAlloc;
 
 public import libasync.types;
+public import libasync.bufferedtcp;
 public import libasync.tcp;
 public import libasync.udp;
 public import libasync.notifier;

@@ -114,7 +114,7 @@ public:
 		return run(handler);
 	}
 	
-	private bool run(TCPEventHandler del)
+	bool run(TCPEventHandler del)
 	in { assert(!isConnected); }
 	body {
 		m_socket = m_evLoop.run(this, del);
