@@ -27,7 +27,7 @@ version(Posix) {
 	public import libasync.posix;
 }
 
-EventLoop getThreadEventLoop() {
+EventLoop getThreadEventLoop() nothrow {
 	static EventLoop evLoop;
 	if (!evLoop)  {
 		evLoop = new EventLoop;
