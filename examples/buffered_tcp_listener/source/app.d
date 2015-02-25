@@ -1,4 +1,4 @@
-import libasync.all;
+import libasync;
 
 import std.functional : toDelegate;
 import std.stdio      : writeln;

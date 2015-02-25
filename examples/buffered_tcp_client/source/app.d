@@ -1,4 +1,4 @@
-import libasync.all;
+import libasync;
 
 import std.stdio : writeln;
 
