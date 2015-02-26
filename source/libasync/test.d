@@ -10,14 +10,16 @@ shared AsyncDNS g_dns;
 
 
 unittest {
+	spawnAsyncThreads();
 	// writeln("Unit test started");
 	g_cbCheck = new shared bool[19];
 	g_lastTimer = Clock.currTime();
 	gs_start = Clock.currTime();
 	g_evl = getThreadEventLoop();
+	g_evl.loop(1.msecs);
 	// writeln("Loading objects...");
 	testDirectoryWatcher();
-	testFile();
+	
 	testDNS();
  	testOneshotTimer();
 	testMultiTimer();
@@ -27,10 +29,10 @@ unittest {
 	testTCPListen("localhost", 8081);
 	testHTTPConnect();
 	// writeln("Loaded. Running event loop...");
-
+	testFile();
 	testTCPConnect("localhost", 8081);
 
-	while(Clock.currTime() - gs_start < 4.seconds) 
+	while(Clock.currTime() - gs_start < 7.seconds) 
 		g_evl.loop(100.msecs);
 
 	int i;
@@ -44,8 +46,9 @@ unittest {
 
 	g_listnr.kill();
 
-	destroyAsyncThreads();
 }
+
+shared static ~this() { destroyAsyncThreads(); }
 
 StopWatch g_swDns;
 void testDNS() {

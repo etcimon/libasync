@@ -3,7 +3,7 @@
 About
 -----
 
-The libasync asynchronous library (beta) is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchronous tasks. It embeds naturally to D projects (version >= 2.066.0), compiles statically with your project and has an open source license (MIT).
+The libasync asynchronous library (beta) is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchronous tasks. It embeds naturally to D projects (version >= 2.067), compiles statically with your project and has an open source license (MIT).
 
 A fully functional, tested vibe.d driver is available in [the latest version of vibe.d](https://github.com/rejectedsoftware/vibe.d/), you can enable it by appending `"subConfigurations": { "vibe-d": "libasync"}` in your project's dub.json configuration file.
 
@@ -15,7 +15,7 @@ The following capabilities are now being tested and should not be used in any ci
 
 (*) _Unit tests confirmed on Mac, Linux, Windows_ - Platforms used were Mac OS X (10.8, 10.9), Linux (Fedora 20) and Windows 32/64 bit, although it should be compatible to 99% of Desktop OS users.
 
-(*) _Compiles with DMD (versions 2.066.0, 2.066.1) and LDC v0.15 alpha1+ with LLVM 3.4_
+(*) _Compiles with DMD (versions 2.067)
 
 - **Multi-threading** support - EventLoop can be launched and run from an unlimited number of threads!
 
