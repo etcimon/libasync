@@ -266,16 +266,31 @@ shared static this() {
 	gs_wlock = new Mutex;
 	gs_threads = new ThreadGroup;
 	gs_started = new Condition(gs_wlock);
-	foreach (i; 0 .. 4) {
-		Thread thr = new CmdProcessor;
-		gs_threads.add(thr);
-		thr.isDaemon = true;
-		thr.name = "CmdProcessor";
-		thr.start();
-		core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
-		synchronized(gs_wlock)
-			gs_started.wait(1.seconds);
+}
+
+bool spawnAsyncThreads() nothrow {
+	import core.atomic : atomicLoad;
+	try {
+		if(!gs_closing && atomicLoad(gs_threadCnt) == 0) {
+			synchronized {
+				if(!gs_closing && atomicLoad(gs_threadCnt) == 0) {
+					foreach (i; 0 .. 4) {
+						Thread thr = new CmdProcessor;
+						gs_threads.add(thr);
+						thr.isDaemon = true;
+						thr.name = "CmdProcessor";
+						thr.start();
+						core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);	
+						synchronized(gs_wlock)
+							gs_started.wait(1.seconds);
+					}
+				}
+			}
+		}
+	} catch(Exception ignore) {
+		return false;
 	}
+	return true;
 }
 
 void destroyAsyncThreads() {
