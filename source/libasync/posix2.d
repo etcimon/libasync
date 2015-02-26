@@ -8,12 +8,12 @@ mixin template RunKill()
 	in { assert(ctxt.socket == fd_t.init, "TCP Connection is active. Use another instance."); }
 	body {
 		m_status = StatusInfo.init;
-		import libasync.internals.socket_compat : socket, SOCK_STREAM;
+		import libasync.internals.socket_compat : socket, SOCK_STREAM, IPPROTO_TCP;
 		import core.sys.posix.unistd : close;
 		fd_t fd = ctxt.preInitializedSocket;
 
 		if (fd == fd_t.init)
-			fd = socket(cast(int)ctxt.peer.family, SOCK_STREAM, 0);
+			fd = socket(cast(int)ctxt.peer.family, SOCK_STREAM, IPPROTO_TCP);
 		
 		if (catchError!("run AsyncTCPConnection")(fd)) 
 			return 0;
