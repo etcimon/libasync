@@ -581,9 +581,18 @@ package:
 					err = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, len);
 					if (!errorHandler())
 						return false;
+
 					// BSD systems have SO_REUSEPORT
 					import libasync.internals.socket_compat : SO_REUSEPORT;
 					err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
+					
+					// Not all linux kernels support SO_REUSEPORT
+					version(linux) {
+						// ignore invalid and not supported errors on linux
+						if (errno == EINVAL || errno == ENOPROTOOPT) {
+							return true;
+						}						
+					} 
 
 					return errorHandler();
 				}
