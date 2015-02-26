@@ -44,6 +44,7 @@ final class EventLoop
 
 package:
 	EventLoopImpl m_evLoop;
+	bool m_asyncThreadsStarted = false;
 
 nothrow:
 public:
@@ -227,6 +228,13 @@ package:
 	*/
 	public bool loop(Duration max_timeout = 100.msecs)
 	{
+		if(!m_asyncThreadsStarted) {
+			if(!spawnAsyncThreads()) {
+				return false;
+			}
+			m_asyncThreadsStarted = true;
+		}
+
 		if (!m_evLoop.loop(max_timeout) && m_evLoop.status.code == Status.EVLOOP_FAILURE)
 			return false;
 
