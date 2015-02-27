@@ -3,23 +3,23 @@
 About
 -----
 
-The libasync asynchronous library (beta) is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchronous tasks. It embeds naturally to D projects (version >= 2.067), compiles statically with your project and has an open source license (MIT).
+The libasync asynchronous library is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchronous tasks. It embeds naturally to D projects (DMD >= 2.066.0, LDC >= 0.15.1), compiles statically with your project and has an open source license (MIT).
 
 A fully functional, tested vibe.d driver is available in [the latest version of vibe.d](https://github.com/rejectedsoftware/vibe.d/), you can enable it by appending `"subConfigurations": { "vibe-d": "libasync"}` in your project's dub.json configuration file.
-
-The benchmarks on vibe.d / DMD relative to libevent show a 20% slower performance, although it is probable that compiling with LDC once it is available will result in better performances for libasync. This is a small price to pay for fewer external dependencies.
 
 ### Features
 
 The following capabilities are now being tested and should not be used in any circumstance in a production environment.
 
-(*) _Unit tests confirmed on Mac, Linux, Windows_ - Platforms used were Mac OS X (10.8, 10.9), Linux (Fedora 20) and Windows 32/64 bit, although it should be compatible to 99% of Desktop OS users.
+(*) _Unit tests confirmed on Mac, Linux, Windows_ - Platforms used were Mac OS X (10.8, 10.9), Linux (Fedora 20+) and Windows 32/64 bit, although it should be compatible to 99% of Desktop OS users.
 
-(*) _Compiles with DMD (versions 2.067)
+(*) _Compiles with DMD & LDC_ (DMD  2.066.0, 2.066.1, 2.067-b2, LDC 0.15.1)
 
 - **Multi-threading** support - EventLoop can be launched and run from an unlimited number of threads!
 
 - **Asynchronous TCP connection** - handles multiple requests at a time in each individual thread
+
+- **Buffered TCP connection** - Allows callbacks to be attached to a byte sized future
 
 - **Asynchronous TCP listener** - delivers a new connection to the delegate of your choice
 
@@ -42,8 +42,8 @@ The following capabilities are now being tested and should not be used in any ci
 Some or all of these limitations are possibly being implemented currently and may be available in a future release.
 
 - **One EventLoop per thread** - There is a hard limit of one event loop per thread
-- **Futures and Promises** - Call chaining is not supported yet, however a vibe.d driver is available on my fork
 - **Manual error management** - The entire library is `nothrow` and error management must be built on top of it.
+- **No embedded HTTP or TLS handlers** - The support fort HTTP, TLS (and other protocols) is only available through vibe.d with Tasks as of yet.
 
 Installation Instructions
 -------------------------
@@ -59,8 +59,8 @@ Installation Instructions
 Tutorial
 --------
 
-Only 2 examples are available at the moment, they are located in `examples/tcp_listener` and `examples/tcp_client`. They must be tested by starting the server before the client.
+There are 4 examples available at the moment, they are located in `examples/`. They must be tested by starting the server before the client.
 
-All current usage examples are available in `source/libasync/test.d`. 
+All other usage examples are available in `source/libasync/test.d`. 
 
-Documentation has been written thoughout the code.
+Documentation has been written throughout the code.
