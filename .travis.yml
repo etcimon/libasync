@@ -7,6 +7,6 @@ d:
   - ldc-0.15.1
 
 script:
-  - dub test --compiler=$DC || exit 1
+  - dub test --compiler=$DC
 
 sudo: false
