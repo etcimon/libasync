@@ -109,10 +109,12 @@ mixin template RunKill()
 		
 		import libasync.internals.socket_compat : socket, SOCK_DGRAM, IPPROTO_UDP;
 		import core.sys.posix.unistd;
+		fd_t fd = ctxt.preInitializedSocket;
 
 		try log("Address: " ~ ctxt.local.toString()); catch {}
 
-		fd_t fd = socket(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP);
+		if (fd == fd_t.init)
+			fd = socket(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP);
 
 
 		if (catchError!("run AsyncUDPSocket")(fd))

@@ -232,7 +232,10 @@ package:
 	}
 	body {
 		m_status = StatusInfo.init;
-		fd_t fd = WSASocketW(cast(int)ctxt.peer.family, SOCK_STREAM, IPPROTO_TCP, null, 0, WSA_FLAG_OVERLAPPED);
+		fd_t fd = ctxt.preInitializedSocket;
+
+		if (fd == fd_t.init)
+			fd = WSASocketW(cast(int)ctxt.peer.family, SOCK_STREAM, IPPROTO_TCP, null, 0, WSA_FLAG_OVERLAPPED);
 		log("Starting connection at: " ~ fd.to!string);
 		if (catchSocketError!("run AsyncTCPConnection")(fd, INVALID_SOCKET))
 			return 0;
@@ -278,7 +281,10 @@ package:
 	
 	fd_t run(AsyncUDPSocket ctxt, UDPHandler del) {
 		m_status = StatusInfo.init;
-		fd_t fd = WSASocketW(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP, null, 0, WSA_FLAG_OVERLAPPED);
+		fd_t fd = ctxt.preInitializedSocket;
+
+		if (fd == fd_t.init)
+			fd = WSASocketW(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP, null, 0, WSA_FLAG_OVERLAPPED);
 		
 		if (catchSocketError!("run AsyncUDPSocket")(fd, INVALID_SOCKET))
 			return 0;
