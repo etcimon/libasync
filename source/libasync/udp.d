@@ -11,12 +11,16 @@ nothrow:
 private:
 	EventLoop m_evLoop;
 	fd_t m_socket;
+	fd_t m_preInitializedSocket;
 	NetworkAddress m_local;
 
 public:
-	this(EventLoop evl)
+	this(EventLoop evl, fd_t preInitializedSocket = fd_t.init)
 	in { assert(evl !is null); }
-	body { m_evLoop = evl; }
+	body {
+		m_evLoop = evl;
+		m_preInitializedSocket = preInitializedSocket;
+	}
 
 	mixin DefStatus;
 
@@ -111,6 +115,9 @@ package:
 		m_socket = val;
 	}
 
+	@property fd_t preInitializedSocket() const {
+		return m_preInitializedSocket;
+	}
 }
 
 package struct UDPHandler {
