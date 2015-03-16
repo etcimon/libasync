@@ -11,6 +11,6 @@
 	"sourceFiles-windows-x86": ["ws2_32_ex.lib"],
 	"libs-linux": ["rt"],
 	"dependencies": {
-		"memutils": {"version": "~master" }
+		"memutils": "~>0.3.0"
 	}
 }
