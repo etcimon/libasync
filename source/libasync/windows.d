@@ -1890,7 +1890,7 @@ public struct NetworkAddress {
 	
 	/** Size of the sockaddr struct that is returned by sockAddr().
 		*/
-	@property int sockAddrLen()
+	@property uint sockAddrLen()
 	const pure nothrow {
 		switch (this.family) {
 			default: assert(false, "sockAddrLen() called for invalid address family.");
