@@ -465,16 +465,27 @@ mixin template RunKill()
 	{
 		log("Kill socket");
 		m_status = StatusInfo.init;
-			fd_t fd = ctxt.socket;
-				scope(exit) {
-					if (forced) {
-					ctxt.connected = false;
-			}
+		fd_t fd = ctxt.socket;
+		if (ctxt.connected) {
 			ctxt.disconnecting = true;
-		}
-		if (ctxt.connected)
+			if (forced) {
+				if (ctxt.evInfo)
+					try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+					catch { assert(false, "Failed to free resources"); }
+				try FreeListObjectAlloc!AsyncTCPConnection.free(ctxt);
+				catch { assert(false, "Failed to free resources"); }
+			}
 			return closeSocket(fd, true, forced);
+		}
 		else {
+			ctxt.disconnecting = true;
+			if (forced) {
+				if (ctxt.evInfo)
+					try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+					catch { assert(false, "Failed to free resources"); }
+				try FreeListObjectAlloc!AsyncTCPConnection.free(ctxt);
+				catch { assert(false, "Failed to free resources"); }
+			}
 			return true;
 		}
 	}
