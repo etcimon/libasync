@@ -47,13 +47,12 @@ public:
 		return m_evLoop.notify(m_evId, this);
 	}
 
-package:
-
-	version(Posix) mixin EvInfoMixins;
-
-	@property id() const {
+	@property fd_t id() const {
 		return m_evId;
 	}
+
+package:
+	version(Posix) mixin EvInfoMixins;
 
 	void handler() {
 		try m_evh();

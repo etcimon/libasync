@@ -91,15 +91,13 @@ public:
 	synchronized @property Thread owner() const {
 		return cast(Thread) m_owner;
 	}
-package:
-	
 
-
-	version(Posix) mixin EvInfoMixinsShared;
-
-	@property id() const {
+	@property fd_t id() const {
 		return m_evId;
 	}
+
+package:
+	version(Posix) mixin EvInfoMixinsShared;
 
 	void handler() {
 		try m_sgh();

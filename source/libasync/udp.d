@@ -104,12 +104,12 @@ public:
 		return m_evLoop.kill(this);
 	}
 
-package:
-	version(Posix) mixin EvInfoMixins;
-
 	@property fd_t socket() const {
 		return m_socket;
 	}
+
+package:
+	version(Posix) mixin EvInfoMixins;
 
 	@property void socket(fd_t val) {
 		m_socket = val;
