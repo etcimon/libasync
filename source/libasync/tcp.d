@@ -159,6 +159,10 @@ public:
 		return ret;
 	}
 
+	@property fd_t socket() const {
+		return m_socket;
+	}
+
 package:
 	mixin TCPConnectionMixins;
 
@@ -169,10 +173,6 @@ package:
 	@property bool noDelay() const
 	{
 		return m_noDelay;
-	}
-
-	@property fd_t socket() const {
-		return m_socket;
 	}
 
 	@property void socket(fd_t sock) {

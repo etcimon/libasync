@@ -110,14 +110,13 @@ public:
 		return m_evLoop.kill(this);
 	}
 
-package:
-
-	version(Posix) mixin EvInfoMixins;
-	
 	@property fd_t id() {
 		return m_timerId;
 	}
 	
+package:
+	version(Posix) mixin EvInfoMixins;
+
 	@property void id(fd_t fd) {
 		m_timerId = fd;
 	}

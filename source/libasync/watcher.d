@@ -133,13 +133,13 @@ public:
 		return m_evLoop.kill(this);
 	}
 	
-package:
-	version(Posix) mixin EvInfoMixins;
-	
 	@property fd_t fd() const {
 		return m_fd;
 	}
 	
+package:
+	version(Posix) mixin EvInfoMixins;
+
 	@property void fd(fd_t val) {
 		m_fd = val;
 	}
