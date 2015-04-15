@@ -1,7 +1,7 @@
 ﻿module libasync.types;
 package:
-enum LOG = false; //trace
-enum DEBUG = false;
+enum LOG = true; //trace
+enum DEBUG = true;
 
 import std.typecons: Flag;
 alias isIPv6 = Flag!"IPv6";

@@ -468,18 +468,22 @@ mixin template RunKill()
 		fd_t fd = ctxt.socket;
 		if (ctxt.connected) {
 			ctxt.disconnecting = true;
-			if (forced) {
+			if (forced && ctxt.inbound) {
+				ctxt.connected = false;
+				ctxt.disconnecting = false;
 				if (ctxt.evInfo)
 					try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
 					catch { assert(false, "Failed to free resources"); }
 				try FreeListObjectAlloc!AsyncTCPConnection.free(ctxt);
-				catch { assert(false, "Failed to free resources"); }
+				catch (Throwable t) { assert(false, "Failed to free resources for context " ~ (cast(void*)ctxt).to!string ~ ": " ~ t.to!string); }
 			}
 			return closeSocket(fd, true, forced);
 		}
 		else {
 			ctxt.disconnecting = true;
-			if (forced) {
+			if (forced && ctxt.inbound) {
+				ctxt.connected = false;
+				ctxt.disconnecting = false;
 				if (ctxt.evInfo)
 					try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
 					catch { assert(false, "Failed to free resources"); }

@@ -513,14 +513,14 @@ package:
 						/// Close the connection after an unexpected socket error
 						if (graceful) {
 							try info.evObj.tcpEvHandler(TCPEvent.CLOSE);
-							catch (Exception e) { }
+							catch (Exception e) { static if(LOG) log("Close failure"); }
 							closeAll();
 						}
 
 						/// Kill the connection after an internal error
 						else {
 							try info.evObj.tcpEvHandler(TCPEvent.ERROR);
-							catch (Exception e) { }
+							catch (Exception e) { static if(LOG) log("Error failure"); }
 							closeAll();
 						}
 
@@ -2631,8 +2631,6 @@ mixin template EvInfoMixins() {
 		m_impl.evInfo = info;
 	}
 }
-
-
 
 union EventObject {
 	TCPAcceptHandler tcpAcceptHandler;
