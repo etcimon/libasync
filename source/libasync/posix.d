@@ -292,13 +292,11 @@ package:
 				}
 			}
 			int timeout_ms;
-			if (timeout == 0.seconds)
-				timeout_ms = -1;
+			if (timeout == 0.seconds) // return immediately
+				timeout_ms = 0;
 			else timeout_ms = cast(int)timeout.total!"msecs";
-
 			/// Retrieve pending events
 			num = epoll_wait(m_epollfd, cast(epoll_event*)&events[0], 128, timeout_ms);
-
 			assert(events !is null && events.length <= 128);
 
 			

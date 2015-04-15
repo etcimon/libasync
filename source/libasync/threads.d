@@ -5,6 +5,7 @@ import core.thread;
 import libasync.events;
 import std.stdio;
 import std.container : Array;
+import core.atomic;
 
 nothrow {
 	struct Waiter {
@@ -16,7 +17,7 @@ nothrow {
 	__gshared Array!Waiter gs_waiters;
 	__gshared Array!CommandInfo gs_jobs;
 	__gshared Condition gs_started;
-	__gshared bool gs_closing;
+	shared(bool) gs_closing;
 
 	__gshared ThreadGroup gs_threads; // daemon threads
 	shared(int) gs_threadCnt;
@@ -29,7 +30,7 @@ nothrow:
 private:
 	EventLoop m_evLoop;
 	Waiter m_waiter;
-	bool m_stop;
+	shared(bool) g_stop;
 	
 	this() {
 		try {
@@ -189,7 +190,7 @@ private:
 	
 	void stop()
 	{
-		m_stop = true;
+		atomicStore(g_stop, true);
 		try (cast(Waiter)m_waiter).cond.notifyAll();
 		catch (Exception e) {
 			try writeln("Exception occured notifying foreign thread: ", e); catch {}
@@ -197,14 +198,13 @@ private:
 	}
 	
 	private void process() {
-		while(!m_stop) {
+		while(!atomicLoad(g_stop)) {
 			CommandInfo cmd;
-			try synchronized(m_waiter.mtx)
+			try synchronized(m_waiter.mtx) {
 				m_waiter.cond.wait();
+			}
 			catch {}
-
-			if (m_stop) break;
-
+			if (atomicLoad(g_stop)) break;
 			try synchronized(gs_wlock) {
 				if (gs_jobs.empty) continue;
 				cmd = gs_jobs.back;
@@ -271,16 +271,16 @@ shared static this() {
 bool spawnAsyncThreads() nothrow {
 	import core.atomic : atomicLoad;
 	try {
-		if(!gs_closing && atomicLoad(gs_threadCnt) == 0) {
+		if(!atomicLoad(gs_closing) && atomicLoad(gs_threadCnt) == 0) {
 			synchronized {
-				if(!gs_closing && atomicLoad(gs_threadCnt) == 0) {
+				if(!atomicLoad(gs_closing) && atomicLoad(gs_threadCnt) == 0) {
 					foreach (i; 0 .. 4) {
 						Thread thr = new CmdProcessor;
-						gs_threads.add(thr);
 						thr.isDaemon = true;
 						thr.name = "CmdProcessor";
+						gs_threads.add(thr);
 						thr.start();
-						core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);	
+						core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
 						synchronized(gs_wlock)
 							gs_started.wait(1.seconds);
 					}
@@ -294,14 +294,16 @@ bool spawnAsyncThreads() nothrow {
 }
 
 void destroyAsyncThreads() {
-	if (!gs_closing) gs_closing = true;
+	if (!atomicLoad(gs_closing)) atomicStore(gs_closing, true);
 	else return;
 	import core.memory : GC;
 	GC.disable();
 	synchronized(gs_wlock) foreach (thr; gs_threads) {
 		CmdProcessor thread = cast(CmdProcessor)thr;
 		thread.stop();
-		thread.join();
+		import core.thread : thread_isMainThread;
+		if (!thread_isMainThread())
+			thread.join();
 	}
 }
 

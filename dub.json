@@ -1,16 +1,26 @@
 {
-	"name": "libasync",
-	"description": "A cross-platform event loop library of asynchroneous objects.",
-	"license": "MIT",
-	"authors": ["Etienne Cimon", "Sönke Ludwig"],
-	"targetName": "async",
-	"targetType": "staticLibrary",
-	"targetPath": "build",
-	"workingDirectory": "build",
-	"libs-windows": ["ws2_32", "advapi32", "user32"],
-	"sourceFiles-windows-x86": ["ws2_32_ex.lib"],
-	"libs-linux": ["rt"],
-	"dependencies": {
-		"memutils": {"version": "~>0.3.1", "path": "../memutils" }
-	}
+        "name": "libasync",
+        "description": "A cross-platform event loop library of asynchroneous objects.",
+        "license": "MIT",
+        "authors": ["Etienne Cimon", "Sönke Ludwig"],
+        "targetName": "async",
+        "targetType": "staticLibrary",
+        "targetPath": "build",
+        "workingDirectory": "build",
+        "libs-windows": ["ws2_32", "advapi32", "user32"],
+        "libs-linux": ["rt"],
+        "dependencies": {
+                "memutils": { "version": "~>0.3.1" }
+        },
+        "configurations": [
+                {
+                        "name": "regular",
+                        "sourceFiles-windows-x86": ["ws2_32_ex.lib"]
+                },
+                {
+                        "name": "32mscoff",
+                        "dflags-windows-x86": ["-m32mscoff"],
+                        "subConfigurations": { "memutils": "32mscoff" }
+                }
+        ]
 }
