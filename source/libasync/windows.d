@@ -1252,7 +1252,7 @@ private:
 		switch(evt) {
 			default: break;
 			case FD_ACCEPT:
-				gs_mtx.lock_nothrow();
+				version(Distributed) gs_mtx.lock_nothrow();
 
 				log("TCP Handlers: " ~ m_tcpHandlers.length.to!string);
 				log("Accepting connection");
@@ -1263,18 +1263,20 @@ private:
 					/// The connection rotation mechanism is handled by the TCPListenerDistMixins
 					/// when registering the same AsyncTCPListener object on multiple event loops.
 					/// This allows to even out the CPU usage on a server instance.
-					HWND hwnd = list.ctxt.next(m_hwnd);
-					if (hwnd !is HWND.init) {
-						int error = WSAAsyncSelect(sock, hwnd, WM_TCP_SOCKET, FD_ACCEPT);
-						if (catchSocketError!"WSAAsyncSelect.NEXT()=> HWND"(error)) {
-							error = WSAAsyncSelect(sock, m_hwnd, WM_TCP_SOCKET, FD_ACCEPT);
-							if (catchSocketError!"WSAAsyncSelect"(error))
-								assert(false, "Could not set listener back to window HANDLE " ~ m_hwnd.to!string); 
+					version(Distributed)
+					{
+						HWND hwnd = list.ctxt.next(m_hwnd);
+						if (hwnd !is HWND.init) {
+							int error = WSAAsyncSelect(sock, hwnd, WM_TCP_SOCKET, FD_ACCEPT);
+							if (catchSocketError!"WSAAsyncSelect.NEXT()=> HWND"(error)) {
+								error = WSAAsyncSelect(sock, m_hwnd, WM_TCP_SOCKET, FD_ACCEPT);
+								if (catchSocketError!"WSAAsyncSelect"(error))
+									assert(false, "Could not set listener back to window HANDLE " ~ m_hwnd.to!string); 
+							}
 						}
+						else log("Returned init!!");
+						gs_mtx.unlock_nothrow();
 					}
-					else log("Returned init!!");
-
-					gs_mtx.unlock_nothrow();
 				}
 
 				NetworkAddress addr;

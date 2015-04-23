@@ -139,11 +139,11 @@ private:
 				ctxt.offset = cast(ulong) (ctxt.offset + ctxt.buffer.length);
 				break;
 
-			case FileCmd.APPEND:
-				
-				File file = File(ctxt.filePath.toNativeString(), "a+b");
+			case FileCmd.APPEND:				
+				File file = File(ctxt.filePath.toNativeString(), "a+");
 				synchronized(mutex) file.rawWrite(cast(ubyte[]) ctxt.buffer);
 				ctxt.offset = cast(ulong) file.size();
+				file.flush();
 				break;
 		} catch (Throwable e) {
 			auto status = StatusInfo.init;

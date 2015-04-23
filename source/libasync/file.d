@@ -84,6 +84,10 @@ public:
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
 	body {
+		if (buffer.length == 0) {
+			try m_handler(); catch { return false; }
+			return true;
+		}
 		try synchronized(m_cmdInfo.mtx) { 
 			m_cmdInfo.buffer = buffer;
 			m_cmdInfo.command = FileCmd.READ;
@@ -103,6 +107,10 @@ public:
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
 	body {
+		if (buffer.length == 0) {
+			try m_handler(); catch { return false; }
+			return true;
+		}
 		try synchronized(m_cmdInfo.mtx) { 
 			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 			m_cmdInfo.command = FileCmd.WRITE;
@@ -122,6 +130,10 @@ public:
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
 	body {
+		if (buffer.length == 0) {
+			try m_handler(); catch { return false; }
+			return true;
+		}
 		try synchronized(m_cmdInfo.mtx) { 
 			m_cmdInfo.command = FileCmd.APPEND;
 			m_cmdInfo.buffer = buffer;

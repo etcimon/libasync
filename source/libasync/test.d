@@ -11,6 +11,8 @@ shared AsyncDNS g_dns;
 
 unittest {
 	spawnAsyncThreads();
+	scope(exit) 
+		destroyAsyncThreads();
 	// writeln("Unit test started");
 	g_cbCheck = new shared bool[19];
 	g_lastTimer = Clock.currTime();
@@ -47,8 +49,6 @@ unittest {
 	g_listnr.kill();
 
 }
-
-shared static ~this() { destroyAsyncThreads(); }
 
 StopWatch g_swDns;
 void testDNS() {
