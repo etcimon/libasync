@@ -164,9 +164,9 @@ public:
 			} catch {}
 			
 			return false;
-			
 		}
-		assert(cmd_handler.cond);
+
+		assert(cmd_handler.cond, "Could not lock a thread for async operations. Note: Async file I/O in static constructors is unsupported.");
 		
 		m_cmdInfo.waiter = cast(shared) cmd_handler;
 		try {

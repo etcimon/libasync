@@ -100,8 +100,12 @@ public:
 				m_error = true;
 			} catch {}
 			
-			return false;
-			
+			return false;			
+		}
+
+		if (cmd_handler is Waiter.init) {
+			*addr = cast(shared)((cast()m_evLoop).resolveHost(cmdInfo.url, 0, cmdInfo.ipv6?isIPv6.yes:isIPv6.no));
+			return true;
 		}
 		assert(cmd_handler.cond);
 		m_cmdInfo.waiter = cast(shared)cmd_handler;

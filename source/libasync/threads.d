@@ -172,6 +172,7 @@ private:
 	
 	void run()
 	{
+		core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
 		try {
 			m_evLoop = new EventLoop;
 			synchronized(gs_wlock) {
@@ -226,6 +227,7 @@ private:
 }
 
 Waiter popWaiter() {
+	if (atomicLoad(gs_threadCnt) == 0) return Waiter.init; // we're in a static ctor probably...
 	Waiter cmd_handler;
 	bool start_thread;
 	do {
@@ -234,7 +236,6 @@ Waiter popWaiter() {
 			thr.isDaemon = true;
 			thr.name = "CmdProcessor";
 			thr.start();
-			core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
 			gs_threads.add(thr);
 		}
 		
@@ -280,7 +281,6 @@ bool spawnAsyncThreads() nothrow {
 						thr.name = "CmdProcessor";
 						gs_threads.add(thr);
 						thr.start();
-						core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
 						synchronized(gs_wlock)
 							gs_started.wait(1.seconds);
 					}
