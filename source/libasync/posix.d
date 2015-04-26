@@ -795,8 +795,8 @@ package:
 				m_status.code = Status.ASYNC;
 				return 0;
 			}
-		}
-		m_status.code = Status.OK;
+		} else
+			m_status.code = Status.OK;
 		return cast(uint) ret < 0 ? 0 : ret;
 	}
 
@@ -1896,21 +1896,25 @@ private:
 				setInternalError!"del@TCPEvent.CLOSE"(Status.ABORT);
 				return false;
 			}
-			closeSocket(fd, !conn.disconnecting, conn.connected);
-			
-			m_status.code = Status.ABORT;
-			conn.disconnecting = true;
-			conn.connected = false;
-			conn.writeBlocked = true;
-			del.conn.socket = 0;
-			
-			try FreeListObjectAlloc!EventInfo.free(del.conn.evInfo);
-			catch (Exception e){ assert(false, "Error freeing resources"); }
-			
-			if (del.conn.inbound) {
-				log("Freeing inbound connection");
-				try FreeListObjectAlloc!AsyncTCPConnection.free(del.conn);
+
+			// Careful here, the delegate might have closed the connection already
+			if (conn.connected) {
+				closeSocket(fd, !conn.disconnecting, conn.connected);
+
+				m_status.code = Status.ABORT;
+				conn.disconnecting = true;
+				conn.connected = false;
+				conn.writeBlocked = true;
+				del.conn.socket = 0;
+				
+				try FreeListObjectAlloc!EventInfo.free(del.conn.evInfo);
 				catch (Exception e){ assert(false, "Error freeing resources"); }
+				
+				if (del.conn.inbound) {
+					log("Freeing inbound connection");
+					try FreeListObjectAlloc!AsyncTCPConnection.free(del.conn);
+					catch (Exception e){ assert(false, "Error freeing resources"); }
+				}
 			}
 		}
 		return true;

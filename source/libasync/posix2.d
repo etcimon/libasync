@@ -471,9 +471,11 @@ mixin template RunKill()
 			if (forced && ctxt.inbound) {
 				ctxt.connected = false;
 				ctxt.disconnecting = false;
-				if (ctxt.evInfo)
+				if (ctxt.evInfo) {
 					try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
 					catch { assert(false, "Failed to free resources"); }
+					ctxt.evInfo = null;
+				}
 				try FreeListObjectAlloc!AsyncTCPConnection.free(ctxt);
 				catch (Throwable t) { assert(false, "Failed to free resources for context " ~ (cast(void*)ctxt).to!string ~ ": " ~ t.to!string); }
 			}
@@ -484,9 +486,11 @@ mixin template RunKill()
 			if (forced && ctxt.inbound) {
 				ctxt.connected = false;
 				ctxt.disconnecting = false;
-				if (ctxt.evInfo)
+				if (ctxt.evInfo) {
 					try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
 					catch { assert(false, "Failed to free resources"); }
+					ctxt.evInfo = null;
+				}
 				try FreeListObjectAlloc!AsyncTCPConnection.free(ctxt);
 				catch { assert(false, "Failed to free resources"); }
 			}
