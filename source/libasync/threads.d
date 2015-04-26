@@ -301,8 +301,8 @@ void destroyAsyncThreads() {
 	synchronized(gs_wlock) foreach (thr; gs_threads) {
 		CmdProcessor thread = cast(CmdProcessor)thr;
 		thread.stop();
-		import core.thread : thread_isMainThread;
-		if (!thread_isMainThread())
+		//import core.thread : thread_isMainThread;
+		//if (!thread_isMainThread())
 			thread.join();
 	}
 }
