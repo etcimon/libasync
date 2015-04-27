@@ -13,14 +13,52 @@
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
 module libasync.internals.socket_compat;
+version(Posix):
 
+version(OSX) {
+	public import core.sys.posix.arpa.inet;
+	public import core.sys.posix.netdb;
+	public import core.sys.posix.netinet.tcp;
+	public import core.sys.posix.netinet.in_;
+	public import core.sys.posix.sys.select;
+	public import core.sys.posix.sys.socket;
+	private import core.sys.posix.config;
+	public import core.sys.posix.sys.types; // for ssize_t, size_t
+	public import core.sys.posix.sys.uio;   // for iovec
 
-version (Posix):
-public import std.c.linux.socket;
-private import core.sys.posix.config;
-public import core.sys.posix.sys.types; // for ssize_t, size_t
-public import core.sys.posix.sys.uio;   // for iovec
+	
+	enum: int
+	{
+		TCP_MAX_SACK = 3,
+		TCP_MSS = 512,
+		TCP_MINMSS = 216,
+		TCP_MINMSSOVERLOAD = 1000,
+		TCP_MAXWIN = 65535L,
+		TCP_MAX_WINSHIFT = 14,
+		TCP_MAXBURST = 4,
+		TCP_MAXHLEN = 60,
+		TCP_MAXOLEN = 40,
+		TCP_NODELAY = 1,
+		TCP_MAXSEG = 2,
+		TCP_NOPUSH = 4,
+		TCP_NOOPT = 8,
+		TCP_KEEPALIVE = 16,
+		TCP_QUICKACK = -1, 
+		TCP_KEEPCNT = -1, 
+		TCP_KEEPINTVL = -1, 
+		TCP_KEEPIDLE = -1, 
+		TCP_CONGESTION = -1, 
+		TCP_CORK = -1,
+		TCP_DEFER_ACCEPT = -1
+	}
+}
 
+else version (linux) {
+	public import std.c.linux.socket;
+	private import core.sys.posix.config;
+	public import core.sys.posix.sys.types; // for ssize_t, size_t
+	public import core.sys.posix.sys.uio;   // for iovec
+}
 extern (C) nothrow @nogc:
 
 //

@@ -36,8 +36,8 @@ version(linux) {
 			sigset_t mask;
 			// todo: use more signals for more event loops per thread.. (is this necessary?)
 			//foreach (j; __libc_current_sigrtmin() .. __libc_current_sigrtmax() + 1) {
-				//import std.stdio : writeln; 
-				//try writeln("Blocked signal " ~ (__libc_current_sigrtmin() + j).to!string ~ " in instance " ~ m_instanceId.to!string); catch {}
+			//import std.stdio : writeln; 
+			//try writeln("Blocked signal " ~ (__libc_current_sigrtmin() + j).to!string ~ " in instance " ~ m_instanceId.to!string); catch {}
 			sigemptyset(&mask);
 			sigaddset(&mask, cast(int) __libc_current_sigrtmin());
 			pthread_sigmask(SIG_BLOCK, &mask, null);
@@ -128,7 +128,7 @@ package:
 		shared static ushort i;
 		string* failer = null;
 
-
+		
 		m_instanceId = i;
 		static if (!EPOLL) g_threadId = new size_t(cast(size_t)m_instanceId);
 
@@ -154,7 +154,7 @@ package:
 
 			if (catchError!"epoll_create1"(m_epollfd))
 				return false;
-				
+			
 			import core.sys.linux.sys.signalfd;
 			import core.thread : getpid;
 
@@ -174,7 +174,7 @@ package:
 				}
 			} catch { }
 
-
+			
 
 			sfd = signalfd(-1, &mask, SFD_NONBLOCK);
 			assert(sfd > 0, "Failed to setup signalfd in epoll");
@@ -198,7 +198,7 @@ package:
 			}
 
 		}
-		else /* if KQUEUE */ 
+			else /* if KQUEUE */ 
 		{
 			try {
 				if (!gs_queueMutex) {
@@ -274,7 +274,7 @@ package:
 	}
 
 	bool loop(Duration timeout = 0.seconds)
-	//in { assert(Fiber.getThis() is null); }
+		//in { assert(Fiber.getThis() is null); }
 	{
 
 		import libasync.internals.memory;
@@ -446,7 +446,7 @@ package:
 							setInternalError!"signal handler"(Status.ERROR);
 						}
 
-
+						
 					}
 					else /* if KQUEUE */
 					{
@@ -752,10 +752,10 @@ package:
 					else /* if KQUEUE */ {
 						// todo: Emulate DEFER_ACCEPT with ACCEPT_FILTER(9)
 						/*int val = value.to!int;
-						socklen_t len = val.sizeof;
-						err = setsockopt(fd, SOL_SOCKET, SO_ACCEPTFILTER, &val, len);
-						return errorHandler();
-						*/
+						 socklen_t len = val.sizeof;
+						 err = setsockopt(fd, SOL_SOCKET, SO_ACCEPTFILTER, &val, len);
+						 return errorHandler();
+						 */
 						assert(false, "TCPOption.DEFER_ACCEPT is not implemented");
 					}
 				}
@@ -1026,7 +1026,7 @@ package:
 					if (catchError!"kevent_timer_add"(err))
 						return 0;
 
-
+					
 					if (is_dir) foreach (de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
 						Path filePath = Path(de.name);
 						if (!filePath.absolute)
@@ -1091,12 +1091,12 @@ package:
 						return false;
 
 					/*foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles)
-					{
-						if (file.folder == fi.wi.wd) {
-							inotify_unwatch(id);
-							m_dwFiles.remove(id);
-						}
-					}*/
+					 {
+					 if (file.folder == fi.wi.wd) {
+					 inotify_unwatch(id);
+					 m_dwFiles.remove(id);
+					 }
+					 }*/
 					m_dwFolders.remove(tuple(cast(fd_t)fd, fi.wi.wd)); 
 
 					if (fi.wi.recursive) {
@@ -1142,7 +1142,7 @@ package:
 			nothrow bool removeAll(DWFolderInfo fi) {
 				import core.sys.posix.unistd : close;
 
-
+				
 				bool event_unset(uint id) {
 					kevent_t _event;
 					EV_SET(&_event, cast(int) id, EVFILT_VNODE, EV_DELETE, 0, 0, null);
@@ -1172,7 +1172,7 @@ package:
 						// search for subfolders and unset them / close their wd
 						foreach (ref const DWFolderInfo folder; m_dwFolders) {
 							if (folder.fd == fi.fd && folder.wi.path.startsWith(fi.wi.path)) {
-								 
+								
 								if (!event_unset(folder.wi.wd))
 									return false;
 
@@ -1194,7 +1194,7 @@ package:
 						foreach (rm_wd; remove_list[])
 							removeFolder(rm_wd);
 
-
+						
 					}
 				} catch (Exception e) {
 					try setInternalError!"dwFolders.get(wd)"(Status.ERROR, "Could not close the folder " ~ fi.to!string ~ ": " ~ e.toString()); catch {}
@@ -1232,7 +1232,7 @@ package:
 				return 0;
 			}
 			assert(nread > 0);
-		
+			
 
 			/// starts (recursively) watching all newly created folders in a recursive entry,
 			/// creates events for additional files/folders founds, and unwatches all deleted folders
@@ -1329,7 +1329,7 @@ package:
 
 					}
 
-
+					
 					i++;
 					if (i >= dst.length)
 						return cast(uint) i;
@@ -1440,13 +1440,13 @@ package:
 		return getAddressInfo(ipAddr, port, ipv6, tcp, hints);
 	}
 
-
+	
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true)
-	/*in { 
-		debug import libasync.internals.validator : validateHost;
-		debug assert(validateHost(host), "Trying to connect to an invalid domain"); 
-	}
-	body */{
+		/*in { 
+		 debug import libasync.internals.validator : validateHost;
+		 debug assert(validateHost(host), "Trying to connect to an invalid domain"); 
+		 }
+		body */{
 		import libasync.internals.socket_compat : addrinfo;
 		addrinfo hints;
 		return getAddressInfo(host, port, ipv6, tcp, hints);
@@ -1480,7 +1480,7 @@ private:
 			//import std.stdio : writeln;
 			//writeln("Scanning path: ", path.toNativeString());
 			//writeln("m_dwFiles length: ", m_dwFiles.length);
-		
+			
 			// get a list of the folder
 			foreach (de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
 				//writeln(de.name);
@@ -1859,7 +1859,7 @@ private:
 			return true;
 		}
 
-
+		
 		if (write && conn.connected && !conn.disconnecting && conn.writeBlocked) 
 		{
 			conn.writeBlocked = false;
@@ -1979,7 +1979,7 @@ private:
 		return true;
 	}
 
-
+	
 	bool initTCPListener(fd_t fd, AsyncTCPListener ctxt, TCPAcceptHandler del, bool reusing = false)
 	in {
 		assert(ctxt.local !is NetworkAddress.init);
@@ -2198,7 +2198,7 @@ private:
 	 * tuple third argument Status.
 	 * 
 	 * Repeats for each comparison tuple until a match in which case returns true.
-	*/
+	 */
 	bool catchErrorsEq(string TRACE, T)(T val, Tuple!(T, error_t, Status)[] cmp ...)
 		if (isIntegral!T)
 	{
@@ -2222,7 +2222,7 @@ private:
 		return false;
 	}
 
-
+	
 	error_t lastError() {
 		try {
 			return cast(error_t) errno;
@@ -2311,7 +2311,7 @@ private:
 		return addr;
 	}
 
-
+	
 	
 }
 
@@ -2384,7 +2384,7 @@ static if (!EPOLL)
 	__gshared Array!(Array!AsyncSignal) gs_signalQueue;
 	__gshared Array!(Array!size_t) gs_idxQueue; // signals notified
 
-
+	
 	// loop
 	nothrow bool popSignals(ref AsyncSignal[] sigarr) {
 		bool more;
@@ -2590,14 +2590,14 @@ mixin template EvInfoMixinsShared() {
 			return cast(pthread_t) m_pthreadId;
 		}
 		/* todo: support multiple event loops per thread?
-		private ushort m_sigId;
-		synchronized @property ushort sigId() {
-			return cast(ushort)m_loopId;
-		}
-		synchronized @property void sigId(ushort id) {
-			m_loopId = cast(shared)id;
-		}
-		*/
+		 private ushort m_sigId;
+		 synchronized @property ushort sigId() {
+		 return cast(ushort)m_loopId;
+		 }
+		 synchronized @property void sigId(ushort id) {
+		 m_loopId = cast(shared)id;
+		 }
+		 */
 	} 
 	else /* if KQUEUE */
 	{
@@ -2663,8 +2663,8 @@ struct EventInfo {
 
 
 /**
-		Represents a network/socket address. (taken from vibe.core.net)
-*/
+ Represents a network/socket address. (taken from vibe.core.net)
+ */
 public struct NetworkAddress {
 	import libasync.internals.socket_compat : sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6;
 	private union {
@@ -2676,13 +2676,13 @@ public struct NetworkAddress {
 	@property bool ipv6() const pure nothrow { return this.family == AF_INET6; }
 
 	/** Family (AF_) of the socket address.
-		*/
+	 */
 	@property ushort family() const pure nothrow { return addr.sa_family; }
 	/// ditto
 	@property void family(ushort val) pure nothrow { addr.sa_family = cast(ubyte)val; }
 	
 	/** The port in host byte order.
-		*/
+	 */
 	@property ushort port()
 	const pure nothrow {
 		switch (this.family) {
@@ -2702,11 +2702,11 @@ public struct NetworkAddress {
 	}
 	
 	/** A pointer to a sockaddr struct suitable for passing to socket functions.
-		*/
+	 */
 	@property inout(sockaddr)* sockAddr() inout pure nothrow { return &addr; }
 	
 	/** Size of the sockaddr struct that is returned by sockAddr().
-		*/
+	 */
 	@property uint sockAddrLen()
 	const pure nothrow {
 		switch (this.family) {
@@ -2725,7 +2725,7 @@ public struct NetworkAddress {
 	body { return &addr_ip6; }
 	
 	/** Returns a string representation of the IP address
-		*/
+	 */
 	string toAddressString()
 	const {
 		import std.array : appender;
@@ -2750,7 +2750,7 @@ public struct NetworkAddress {
 	}
 	
 	/** Returns a full string representation of the address, including the port number.
-		*/
+	 */
 	string toString()
 	const {
 		
