@@ -104,7 +104,8 @@ public:
 		}
 
 		if (cmd_handler is Waiter.init) {
-			*addr = cast(shared)((cast()m_evLoop).resolveHost(cmdInfo.url, 0, cmdInfo.ipv6?isIPv6.yes:isIPv6.no));
+			m_cmdInfo.addr = cast(shared)((cast()m_evLoop).resolveHost(cmdInfo.url, 0, cmdInfo.ipv6?isIPv6.yes:isIPv6.no));
+			callback();
 			return true;
 		}
 		assert(cmd_handler.cond);
