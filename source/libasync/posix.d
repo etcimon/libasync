@@ -348,7 +348,7 @@ package:
 			//	try log("Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
 			//	catch{}
 			//log("owner");
-			final switch (info.evType) {
+			switch (info.evType) {
 				case EventType.TCPAccept:
 					if (info.fd == 0)
 						break;
@@ -537,7 +537,8 @@ package:
 					else if (!success && m_status.code == Status.ERROR) {
 						abortTCPHandler(false);
 					}
-
+					break;
+				default:
 					break;
 			}
 
