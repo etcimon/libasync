@@ -78,6 +78,7 @@ package:
 		m_instanceId = i;
 		core.atomic.atomicOp!"+="(i, cast(ushort) 1);
 		wstring inststr;
+		import std.conv : to;
 		try { inststr = m_instanceId.to!wstring; }
 		catch (Exception e) {
 			return false;
