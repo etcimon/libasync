@@ -323,7 +323,6 @@ package:
 	fd_t run(AsyncTimer ctxt, TimerHandler del, Duration timeout) {
 		if (timeout < 0.seconds)
 			timeout = 0.seconds;
-		timeout += 10.msecs(); // round up to the next 10 msecs to avoid premature timer events
 		m_status = StatusInfo.init;
 		fd_t timer_id = ctxt.id;
 		if (timer_id == fd_t.init) {

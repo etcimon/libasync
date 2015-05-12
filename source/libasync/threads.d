@@ -96,28 +96,11 @@ private:
 		waiter = cast(Waiter)cmdInfo.waiter;
 
 		try assert(m_waiter == waiter, "File processor is handling a command from the wrong thread"); catch {}
-		import std.file : exists;
-		try if (cmdInfo.create_if_not_exists || cmdInfo.truncate_if_exists) {
-			bool flag;
-			if (cmdInfo.create_if_not_exists && !exists(ctxt.filePath.toNativeString()))
-				flag = true;
-			else if (cmdInfo.truncate_if_exists && exists(ctxt.filePath.toNativeString()))
-				flag = true;
-			if (flag) // touch
-			{	File dummy = File(ctxt.filePath.toNativeString(), "w"); }
-		}
-		catch (Exception e){
-			auto status = StatusInfo.init;
-			status.code = Status.ERROR;
-			try status.text = "Could not create the file in destination: " ~ e.toString(); catch {}
-			ctxt.status = status;
-		}
 
-		
 		try final switch (cmd)
 		{
 			case FileCmd.READ:
-				File file = File(ctxt.filePath.toNativeString(), "rb");
+				File file = ctxt.file;
 				if (ctxt.offset != -1)
 					file.seek(cast(long)ctxt.offset);
 				ubyte[] res;
@@ -129,7 +112,7 @@ private:
 				
 			case FileCmd.WRITE:
 
-				File file = File(ctxt.filePath.toNativeString(), "r+b");
+				File file = cast(File)ctxt.file;
 				if (ctxt.offset != -1)
 					file.seek(cast(long)ctxt.offset);
 				synchronized(mutex) {
@@ -140,7 +123,7 @@ private:
 				break;
 
 			case FileCmd.APPEND:				
-				File file = File(ctxt.filePath.toNativeString(), "a+");
+				File file = cast(File)ctxt.file;
 				synchronized(mutex) file.rawWrite(cast(ubyte[]) ctxt.buffer);
 				ctxt.offset = cast(ulong) file.size();
 				file.flush();

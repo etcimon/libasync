@@ -8,6 +8,8 @@ import std.stdio;
 import core.atomic;
 import libasync.internals.path;
 import libasync.threads;
+import std.file;
+import libasync.internals.memory;
 
 /// Runs all blocking file I/O commands in a thread pool and calls the handler
 /// upon completion.
@@ -23,6 +25,7 @@ private:
 	StatusInfo m_status;
 	ulong m_cursorOffset;
 	Thread m_owner;
+	File* m_file;
 
 public:
 	this(EventLoop evl) {
@@ -30,11 +33,16 @@ public:
 		m_cmdInfo.ready = new shared AsyncSignal(cast(EventLoop)m_evLoop);
 		m_cmdInfo.ready.run(cast(void delegate())&handler);
 		m_owner = cast(shared)Thread.getThis();
+		m_file = cast(shared)new File;
 		try m_cmdInfo.mtx = cast(shared) new Mutex; catch {}
 	}
 
 	/// Cleans up the underlying resources. todo: make this dispose?
 	bool kill() {
+		scope(failure) assert(false);
+		if (file.isOpen)
+			(cast()*m_file).close();
+		(cast()*m_file).__dtor();
 		m_cmdInfo.ready.kill();
 		return true;
 	}
@@ -88,11 +96,50 @@ public:
 			try m_handler(); catch { return false; }
 			return true;
 		}
+		try {
+			file_path = Path(file_path).toNativeString();
+			bool flag;
+			if (create_if_not_exists && !m_file && !exists(file_path))
+				flag = true;
+			else if (truncate_if_exists && (m_file || exists(file_path)))
+				flag = true;
+			if (flag) // touch
+			{	
+				if (file.isOpen) 
+					file.close();
+				import std.c.stdio;
+				import std.string : toStringz;
+				FILE * f = fopen(file_path.toStringz, "w\0".ptr);
+				fclose(f);
+			}
+			
+			if (!file.isOpen || m_cmdInfo.command != FileCmd.READ) {
+				auto tmp = File(file_path, "rb");
+				file = tmp;
+				m_cmdInfo.command = FileCmd.READ;
+			}
+			if (buffer.length < 65_536) {
+				m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
+
+				if (off != -1)
+					file.seek(cast(long)off);
+				ubyte[] res;
+				res = file.rawRead(cast(ubyte[])buffer);
+				if (res)
+					m_cursorOffset = cast(shared(ulong)) (off + res.length);
+				m_handler();
+				return true;
+			}
+		} catch (Exception e) {
+			auto status = StatusInfo.init;
+			status.code = Status.ERROR;
+			try status.text = "Error in read, " ~ e.toString(); catch {}
+			m_status = cast(shared) status;
+			return false;
+		}
 		try synchronized(m_cmdInfo.mtx) { 
 			m_cmdInfo.buffer = buffer;
 			m_cmdInfo.command = FileCmd.READ;
-			m_cmdInfo.create_if_not_exists = create_if_not_exists;
-			m_cmdInfo.truncate_if_exists = truncate_if_exists;
 			filePath = Path(file_path);
 		} catch {}
 		offset = off;
@@ -111,11 +158,50 @@ public:
 			try m_handler(); catch { return false; }
 			return true;
 		}
+		try {
+
+			file_path = Path(file_path).toNativeString();
+			bool flag;
+			if (create_if_not_exists && !m_file && !exists(file_path))
+				flag = true;
+			else if (truncate_if_exists && (m_file || exists(file_path)))
+				flag = true;
+			if (flag) // touch
+			{	
+				if (file.isOpen) 
+					file.close();
+				import std.c.stdio;
+				import std.string : toStringz;
+				FILE * f = fopen(file_path.toStringz, "w\0".ptr);
+				fclose(f);
+			}
+			
+			if (!file.isOpen || m_cmdInfo.command != FileCmd.WRITE) {
+				auto tmp = File(file_path, "r+b");
+				file = tmp;
+				m_cmdInfo.command = FileCmd.WRITE;
+			}
+
+			if (buffer.length < 65_536) {
+				m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
+				if (off != -1)
+					file.seek(cast(long)off);
+				file.rawWrite(cast(ubyte[])buffer);
+				file.flush();
+				m_cursorOffset = cast(shared(ulong)) (off + buffer.length);
+				m_handler();
+				return true;
+			}
+		} catch (Exception e) {
+			auto status = StatusInfo.init;
+			status.code = Status.ERROR;
+			try status.text = "Error in write, " ~ e.toString(); catch {}
+			m_status = cast(shared) status;
+			return false;
+		}
 		try synchronized(m_cmdInfo.mtx) { 
 			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 			m_cmdInfo.command = FileCmd.WRITE;
-			m_cmdInfo.create_if_not_exists = create_if_not_exists;
-			m_cmdInfo.truncate_if_exists = truncate_if_exists;
 			filePath = Path(file_path);
 		} catch {}
 		offset = off;
@@ -134,11 +220,46 @@ public:
 			try m_handler(); catch { return false; }
 			return true;
 		}
+		try {
+			file_path = Path(file_path).toNativeString();
+			bool flag;
+			if (create_if_not_exists && !m_file && !exists(file_path))
+				flag = true;
+			else if (truncate_if_exists && (m_file || exists(file_path)))
+				flag = true;
+			if (flag) // touch
+			{	
+				if (file.isOpen) 
+					file.close();
+				import std.c.stdio;
+				import std.string : toStringz;
+				FILE * f = fopen(file_path.toStringz, "w\0".ptr);
+				fclose(f);
+			}
+			
+			if (!file.isOpen || m_cmdInfo.command != FileCmd.APPEND) {
+				auto tmp = File(file_path, "a+");
+				file = tmp;
+				m_cmdInfo.command = FileCmd.APPEND;
+			}
+			if (buffer.length < 65_536) {
+				m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
+				file.rawWrite(cast(ubyte[]) buffer);
+				m_cursorOffset = cast(shared(ulong)) file.size();
+				file.flush();
+				m_handler();
+				return true;
+			}
+		} catch (Exception e) {
+			auto status = StatusInfo.init;
+			status.code = Status.ERROR;
+			try status.text = "Error in append, " ~ e.toString(); catch {}
+			m_status = cast(shared) status;
+			return false;
+		}
 		try synchronized(m_cmdInfo.mtx) { 
+			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 			m_cmdInfo.command = FileCmd.APPEND;
-			m_cmdInfo.buffer = buffer;
-			m_cmdInfo.create_if_not_exists = create_if_not_exists;
-			m_cmdInfo.truncate_if_exists = truncate_if_exists;
 			filePath = Path(file_path);
 		} catch {}
 		return sendCommand();
@@ -150,7 +271,7 @@ public:
 		waiting = true;
 		m_error = false;
 		status = StatusInfo.init;
-		
+
 		Waiter cmd_handler;
 
 		try {
@@ -197,6 +318,19 @@ package:
 	synchronized @property void filePath(Path file_path) {
 		m_cmdInfo.filePath = cast(shared) file_path;
 	}
+
+	synchronized @property File file() {
+		scope(failure) assert(false);
+		return cast()*m_file;
+	}
+
+	synchronized @property void file(ref File f) {
+		try (cast()*m_file).opAssign(f);
+		catch (Exception e) {
+			import std.stdio : writeln;
+			try writeln(e.msg); catch {}
+		}
+	}
 	
 	synchronized @property void status(StatusInfo stat) {
 		m_status = cast(shared) stat;
@@ -234,8 +368,6 @@ package shared struct FileCmdInfo
 	AsyncSignal ready;
 	AsyncFile file;
 	Mutex mtx; // for buffer writing
-	bool truncate_if_exists;
-	bool create_if_not_exists;
 }
 
 package shared struct FileReadyHandler {

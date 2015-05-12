@@ -75,6 +75,8 @@ struct Path {
 		}
 		if( m_nodes.length > 0 && m_endsWithSlash )
 			ret.put('/');
+		if (ret.data.length > 1 && ret.data[$-1] == '.')
+			return ret.data[0 .. $-1];
 		return ret.data;
 	}
 	/// Converts the Path object to a native path string (backslash as path separator on Windows).
@@ -93,6 +95,8 @@ struct Path {
 			version(Windows) { ret.put('\\'); }
 			version(Posix) { ret.put('/'); }
 		}
+		if (ret.data.length > 1 && ret.data[$-1] == '.')
+			return ret.data[0 .. $-1];
 		return ret.data;
 	}
 	/// Tests if `rhs` is an anchestor or the same as this path.
