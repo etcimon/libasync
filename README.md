@@ -3,7 +3,7 @@
 About
 -----
 
-The libasync asynchronous library is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchronous tasks. It embeds naturally to D projects (DMD >= 2.066.0, LDC >= 0.15.1), compiles statically with your project and has an open source license (MIT).
+The libasync asynchronous library is written completely in D, features a cross-platform event loop and enhanced connectivity and concurrency facilities for extremely lightweight asynchronous tasks. It embeds naturally to D projects (DMD >= 2.067.0, LDC >= 0.15.1), compiles statically with your project and has an open source license (MIT).
 
 A fully functional, tested vibe.d driver is available in [the latest version of vibe.d](https://github.com/rejectedsoftware/vibe.d/), you can enable it by appending `"subConfigurations": { "vibe-d": "libasync"}` in your project's dub.json configuration file.
 
@@ -13,7 +13,7 @@ The following capabilities are now being tested and should not be used in any ci
 
 (*) _Unit tests confirmed on Mac, Linux, Windows_ - Platforms used were Mac OS X (10.8, 10.9), Linux (Fedora 20+) and Windows 32/64 bit, although it should be compatible to 99% of Desktop OS users.
 
-(*) _Compiles with DMD & LDC_ (DMD  2.066.0, 2.066.1, 2.067-b2, LDC 0.15.1)
+(*) _Compiles with DMD & LDC_ (DMD 2.067.0, 2.067.1, LDC 0.15.1)
 
 - **Multi-threading** support - EventLoop can be launched and run from an unlimited number of threads!
 
@@ -48,7 +48,7 @@ Some or all of these limitations are possibly being implemented currently and ma
 Installation Instructions
 -------------------------
 
-- Download and install DMD 2.066.0+ from [dlang.org](http://dlang.org/download.html)
+- Download and install DMD 2.067.0+ from [dlang.org](http://dlang.org/download.html)
 - Download and install dub 0.9.22 from [code.dlang.org](http://code.dlang.org/download)
 - Use Git to clone this repository
 - Run `dub test` to test the library on your operating system (submit any issue with a log report by uncommenting `enum LOG = true` in `types.d`)

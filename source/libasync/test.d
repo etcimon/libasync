@@ -45,9 +45,10 @@ unittest {
 	// writeln("Callback triggers were successful, run time: ", Clock.currTime - gs_start);
 
 	assert(g_cbTimerCnt >= 3, "Multitimer expired only " ~ g_cbTimerCnt.to!string ~ " times"); // MultiTimer expired 3-4 times
-
+	g_watcher.kill();
+	g_notifier.kill();
+	gs_file.kill();
 	g_listnr.kill();
-
 }
 
 StopWatch g_swDns;
@@ -70,9 +71,12 @@ void testDirectoryWatcher() {
 	g_watcher.run({
 		DWChangeInfo[1] change;
 		DWChangeInfo[] changeRef = change.ptr[0..1];
+		bool done;
 		while(g_watcher.readChanges(changeRef)){
 			g_cbCheck[18] = true;
 			writeln(change);
+			if (change[0].event == DWFileEvent.DELETED)
+				done = true;
 		}
 	});
 	g_watcher.watchDir(".");
@@ -87,6 +91,7 @@ void testDirectoryWatcher() {
 			tm.duration(100.msecs).run({
 				writeln("Removing ./hey/tmp.tmp");
 				remove("./hey/tmp.tmp");
+				tm.kill();
 			});
 		});
 	});
