@@ -466,36 +466,20 @@ mixin template RunKill()
 		log("Kill socket");
 		m_status = StatusInfo.init;
 		fd_t fd = ctxt.socket;
-		if (ctxt.connected) {
-			ctxt.disconnecting = true;
-			if (forced) {
-				ctxt.connected = false;
-				ctxt.disconnecting = false;
-				if (ctxt.evInfo) {
-					try ThreadMem.free(ctxt.evInfo);
-					catch { assert(false, "Failed to free resources"); }
-					ctxt.evInfo = null;
-				}
-				if (ctxt.inbound) try ThreadMem.free(ctxt);
-				catch (Throwable t) { assert(false, "Failed to free resources for context " ~ (cast(void*)ctxt).to!string ~ ": " ~ t.to!string); }
-			}
-			return closeSocket(fd, true, forced);
-		}
-		else {
-			ctxt.disconnecting = true;
-			if (forced) {
-				ctxt.connected = false;
-				ctxt.disconnecting = false;
-				if (ctxt.evInfo) {
-					try ThreadMem.free(ctxt.evInfo);
-					catch { assert(false, "Failed to free resources"); }
-					ctxt.evInfo = null;
-				}
-				if (ctxt.inbound) try ThreadMem.free(ctxt);
+		bool has_socket = fd > 0;
+		ctxt.disconnecting = true;
+		if (forced) {
+			ctxt.connected = false;
+			ctxt.disconnecting = false;
+			if (ctxt.evInfo) {
+				try ThreadMem.free(ctxt.evInfo);
 				catch { assert(false, "Failed to free resources"); }
+				ctxt.evInfo = null;
 			}
-			return true;
+			if (ctxt.inbound) try ThreadMem.free(ctxt);
+			catch (Throwable t) { assert(false, "Failed to free resources for context " ~ (cast(void*)ctxt).to!string ~ ": " ~ t.to!string); }
 		}
+		return has_socket ? closeSocket(fd, true, forced) : true;
 	}
 
 	bool kill(AsyncTCPListener ctxt)
