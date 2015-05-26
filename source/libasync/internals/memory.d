@@ -223,8 +223,6 @@ final class MallocAllocator : Allocator {
 	
 	void free(void[] mem)
 	{
-		import std.stdio : writeln;
-		writeln("free: ", mem.ptr, " sz ", mem.length);
 		.free(extractUnalignedPointer(mem.ptr));
 	}
 }

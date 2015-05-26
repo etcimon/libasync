@@ -142,9 +142,7 @@ package struct TimerHandler {
 	void opCall() {
 		assert(ctxt !is null);
 		ctxt.m_rearmed = false;
-		ctxt.m_shooting = true;
 		del();
-		ctxt.m_shooting = false;
 		return;
 	}
 }

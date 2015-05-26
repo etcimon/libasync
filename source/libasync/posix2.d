@@ -174,7 +174,7 @@ mixin template RunKill()
 		EventInfo* evinfo;
 		
 		if (!ctxt.evInfo) {
-			try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
+			try evinfo = ThreadMem.alloc!EventInfo(fd, evtype, eobj, m_instanceId);
 			catch (Exception e) {
 				assert(false, "Failed to allocate resources: " ~ e.msg);
 			}
@@ -263,7 +263,7 @@ mixin template RunKill()
 			EventInfo* evinfo;
 			
 			if (!ctxt.evInfo) {
-				try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
+				try evinfo = ThreadMem.alloc!EventInfo(fd, evtype, eobj, m_instanceId);
 				catch (Exception e) {
 					assert(false, "Failed to allocate resources: " ~ e.msg);
 				}
@@ -303,7 +303,7 @@ mixin template RunKill()
 			EventInfo* evinfo;
 			
 			if (!ctxt.evInfo) {
-				try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
+				try evinfo = ThreadMem.alloc!EventInfo(fd, evtype, eobj, m_instanceId);
 				catch (Exception e) {
 					assert(false, "Failed to allocate resources: " ~ e.msg);
 				}
@@ -360,7 +360,7 @@ mixin template RunKill()
 
 			assert (!ctxt.evInfo, "Cannot run the same DirectoryWatcher again. This should have been caught earlier...");
 			
-			try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
+			try evinfo = ThreadMem.alloc!EventInfo(fd, evtype, eobj, m_instanceId);
 			catch (Exception e) {
 				assert(false, "Failed to allocate resources: " ~ e.msg);
 			}
@@ -391,14 +391,14 @@ mixin template RunKill()
 
 			assert (!ctxt.evInfo, "Cannot run the same DirectoryWatcher again. This should have been caught earlier...");
 
-			try evinfo = FreeListObjectAlloc!EventInfo.alloc(fd, evtype, eobj, m_instanceId);
+			try evinfo = ThreadMem.alloc!EventInfo(fd, evtype, eobj, m_instanceId);
 			catch (Exception e) {
 				assert(false, "Failed to allocate resources: " ~ e.msg);
 			}
 			ctxt.evInfo = evinfo;
 			try m_watchers[fd] = evinfo; catch {}
 
-			try m_changes[fd] = FreeListObjectAlloc!(Array!DWChangeInfo).alloc();
+			try m_changes[fd] = ThreadMem.alloc!(Array!DWChangeInfo)();
 			catch (Exception e) {
 				assert(false, "Failed to allocate resources: " ~ e.msg);
 			}
@@ -427,7 +427,7 @@ mixin template RunKill()
 				}
 
 				close(ctxt.fd);
-				FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+				ThreadMem.free(ctxt.evInfo);
 				ctxt.evInfo = null;
 			}
 			catch (Exception e)
@@ -449,7 +449,7 @@ mixin template RunKill()
 					unwatch(ctxt.fd, wd); // deletes all related m_dwFolders and m_dwFiles entries
 				}
 
-				FreeListObjectAlloc!(Array!DWChangeInfo).free(m_changes[ctxt.fd]);
+				ThreadMem.free(m_changes[ctxt.fd]);
 				m_watchers.remove(ctxt.fd);	
 				m_changes.remove(ctxt.fd);		
 			}
@@ -468,30 +468,30 @@ mixin template RunKill()
 		fd_t fd = ctxt.socket;
 		if (ctxt.connected) {
 			ctxt.disconnecting = true;
-			if (forced && ctxt.inbound) {
+			if (forced) {
 				ctxt.connected = false;
 				ctxt.disconnecting = false;
 				if (ctxt.evInfo) {
-					try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+					try ThreadMem.free(ctxt.evInfo);
 					catch { assert(false, "Failed to free resources"); }
 					ctxt.evInfo = null;
 				}
-				try FreeListObjectAlloc!AsyncTCPConnection.free(ctxt);
+				if (ctxt.inbound) try ThreadMem.free(ctxt);
 				catch (Throwable t) { assert(false, "Failed to free resources for context " ~ (cast(void*)ctxt).to!string ~ ": " ~ t.to!string); }
 			}
 			return closeSocket(fd, true, forced);
 		}
 		else {
 			ctxt.disconnecting = true;
-			if (forced && ctxt.inbound) {
+			if (forced) {
 				ctxt.connected = false;
 				ctxt.disconnecting = false;
 				if (ctxt.evInfo) {
-					try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+					try ThreadMem.free(ctxt.evInfo);
 					catch { assert(false, "Failed to free resources"); }
 					ctxt.evInfo = null;
 				}
-				try FreeListObjectAlloc!AsyncTCPConnection.free(ctxt);
+				if (ctxt.inbound) try ThreadMem.free(ctxt);
 				catch { assert(false, "Failed to free resources"); }
 			}
 			return true;
@@ -503,7 +503,7 @@ mixin template RunKill()
 		log("Kill listener");
 		m_status = StatusInfo.init;
 		nothrow void cleanup() {
-			try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+			try ThreadMem.free(ctxt.evInfo);
 			catch { assert(false, "Failed to free resources"); }
 			ctxt.evInfo = null;
 		}
@@ -526,7 +526,7 @@ mixin template RunKill()
 			if (catchError!"close(eventfd)"(err))
 				return false;
 			
-			try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+			try ThreadMem.free(ctxt.evInfo);
 			catch (Exception e){ assert(false, "Error freeing resources"); }
 			
 			return true;
@@ -543,7 +543,7 @@ mixin template RunKill()
 			
 			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 			
-			try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+			try ThreadMem.free(ctxt.evInfo);
 			catch (Exception e){ assert(false, "Error freeing resources"); }
 			
 			if (catchError!"kevent_del(notifier)"(err)) {
@@ -580,7 +580,7 @@ mixin template RunKill()
 				return false;
 			
 			if (ctxt.evInfo) {
-				try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+				try ThreadMem.free(ctxt.evInfo);
 				catch (Exception e) { assert(false, "Failed to free resources: " ~ e.msg); }
 				ctxt.evInfo = null;
 			}
@@ -592,7 +592,7 @@ mixin template RunKill()
 				destroyIndex(ctxt);
 			
 			if (ctxt.evInfo) {
-				try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+				try ThreadMem.free(ctxt.evInfo);
 				catch (Exception e) { assert(false, "Failed to free resources: " ~ e.msg); }
 				ctxt.evInfo = null;
 			}
@@ -629,7 +629,7 @@ mixin template RunKill()
 		}
 		
 		
-		try FreeListObjectAlloc!EventInfo.free(ctxt.evInfo);
+		try ThreadMem.free(ctxt.evInfo);
 		catch (Exception e){
 			assert(false, "Failed to free resources: " ~ e.msg);
 		}

@@ -1,0 +1,9 @@
+{
+    "name": "tcp_test",
+    "description": "A simple TCP test",
+    "dependencies": {
+        "libasync": {"version": "~master", "path": "../../"},
+	"memutils": {"version": "~>0.3.5"}
+    },
+    "versions": ["EnableDebugger"]
+}

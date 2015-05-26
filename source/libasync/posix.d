@@ -12,12 +12,13 @@ import std.container : Array;
 
 import core.stdc.errno;
 import libasync.events;
-import libasync.internals.memory : FreeListObjectAlloc;
-import libasync.internals.hashmap;
 import libasync.internals.path;
 import core.sys.posix.signal;
 import libasync.posix2;
 import core.sync.mutex;
+import memutils.utils;
+import memutils.hashmap;
+
 enum SOCKET_ERROR = -1;
 alias fd_t = int;
 
@@ -185,7 +186,7 @@ package:
 			_event.events = EPOLLIN;
 			evtype = EventType.Signal;
 			try 
-				m_evSignal = FreeListObjectAlloc!EventInfo.alloc(sfd, evtype, EventObject.init, m_instanceId);
+				m_evSignal = ThreadMem.alloc!EventInfo(sfd, evtype, EventObject.init, m_instanceId);
 			catch (Exception e){ 
 				assert(false, "Allocation error"); 
 			}
@@ -202,7 +203,7 @@ package:
 		{
 			try {
 				if (!gs_queueMutex) {
-					gs_queueMutex = FreeListObjectAlloc!ReadWriteMutex.alloc();
+					gs_queueMutex = ThreadMem.alloc!ReadWriteMutex();
 					gs_signalQueue = Array!(Array!AsyncSignal)();
 					gs_idxQueue = Array!(Array!size_t)();
 				}
@@ -228,9 +229,9 @@ package:
 
 			EventType evtype = EventType.Signal;
 
-			// use GC because FreeListObjectAlloc fails at emplace for shared objects
+			// use GC because ThreadMem fails at emplace for shared objects
 			try 
-				m_evSignal = FreeListObjectAlloc!EventInfo.alloc(SIGXCPU, evtype, EventObject.init, m_instanceId);
+				m_evSignal = ThreadMem.alloc!EventInfo(SIGXCPU, evtype, EventObject.init, m_instanceId);
 			catch (Exception e) {
 				assert(false, "Failed to allocate resources");
 			}
@@ -256,7 +257,7 @@ package:
 			close(m_epollfd); // not necessary?
 
 			// not necessary:
-			//try FreeListObjectAlloc!EventInfo.free(m_evSignal);
+			//try ThreadMem.free(m_evSignal);
 			//catch (Exception e) { assert(false, "Failed to free resources"); }
 
 		}
@@ -481,7 +482,7 @@ package:
 						info.evObj.udpHandler.conn.socket = 0;
 						try info.evObj.udpHandler(UDPEvent.ERROR);
 						catch (Exception e) { }
-						try FreeListObjectAlloc!EventInfo.free(info);
+						try ThreadMem.free(info);
 						catch (Exception e){ assert(false, "Error freeing resources"); }
 					}
 					
@@ -524,10 +525,10 @@ package:
 
 						if (info.evObj.tcpEvHandler.conn.inbound) {
 							log("Freeing inbound connection FD#" ~ info.fd.to!string);
-							try FreeListObjectAlloc!AsyncTCPConnection.free(info.evObj.tcpEvHandler.conn);
+							try ThreadMem.free(info.evObj.tcpEvHandler.conn);
 							catch (Exception e){ assert(false, "Error freeing resources"); }
 						}
-						try FreeListObjectAlloc!EventInfo.free(info);
+						try ThreadMem.free(info);
 						catch (Exception e){ assert(false, "Error freeing resources"); }
 					}
 
@@ -1683,14 +1684,14 @@ private:
 
 				// Allocate a new connection handler object
 				AsyncTCPConnection conn;
-				try conn = FreeListObjectAlloc!AsyncTCPConnection.alloc(m_evLoop);
+				try conn = ThreadMem.alloc!AsyncTCPConnection(m_evLoop);
 				catch (Exception e){ assert(false, "Allocation failure"); }
 				conn.peer = addr;
 				conn.socket = csock;
 				conn.inbound = true;
 
 				nothrow bool closeClient() {
-					try FreeListObjectAlloc!AsyncTCPConnection.free(conn);
+					try ThreadMem.free(conn);
 					catch (Exception e){ assert(false, "Free failure"); }
 					closeSocket(csock, true, true);
 					{
@@ -1908,12 +1909,12 @@ private:
 				conn.writeBlocked = true;
 				del.conn.socket = 0;
 				
-				try FreeListObjectAlloc!EventInfo.free(del.conn.evInfo);
+				try ThreadMem.free(del.conn.evInfo);
 				catch (Exception e){ assert(false, "Error freeing resources"); }
 				
 				if (del.conn.inbound) {
 					log("Freeing inbound connection");
-					try FreeListObjectAlloc!AsyncTCPConnection.free(del.conn);
+					try ThreadMem.free(del.conn);
 					catch (Exception e){ assert(false, "Error freeing resources"); }
 				}
 			}
@@ -1931,11 +1932,11 @@ private:
 		EventObject eo;
 		eo.udpHandler = del;
 		EventInfo* ev;
-		try ev = FreeListObjectAlloc!EventInfo.alloc(fd, EventType.UDPSocket, eo, m_instanceId);
+		try ev = ThreadMem.alloc!EventInfo(fd, EventType.UDPSocket, eo, m_instanceId);
 		catch (Exception e){ assert(false, "Allocation error"); }
 		ctxt.evInfo = ev;
 		nothrow bool closeAll() {
-			try FreeListObjectAlloc!EventInfo.free(ev);
+			try ThreadMem.free(ev);
 			catch(Exception e){ assert(false, "Failed to free resources"); }
 			ctxt.evInfo = null;
 			// socket will be closed by caller if return false
@@ -1994,11 +1995,11 @@ private:
 		eo.tcpAcceptHandler = del;
 		EventInfo* ev;
 
-		try ev = FreeListObjectAlloc!EventInfo.alloc(fd, EventType.TCPAccept, eo, m_instanceId);
+		try ev = ThreadMem.alloc!EventInfo(fd, EventType.TCPAccept, eo, m_instanceId);
 		catch (Exception e){ assert(false, "Allocation error"); }
 		ctxt.evInfo = ev;
 		nothrow bool closeAll() {
-			try FreeListObjectAlloc!EventInfo.free(ev);
+			try ThreadMem.free(ev);
 			catch(Exception e){ assert(false, "Failed free"); }
 			ctxt.evInfo = null;
 			// Socket is closed by run()
@@ -2067,12 +2068,12 @@ private:
 		eo.tcpEvHandler = del;
 		EventInfo* ev;
 
-		try ev = FreeListObjectAlloc!EventInfo.alloc(fd, EventType.TCPTraffic, eo, m_instanceId);
+		try ev = ThreadMem.alloc!EventInfo(fd, EventType.TCPTraffic, eo, m_instanceId);
 		catch (Exception e){ assert(false, "Allocation error"); }
 		assert(ev !is null);
 		ctxt.evInfo = ev;
 		nothrow bool destroyEvInfo() {
-			try FreeListObjectAlloc!EventInfo.free(ev);
+			try ThreadMem.free(ev);
 			catch(Exception e){ assert(false, "Failed to free resources"); }
 			ctxt.evInfo = null;
 
