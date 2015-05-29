@@ -28,8 +28,8 @@ Allocator defaultAllocator()
 		if( !alloc ){
 			alloc = new GCAllocator;
 			alloc = new AutoFreeListAllocator(alloc);
-			alloc = new DebugAllocator(alloc);
-			alloc = new LockAllocator(alloc);
+			//alloc = new DebugAllocator(alloc);
+			//alloc = new LockAllocator(alloc);
 		}
 		return alloc;
 	}
@@ -41,8 +41,8 @@ Allocator manualAllocator()
 	if( !alloc ){
 		alloc = new MallocAllocator;
 		alloc = new AutoFreeListAllocator(alloc);
-		alloc = new DebugAllocator(alloc);
-		alloc = new LockAllocator(alloc);
+		//alloc = new DebugAllocator(alloc);
+		//alloc = new LockAllocator(alloc);
 	}
 	return alloc;
 }
