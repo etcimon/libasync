@@ -1430,11 +1430,7 @@ package:
 
 	
 	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true) 
-	in {
-		debug import libasync.internals.validator : validateIPv4, validateIPv6;
-		debug assert(validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
-	}
-	body {
+	{
 		import libasync.internals.socket_compat : addrinfo, AI_NUMERICHOST, AI_NUMERICSERV;
 		addrinfo hints;
 		hints.ai_flags |= AI_NUMERICHOST | AI_NUMERICSERV; // Specific to an IP resolver!

@@ -249,13 +249,6 @@ package:
 			return 0;
 		}
 		
-		debug {
-			TCPEventHandler evh;
-			try evh = m_tcpHandlers.get(fd);
-			catch (Exception e) { log("Failed"); return 0; }
-			assert( evh !is TCPEventHandler.init);
-		}
-		
 		if (ctxt.noDelay) {
 			if (!setOption(fd, TCPOption.NODELAY, true))
 				return 0;
@@ -916,13 +909,16 @@ package:
 		
 		try {
 			TCPEventHandler* evh = fd in m_tcpHandlers;
-			if (evh && evh.conn.inbound) {
-				try FreeListObjectAlloc!AsyncTCPConnection.free(evh.conn);
-				catch(Exception e) { assert(false, "Failed to free resources"); }
+			if (evh) {
+				if (evh.conn.inbound) {
+					try FreeListObjectAlloc!AsyncTCPConnection.free(evh.conn);
+					catch(Exception e) { assert(false, "Failed to free resources"); }
+				}
+
 				evh.conn = null;
 				//log("Remove event handler for " ~ fd.to!string);
 				m_tcpHandlers.remove(fd);
-			}
+			} 
 		}
 		catch (Exception e) {
 			setInternalError!"m_tcpHandlers.remove"(Status.ERROR);
@@ -968,11 +964,7 @@ package:
 	}
 	
 	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true)
-	in {
-		debug import libasync.internals.validator : validateIPv4, validateIPv6;
-		debug assert( validateIPv4(ipAddr) || validateIPv6(ipAddr), "Trying to connect to an invalid IP address");
-	}
-	body {
+	{
 		m_status = StatusInfo.init;
 		
 		NetworkAddress addr;

@@ -27,7 +27,7 @@ Allocator defaultAllocator()
 		static __gshared Allocator alloc;
 		if( !alloc ){
 			alloc = new GCAllocator;
-			alloc = new AutoFreeListAllocator(alloc);
+			//alloc = new AutoFreeListAllocator(alloc);
 			//alloc = new DebugAllocator(alloc);
 			//alloc = new LockAllocator(alloc);
 		}
