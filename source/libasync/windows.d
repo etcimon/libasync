@@ -1312,8 +1312,8 @@ private:
 				try {
 					m_tcpHandlers[csock] = cb; // keep the handler to setup the connection
 					log("ACCEPT&CONNECT FD#" ~ csock.to!string);
-					*conn.connecting = true;
-					//cb(TCPEvent.CONNECT);
+					*conn.connected = true;
+					cb(TCPEvent.CONNECT);
 				}
 				catch (Exception e) { 
 					setInternalError!"m_tcpHandlers.opIndexAssign"(Status.ABORT); 
