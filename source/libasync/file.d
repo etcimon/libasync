@@ -44,8 +44,8 @@ public:
 			(cast()*m_file).close();
 		(cast()*m_file).__dtor();
 		m_cmdInfo.ready.kill();
-		m_cmdInfo.destroy();
-		m_handler.destroy();
+		m_cmdInfo = typeof(m_cmdInfo).init;
+		m_handler = typeof(m_handler).init;
 		return true;
 	}
 
