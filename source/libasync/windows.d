@@ -1038,6 +1038,7 @@ package:
 		}
 		
 		error_t err = cast(error_t) GetAddrInfoW(str, cast(LPCWSTR) wPort, &hints, &infos);
+		scope(exit) FreeAddrInfoW(infos);
 		if (err != EWIN.WSA_OK) {
 			setInternalError!"GetAddrInfoW"(Status.ABORT, string.init, err);
 			return NetworkAddress.init;
@@ -1046,7 +1047,6 @@ package:
 		ubyte* pAddr = cast(ubyte*) infos.ai_addr;
 		ubyte* data = cast(ubyte*) addr.sockAddr;
 		data[0 .. infos.ai_addrlen] = pAddr[0 .. infos.ai_addrlen]; // perform bit copy
-		FreeAddrInfoW(infos);
 		try log("GetAddrInfoW Successfully resolved DNS to: " ~ addr.toAddressString());
 		catch (Exception e){}
 		return addr;
@@ -1312,8 +1312,8 @@ private:
 				try {
 					m_tcpHandlers[csock] = cb; // keep the handler to setup the connection
 					log("ACCEPT&CONNECT FD#" ~ csock.to!string);
-					*conn.connecting = true;
-					//cb(TCPEvent.CONNECT);
+					*conn.connected = true;
+					cb(TCPEvent.CONNECT);
 				}
 				catch (Exception e) { 
 					setInternalError!"m_tcpHandlers.opIndexAssign"(Status.ABORT); 
@@ -1806,10 +1806,11 @@ package:
 		DWORD bytesReturned;
 		BOOL success = ReadDirectoryChangesW(m_handle, m_buffer.ptr, m_buffer.length, cast(BOOL) m_recursive, notifications, &bytesReturned, overlapped, &onIOCompleted);
 
-		import std.stdio;
-		if (!success)
-			writeln("Failed to call ReadDirectoryChangesW: " ~ EWSAMessages[GetLastError().to!EWIN]);
-		
+		static if (DEBUG) {
+			import std.stdio;
+			if (!success)
+				writeln("Failed to call ReadDirectoryChangesW: " ~ EWSAMessages[GetLastError().to!EWIN]);
+		}
 	}
 	
 	@property fd_t fd() const {
@@ -1828,11 +1829,16 @@ package:
 			DWFolderWatcher watcher = cast(DWFolderWatcher)(overlapped.Pointer);
 			watcher.m_bytesTransferred = cbTransferred;
 			try FreeListObjectAlloc!OVERLAPPED.free(overlapped); catch {}
-			if (dwError != 0)
-				try writeln("Diretory watcher error: "~EWSAMessages[dwError.to!EWIN]); catch{}
+
+			static if (DEBUG) {
+				if (dwError != 0)
+					try writeln("Diretory watcher error: "~EWSAMessages[dwError.to!EWIN]); catch{}
+			}
 			try watcher.triggerChanged();
 			catch (Exception e) {
-				try writeln("Failed to trigger change"); catch {}
+				static if (DEBUG) {
+					try writeln("Failed to trigger change"); catch {}
+				}
 			}
 		}
 	}
@@ -2021,7 +2027,7 @@ nothrow extern(System) {
 		if (appl.onMessage(obj)) {
 			static if (DEBUG) {
 				if (appl.status.code != Status.OK && appl.status.code != Status.ASYNC) {
-				import std.stdio : writeln;
+					import std.stdio : writeln;
 					try { writeln(appl.error, ": ", appl.m_status.text); } catch {}
 				}
 			}

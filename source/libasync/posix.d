@@ -2347,10 +2347,10 @@ static if (!EPOLL)
 			}
 			
 		} catch (Throwable e) {
-
-			import std.stdio;
-			
-			try writeln(e.toString()); catch {}
+			static if (DEBUG) {
+				import std.stdio : writeln;
+				try writeln(e.toString()); catch {}
+			}
 
 		}
 		return idx;

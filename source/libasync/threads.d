@@ -40,8 +40,10 @@ private:
 			super(&run);
 		}
 		catch (Throwable e) {
-			import std.stdio;
-			try writeln("Failed to run thread ... ", e.toString()); catch {}
+			static if (DEBUG) {
+				import std.stdio;
+				try writeln("Failed to run thread ... ", e.toString()); catch {}
+			}
 		}
 	}
 
@@ -145,7 +147,9 @@ private:
 			gs_started.notifyAll(); // saves some waiting on a new thread
 		}
 		catch (Throwable e) {
-			try writeln("ERROR"); catch {}
+			static if (DEBUG) {
+				try writeln("AsyncFile Thread Error: ", e.toString()); catch {}
+			}
 			auto status = StatusInfo.init;
 			status.code = Status.ERROR;
 			try status.text = e.toString(); catch {}
@@ -166,7 +170,9 @@ private:
 
 			process();
 		} catch (Throwable e) {
-			try writeln("Error inserting in waiters " ~ e.toString()); catch {}
+			static if (DEBUG) {
+				try writeln("Error inserting in waiters " ~ e.toString()); catch {}
+			}
 		}
 
 		core.atomic.atomicOp!"-="(gs_threadCnt, cast(int) 1);
@@ -177,7 +183,9 @@ private:
 		atomicStore(g_stop, true);
 		try (cast(Waiter)m_waiter).cond.notifyAll();
 		catch (Exception e) {
-			try writeln("Exception occured notifying foreign thread: ", e); catch {}
+			static if (DEBUG) {
+				try writeln("Exception occured notifying foreign thread: ", e.toString()); catch {}
+			}
 		}
 	}
 	
@@ -238,7 +246,10 @@ Waiter popWaiter() {
 					Thread.sleep(50.usecs);
 				}
 			} catch (Exception e){
-				writeln("Exception in popWaiter: ", e);
+				static if (DEBUG) {
+					import std.stdio : writeln;
+					writeln("Exception in popWaiter: ", e);
+				}
 			}
 		}
 	} while(!cmd_handler.cond);
@@ -279,19 +290,17 @@ bool spawnAsyncThreads() nothrow {
 void destroyAsyncThreads() {
 	if (!atomicLoad(gs_closing)) atomicStore(gs_closing, true);
 	else return;
-	import core.memory : GC;
-	GC.disable();
 	synchronized(gs_wlock) foreach (thr; gs_threads) {
 		CmdProcessor thread = cast(CmdProcessor)thr;
 		thread.stop();
 		//import core.thread : thread_isMainThread;
-		//if (!thread_isMainThread())
+		//if (thread_isMainThread)
 			thread.join();
 	}
 }
 
 shared static ~this() {
-	assert(core.atomic.atomicLoad(gs_threadCnt) == 0, "You must call libasync.threads.destroyAsyncThreads() upon termination of the program to avoid segfaulting");
+	assert(atomicLoad(gs_closing), "You must call libasync.threads.destroyAsyncThreads() upon termination of the program to avoid segfaulting");
 }
 
 enum CmdInfoType {

@@ -159,8 +159,10 @@ package:
 			m_handler(cast(NetworkAddress)m_cmdInfo.addr);
 		}
 		catch (Throwable e) {
-			import std.stdio : writeln;
-			try writeln("Failed to send command. ", e.toString()); catch {}
+			static if (DEBUG) {
+				import std.stdio : writeln;
+				try writeln("Failed to send command. ", e.toString()); catch {}
+			}
 		}
 	}
 

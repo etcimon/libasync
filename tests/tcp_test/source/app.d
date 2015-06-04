@@ -18,7 +18,7 @@ void main() {
 		timer.duration = 10.msecs;
 		timer.run({
 				writeln("timeout");
-				conn.kill(true);
+				try conn.kill(true); catch (Throwable e) { }
 				timer.kill();
 			});
 		evl.loop(100.seconds);

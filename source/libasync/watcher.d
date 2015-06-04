@@ -86,8 +86,10 @@ public:
 
 		}
 		catch (Exception e) {
-			import std.stdio;
-			try writeln("Could not add directory: " ~ e.toString()); catch {}
+			static if (DEBUG) {
+				import std.stdio;
+				try writeln("Could not add directory: " ~ e.toString()); catch {}
+			}
 			return false;
 		}
 

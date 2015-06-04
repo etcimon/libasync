@@ -44,6 +44,8 @@ public:
 			(cast()*m_file).close();
 		(cast()*m_file).__dtor();
 		m_cmdInfo.ready.kill();
+		m_cmdInfo.destroy();
+		m_handler.destroy();
 		return true;
 	}
 
@@ -296,8 +298,10 @@ public:
 			cmd_handler.cond.notifyAll();
 		}
 		catch (Exception e){
-			import std.stdio;
-			try writeln("Exception occured notifying foreign thread: ", e); catch {}
+			static if (DEBUG) {
+				import std.stdio;
+				try writeln("Exception occured notifying foreign thread: ", e); catch {}
+			}
 		}
 		return true;
 	}
@@ -327,8 +331,10 @@ package:
 	synchronized @property void file(ref File f) {
 		try (cast()*m_file).opAssign(f);
 		catch (Exception e) {
-			import std.stdio : writeln;
-			try writeln(e.msg); catch {}
+			static if (DEBUG) {
+				import std.stdio : writeln;
+				try writeln(e.msg); catch {}
+			}
 		}
 	}
 	
@@ -347,8 +353,10 @@ package:
 	void handler() {
 		try m_handler();
 		catch (Throwable e) {
-			import std.stdio : writeln;
-			try writeln("Failed to send command. ", e.toString()); catch {}
+			static if (DEBUG) {
+				import std.stdio : writeln;
+				try writeln("Failed to send command. ", e.toString()); catch {}
+			}
 		}
 	}
 }
