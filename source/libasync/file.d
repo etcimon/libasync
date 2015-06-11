@@ -95,7 +95,7 @@ public:
 	}
 	body {
 		if (buffer.length == 0) {
-			try m_handler(); catch { return false; }
+			try m_handler(); catch { }
 			return true;
 		}
 		try {
@@ -137,6 +137,7 @@ public:
 			status.code = Status.ERROR;
 			try status.text = "Error in read, " ~ e.toString(); catch {}
 			m_status = cast(shared) status;
+			try m_handler(); catch { }
 			return false;
 		}
 		try synchronized(m_cmdInfo.mtx) { 
@@ -184,7 +185,7 @@ public:
 				m_cmdInfo.command = FileCmd.WRITE;
 			}
 
-			if (buffer.length < 65_536) {
+			if (buffer.length <= 65_536) {
 				m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 				if (off != -1)
 					file.seek(cast(long)off);

@@ -5,8 +5,6 @@ version (Windows):
 import core.atomic;
 import core.thread : Fiber;
 import libasync.types;
-import libasync.internals.hashmap;
-import libasync.internals.memory;
 import std.container : Array;
 import std.string : toStringz;
 import std.conv : to;
@@ -18,6 +16,9 @@ import std.typecons : Tuple, tuple;
 import std.utf : toUTFz;
 import core.sync.mutex;
 import libasync.events;
+import memutils.utils;
+import memutils.hashmap;
+import memutils.vector;
 pragma(lib, "ws2_32");
 pragma(lib, "ole32");
 alias fd_t = SIZE_T;
@@ -36,6 +37,8 @@ private:
 	HashMap!(fd_t, UDPHandler) m_udpHandlers;
 	HashMap!(fd_t, DWHandlerInfo) m_dwHandlers; // todo: Change this to an array too
 	HashMap!(uint, DWFolderWatcher) m_dwFolders;
+	HashMap!(fd_t, tcp_keepalive)* kcache;
+	~this() { kcache.destroy(); }
 nothrow:
 private:
 	struct TimerCache {
@@ -324,7 +327,7 @@ package:
 		try log("Timer created: " ~ timer_id.to!string ~ " with timeout: " ~ timeout.total!"msecs".to!string ~ " msecs"); catch {}
 		
 		BOOL err;
-		try err = cast(int)SetTimer(m_hwnd, timer_id, timeout.total!"msecs".to!uint, null);
+		try err = cast(int)SetTimer(m_hwnd, timer_id, timeout.total!"msecs".to!uint+30, null);
 		catch(Exception e) {
 			setInternalError!"SetTimer"(Status.ERROR);
 			return 0;
@@ -385,7 +388,7 @@ package:
 			}
 			
 			foreach (DWFolderWatcher obj; toFree[])
-				FreeListObjectAlloc!DWFolderWatcher.free(obj);
+				ThreadMem.free(obj);
 			
 			// todo: close all the handlers...
 			m_dwHandlers.remove(ctxt.fd);
@@ -510,8 +513,7 @@ package:
 				return true;
 			}
 			
-			
-			static HashMap!(fd_t, tcp_keepalive)* kcache;
+
 			
 			final switch (option) {
 				
@@ -564,7 +566,7 @@ package:
 					else {
 						
 						if (!kcache)
-							kcache = new HashMap!(fd_t, tcp_keepalive)(defaultAllocator());
+							kcache = new HashMap!(fd_t, tcp_keepalive)();
 						
 						tcp_keepalive kaSettings = kcache.get(fd, tcp_keepalive.init);
 						tcp_keepalive sReturned;
@@ -585,7 +587,7 @@ package:
 					else {
 						
 						if (!kcache)
-							kcache = new HashMap!(fd_t, tcp_keepalive)(defaultAllocator());
+							kcache = new HashMap!(fd_t, tcp_keepalive)();
 						
 						tcp_keepalive kaSettings = kcache.get(fd, tcp_keepalive.init);
 						tcp_keepalive sReturned;
@@ -735,7 +737,7 @@ package:
 			DWHandlerInfo handler = m_dwHandlers.get(fd, DWHandlerInfo.init);
 			assert(handler !is null);
 			log("Watching: " ~ info.path.toNativeString());
-			(m_dwFolders)[wd] = FreeListObjectAlloc!DWFolderWatcher.alloc(m_evLoop, fd, hndl, info.path, info.events, handler, info.recursive);
+			(m_dwFolders)[wd] = ThreadMem.alloc!DWFolderWatcher(m_evLoop, fd, hndl, info.path, info.events, handler, info.recursive);
 		} catch (Exception e) {
 			setInternalError!"watch"(Status.ERROR, "Could not start watching directory: " ~ e.msg);
 			return 0;
@@ -751,7 +753,7 @@ package:
 			assert(fw !is null);
 			m_dwFolders.remove(wd);
 			fw.close();
-			FreeListObjectAlloc!DWFolderWatcher.free(fw);
+			ThreadMem.free(fw);
 		} catch (Exception e) {
 			setInternalError!"unwatch"(Status.ERROR, "Failed when unwatching directory: " ~ e.msg);
 			return false;
@@ -911,7 +913,7 @@ package:
 			TCPEventHandler* evh = fd in m_tcpHandlers;
 			if (evh) {
 				if (evh.conn.inbound) {
-					try FreeListObjectAlloc!AsyncTCPConnection.free(evh.conn);
+					try ThreadMem.free(evh.conn);
 					catch(Exception e) { assert(false, "Failed to free resources"); }
 				}
 
@@ -1294,7 +1296,7 @@ private:
 				log("Connection accepted: " ~ csock.to!string);
 
 				AsyncTCPConnection conn;
-				try conn = FreeListObjectAlloc!AsyncTCPConnection.alloc(m_evLoop);
+				try conn = ThreadMem.alloc!AsyncTCPConnection(m_evLoop);
 				catch (Exception e) { assert(false, "Failed allocation"); }
 				conn.peer = addr;
 				conn.socket = csock;
@@ -1590,7 +1592,7 @@ private:
 		}
 	}
 	
-	void log(T)(T val)
+	void log(T)(lazy T val)
 	{
 		static if (LOG) {
 			import std.stdio;
@@ -1796,7 +1798,7 @@ package:
 		static UINT notifications = FILE_NOTIFY_CHANGE_FILE_NAME|FILE_NOTIFY_CHANGE_DIR_NAME|
 			FILE_NOTIFY_CHANGE_SIZE|FILE_NOTIFY_CHANGE_LAST_WRITE;
 		
-		OVERLAPPED* overlapped = FreeListObjectAlloc!OVERLAPPED.alloc();
+		OVERLAPPED* overlapped = ThreadMem.alloc!OVERLAPPED();
 		overlapped.Internal = 0;
 		overlapped.InternalHigh = 0;
 		overlapped.Offset = 0;
@@ -1828,7 +1830,7 @@ package:
 			import std.stdio;
 			DWFolderWatcher watcher = cast(DWFolderWatcher)(overlapped.Pointer);
 			watcher.m_bytesTransferred = cbTransferred;
-			try FreeListObjectAlloc!OVERLAPPED.free(overlapped); catch {}
+			try ThreadMem.free(overlapped); catch {}
 
 			static if (DEBUG) {
 				if (dwError != 0)
@@ -2020,7 +2022,7 @@ nothrow extern(System) {
 	LRESULT wndProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam)
 	{
 		auto ptr = cast(void*)GetWindowLongPtrA(wnd, GWLP_USERDATA);
-		if (ptr is null) 
+		if (ptr is null)
 			return DefWindowProcA(wnd, msg, wparam, lparam);
 		auto appl = cast(EventLoopImpl*)ptr;
 		MSG obj = MSG(wnd, msg, wparam, lparam, DWORD.init, POINT.init);
