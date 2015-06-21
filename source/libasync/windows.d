@@ -1226,11 +1226,11 @@ private:
 		m_status = StatusInfo.init;
 		try{
 			if (m_tcpHandlers.get(sock) == TCPEventHandler.init && m_connHandlers.get(sock) == TCPAcceptHandler.init)
-				assert( false ); 
-		}	catch {}
+				return false; 
+		} catch {}
 		if (sock == 0) { // highly unlikely...
 			setInternalError!"onTCPEvent"(Status.ERROR, "no socket defined");
-			assert(false);
+			return false;
 		}
 		if (err) {
 			setInternalError!"onTCPEvent"(Status.ERROR, string.init, cast(error_t)err);
@@ -1473,7 +1473,11 @@ private:
 			bind_addr.sockAddrInet4.sin_addr.s_addr = 0;
 		else if (ctxt.peer.family == AF_INET6) 
 			bind_addr.sockAddrInet6.sin6_addr.s6_addr[] = 0;
-		else assert(false, "Invalid NetworkAddress.family " ~ ctxt.peer.family.to!string);
+		else {
+			status.code = Status.ERROR;
+			status.text = "Invalid NetworkAddress.family " ~ ctxt.peer.family.to!string;
+			return false;
+		}
 		
 		err = .bind(fd, bind_addr.sockAddr, bind_addr.sockAddrLen);
 		if ( catchSocketError!"bind"(err) ) 
