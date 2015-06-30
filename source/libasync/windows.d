@@ -73,9 +73,9 @@ package:
 		m_status = StatusInfo.init;
 		
 		import core.thread;
-		try Thread.getThis().priority = Thread.PRIORITY_MAX;
-		catch (Exception e) { assert(false, "Could not set thread priority"); }
-
+		//try Thread.getThis().priority = Thread.PRIORITY_MAX;
+		//catch (Exception e) { assert(false, "Could not set thread priority"); }
+		SetThreadPriority(GetCurrentThread(), 31);
 		m_evLoop = evl;
 		shared static ushort i;
 		m_instanceId = i;
@@ -212,7 +212,7 @@ package:
 			try {
 				log("Running listener on socket fd#" ~ fd.to!string);
 				m_connHandlers[fd] = del;
-				ctxt.init(m_hwnd, fd);
+				version(Distributed)ctxt.init(m_hwnd, fd);
 			}
 			catch (Exception e) {
 				setInternalError!"m_connHandlers assign"(Status.ERROR, e.msg);
@@ -1628,7 +1628,7 @@ mixin template TCPConnectionMixins() {
 	}
 	
 }
-
+/*
 mixin template TCPListenerDistMixins()
 {
 	import std.c.windows.windows : HWND;
@@ -1726,7 +1726,7 @@ mixin template TCPListenerDistMixins()
 		}
 	}
 	
-}
+}*/
 private class DWHandlerInfo {
 	DWHandler handler;
 	Array!DWChangeInfo buffer;

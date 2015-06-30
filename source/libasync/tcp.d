@@ -280,7 +280,7 @@ public:
 
 package:
 	version(Posix) mixin EvInfoMixins;
-	version(Windows) mixin TCPListenerDistMixins;
+	version(Distributed) version(Windows) mixin TCPListenerDistMixins;
 	@property bool noDelay() const
 	{
 		return m_noDelay;

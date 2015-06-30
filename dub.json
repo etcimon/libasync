@@ -10,7 +10,7 @@
     "libs-windows": ["ws2_32", "advapi32", "user32"],
     "libs-linux": ["rt"],
     "dependencies": {
-            "memutils": { "version": "~>0.3.8" }
+            "memutils": { "version": "~>0.4.0" }
     },
     "configurations": [
             {
