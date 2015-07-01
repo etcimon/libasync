@@ -103,6 +103,7 @@ void testFile() {
 	{
 		File file = File("test.txt", "w");
 		file.rawWrite("This is the file content.");
+		file.close();
 	}
 	gs_file.onReady({
 		writeln("Created and wrote to test.txt through AsyncFile");
@@ -119,6 +120,7 @@ void testFile() {
 			assert(false);
 		}
 		import std.file : remove;
+		gs_file.kill();
 		remove("test.txt");
 		writeln("Removed test.txt .. ");
 	}).read("test.txt");
