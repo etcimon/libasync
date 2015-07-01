@@ -47,7 +47,6 @@ unittest {
 	assert(g_cbTimerCnt >= 3, "Multitimer expired only " ~ g_cbTimerCnt.to!string ~ " times"); // MultiTimer expired 3-4 times
 	g_watcher.kill();
 	g_notifier.kill();
-	gs_file.kill();
 	g_listnr.kill();
 }
 
