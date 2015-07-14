@@ -417,13 +417,23 @@ package:
 						static long val;
 						import core.sys.posix.unistd : read;
 						read(info.evObj.timerHandler.ctxt.id, &val, long.sizeof);
+					} else {
+						auto ctxt = info.evObj.timerHandler.ctxt;
+						if (ctxt !is null && ctxt.oneShot)
+						{
+							kevent_t __event;
+							EV_SET(&__event, ctxt.id, EVFILT_TIMER, EV_DELETE, 0, 0, null);
+							int err = kevent(m_kqueuefd, &__event, 1, null, 0, null);
+							if (catchError!"kevent_del(timer)"(err))
+								return false;
+						}
 					}
 					try info.evObj.timerHandler();
 					catch (Exception e) {
 						setInternalError!"timerHandler"(Status.ERROR);
 					}
 					static if (!EPOLL) {
-						if (info.evObj.timerHandler.ctxt.oneShot && !info.evObj.timerHandler.ctxt.rearmed) {
+						if (info.evObj.timerHandler.ctxt && info.evObj.timerHandler.ctxt.oneShot && !info.evObj.timerHandler.ctxt.rearmed) {
 							destroyIndex(info.evObj.timerHandler.ctxt);
 							info.evObj.timerHandler.ctxt.id = 0;
 						}
@@ -2483,8 +2493,8 @@ static if (!EPOLL)
 			idx = getIdx();
 			if (idx == 0) {
 				import std.range : iota;
-				g_idxAvailable.insert( iota(g_idxCapacity,  max(32, g_idxCapacity * 2), 1) );
-				g_idxCapacity = max(32, g_idxCapacity * 2);
+				g_idxAvailable.insert( iota(g_idxCapacity + 1,  max(32, g_idxCapacity * 2), 1) );
+				g_idxCapacity = g_idxAvailable[$-1];
 				idx = getIdx();
 			}
 
