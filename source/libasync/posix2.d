@@ -316,14 +316,15 @@ mixin template RunKill()
 			}
 
 			kevent_t _event;
-			
+			import std.stdio : writeln;
 			int msecs = cast(int) timeout.total!"msecs";
-			
-			// www.khmere.com/freebsd_book/html/ch06.html - EV_CLEAR set internally
-			EV_SET(&_event, fd, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, msecs, cast(void*) evinfo);
-			
+			ushort flags_ = EV_ADD | EV_ENABLE;
 			if (ctxt.oneShot)
-				_event.flags |= EV_ONESHOT;
+				flags_ |= EV_CLEAR;
+
+			// www.khmere.com/freebsd_book/html/ch06.html - EV_CLEAR set internally
+			EV_SET(&_event, fd, EVFILT_TIMER, flags_, 0, msecs, cast(void*) evinfo);
+			
 			
 			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 			
