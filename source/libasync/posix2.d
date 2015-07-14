@@ -318,8 +318,8 @@ mixin template RunKill()
 			kevent_t _event;
 			int msecs = cast(int) timeout.total!"msecs";
 			ushort flags_ = EV_ADD | EV_ENABLE;
-			if (ctxt.oneShot)
-				flags_ |= EV_CLEAR;
+			//if (ctxt.oneShot)
+			//	flags_ |= EV_CLEAR;
 
 			// www.khmere.com/freebsd_book/html/ch06.html - EV_CLEAR set internally
 			EV_SET(&_event, fd, EVFILT_TIMER, flags_, 0, msecs, cast(void*) evinfo);	

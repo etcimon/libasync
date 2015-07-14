@@ -71,7 +71,8 @@ void testDirectoryWatcher() {
 		DWChangeInfo[1] change;
 		DWChangeInfo[] changeRef = change.ptr[0..1];
 		bool done;
-		while(g_watcher.readChanges(changeRef)){
+		while(g_watcher.readChanges(changeRef))
+		{
 			g_cbCheck[18] = true;
 			writeln(change);
 			if (change[0].event == DWFileEvent.DELETED)
