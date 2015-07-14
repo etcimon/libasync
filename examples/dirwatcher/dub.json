@@ -1,0 +1,9 @@
+{
+	"name": "dirwatcher",
+	"description": "A directory watcher with libasync",
+	"copyright": "Copyright © 2015, Etienne",
+	"authors": ["Etienne"],
+	"dependencies": {
+		"libasync": { "path": "../../" }
+	}
+}
