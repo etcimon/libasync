@@ -49,12 +49,12 @@ Installation Instructions
 -------------------------
 
 - Download and install DMD 2.067.0+ from [dlang.org](http://dlang.org/download.html)
-- Download and install dub 0.9.22 from [code.dlang.org](http://code.dlang.org/download)
+- Download and install dub 0.9.22+ from [code.dlang.org](http://code.dlang.org/download)
 - Use Git to clone this repository
 - Run `dub test` to test the library on your operating system (submit any issue with a log report by uncommenting `enum LOG = true` in `types.d`)
-- Add the library to your project by including it in the dependencies, using `import libasync.all`
+- Add the library to your project by including it in the dependencies, using `import libasync`
 - The recommended editor is MonoDevelop with [Mono-D](http://wiki.dlang.org/Mono-D) due to its Mixin Template resolver (must be enabled manually), with auto-completion and comment-resolved summary tooltips.
-- You can also try libasync through vibe.d as a built-in driver.
+- On another note, you can also try the vibe.d libasync built-in driver by adding `"subConfigurations": { "vibe-d": "libasync" }` to your vibe.d dub.json.
 
 Tutorial
 --------

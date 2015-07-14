@@ -193,6 +193,7 @@ private:
 		while(!atomicLoad(g_stop)) {
 			CommandInfo cmd;
 			try synchronized(m_waiter.mtx) {
+				if (!m_waiter.cond) return;
 				m_waiter.cond.wait();
 			}
 			catch {}
@@ -293,10 +294,16 @@ void destroyAsyncThreads() {
 	synchronized(gs_wlock) foreach (thr; gs_threads) {
 		CmdProcessor thread = cast(CmdProcessor)thr;
 		thread.stop();
-		//import core.thread : thread_isMainThread;
-		//if (thread_isMainThread)
+		import core.thread : thread_isMainThread;
+		if (thread_isMainThread)
 			thread.join();
 	}
+}
+
+static ~this() {
+ import core.thread : thread_isMainThread;
+                if (thread_isMainThread)
+	destroyAsyncThreads();
 }
 
 shared static ~this() {
