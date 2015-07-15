@@ -322,7 +322,7 @@ mixin template RunKill()
 			//	flags_ |= EV_CLEAR;
 
 			// www.khmere.com/freebsd_book/html/ch06.html - EV_CLEAR set internally
-			EV_SET(&_event, fd, EVFILT_TIMER, flags_, 0, msecs, cast(void*) evinfo);	
+			EV_SET(&_event, fd, EVFILT_TIMER, flags_, 0, msecs + 30, cast(void*) evinfo);	
 
 			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 			
