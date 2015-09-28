@@ -120,7 +120,7 @@ public:
 				file = tmp;
 				m_cmdInfo.command = FileCmd.READ;
 			}
-			if (buffer.length < 65_536) {
+			if (buffer.length <= 65_536) {
 				m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 
 				if (off != -1)

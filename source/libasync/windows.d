@@ -1875,7 +1875,7 @@ public struct NetworkAddress {
 	@property ushort port()
 	const pure nothrow {
 		switch (this.family) {
-			default: assert(false, "port() called for invalid address family.");
+			default: assert(false, "port() called for invalid address family: " ~ this.family.to!string);
 			case AF_INET: return ntoh(addr_ip4.sin_port);
 			case AF_INET6: return ntoh(addr_ip6.sin6_port);
 		}
