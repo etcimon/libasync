@@ -796,9 +796,10 @@ package:
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : send;
 		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
-
+		try log("Sent: " ~ ret.to!string); catch {}
 		if (catchError!"send"(ret)) { // ret == -1
 			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+				try log("Write block"); catch {}
 				m_status.code = Status.ASYNC;
 				return 0;
 			}
@@ -1863,7 +1864,7 @@ private:
 		}
 
 		
-		if (write && conn.connected && !conn.disconnecting && conn.writeBlocked) 
+		if ((read || write) && conn.connected && !conn.disconnecting && conn.writeBlocked) 
 		{
 			conn.writeBlocked = false;
 			try log("!write"); catch {}
