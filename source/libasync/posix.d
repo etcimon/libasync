@@ -690,10 +690,10 @@ package:
 					assert(false, "TIMEOUT_SEND value type must be Duration, not " ~ T.stringof);
 				else {
 					import core.sys.posix.sys.time : timeval;
-					time_t secs = value.split!("seconds", "usecs")().seconds;
-					suseconds_t us;
-					try us = value.split!("seconds", "usecs")().usecs.to!suseconds_t; catch {}
-					timeval t = timeval(secs, us);
+					auto timeout = value.split!("seconds", "usecs")();
+					timeval t;
+					try t = timeval(timeout.seconds.to!time_t, timeout.usecs.to!suseconds_t);
+					catch (Exception) { return false; }
 					socklen_t len = t.sizeof;
 					err = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &t, len);
 					return errorHandler();
