@@ -99,7 +99,16 @@ public:
 			return true;
 		}
 		try {
-			file_path = Path(file_path).toNativeString();
+			static string last_path;
+			static string last_native_path;
+			if (last_path == file_path)
+				file_path = last_native_path;
+			else {
+				last_path = file_path;
+				file_path = Path(file_path).toNativeString();
+				last_native_path = file_path;
+			}
+
 			bool flag;
 			if (create_if_not_exists && !m_file && !exists(file_path))
 				flag = true;
@@ -163,7 +172,16 @@ public:
 		}
 		try {
 
-			file_path = Path(file_path).toNativeString();
+			static string last_path;
+			static string last_native_path;
+			if (last_path == file_path)
+				file_path = last_native_path;
+			else {
+				last_path = file_path;
+				file_path = Path(file_path).toNativeString();
+				last_native_path = file_path;
+			}
+
 			bool flag;
 			if (create_if_not_exists && !m_file && !exists(file_path))
 				flag = true;
@@ -224,7 +242,16 @@ public:
 			return true;
 		}
 		try {
-			file_path = Path(file_path).toNativeString();
+			static string last_path;
+			static string last_native_path;
+			if (last_path == file_path)
+				file_path = last_native_path;
+			else {
+				last_path = file_path;
+				file_path = Path(file_path).toNativeString();
+				last_native_path = file_path;
+			}
+
 			bool flag;
 			if (create_if_not_exists && !m_file && !exists(file_path))
 				flag = true;
