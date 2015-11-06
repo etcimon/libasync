@@ -1954,7 +1954,10 @@ private:
 			if (catchError!"epoll_ctl"(err)) {
 				return closeAll();
 			}
-			nothrow void deregisterEvent() {}
+			nothrow void deregisterEvent()
+			{
+				epoll_ctl(m_epollfd, EPOLL_CTL_DEL, fd, &_event);
+			}
 		}
 		else /* if KQUEUE */
 		{
