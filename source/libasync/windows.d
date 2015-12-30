@@ -145,7 +145,12 @@ package:
 		assert(m_started);
 	}
 	body {
-		DWORD msTimeout = cast(DWORD) min(timeout.total!"msecs", DWORD.max);
+		DWORD msTimeout;
+
+		if (timeout == -1.seconds)
+			msTimeout = DWORD.max;
+		else msTimeout = cast(DWORD) min(timeout.total!"msecs", DWORD.max);
+
 		/* 
 		 * Waits until one or all of the specified objects are in the signaled state
 		 * http://msdn.microsoft.com/en-us/library/windows/desktop/ms684245%28v=vs.85%29.aspx

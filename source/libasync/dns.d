@@ -57,18 +57,27 @@ public:
 	/// Sends a request through a thread pool for the specified host to be resolved. The
 	/// callback specified in run() will be signaled with the OS-specific NetworkAddress
 	/// structure.
-	bool resolveHost(string url, bool ipv6 = false)
+	bool resolveHost(string url, bool ipv6 = false, bool force_async = false)
 	in {
 		assert(!m_busy, "Resolver is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncDNS must be running before being operated on.");
 	}
 	body {
-		try synchronized(m_cmdInfo.mtx) { 
+		if (force_async == true) {
+			try synchronized(m_cmdInfo.mtx) { 
+				m_cmdInfo.command = DNSCmd.RESOLVEHOST;
+				m_cmdInfo.ipv6 = ipv6;
+				m_cmdInfo.url = cast(shared) url;
+			} catch {}
+		} else {
 			m_cmdInfo.command = DNSCmd.RESOLVEHOST;
 			m_cmdInfo.ipv6 = ipv6;
 			m_cmdInfo.url = cast(shared) url;
-		} catch {}
-		
+			m_cmdInfo.addr = cast(shared)( (cast(EventLoop)m_evLoop).resolveHost(cmdInfo.url, 0, cmdInfo.ipv6?isIPv6.yes:isIPv6.no) );
+			callback();
+			return true;
+		}
+
 		return sendCommand();
 	}
 

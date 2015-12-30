@@ -225,6 +225,7 @@ package:
 
 	/**
 		Runs the event loop once and returns false if a an unrecoverable error occured
+		Using a value of 0 will return immediately, while a value of -1.seconds will block indefinitely
 	*/
 	public bool loop(Duration max_timeout = 100.msecs)
 	{
