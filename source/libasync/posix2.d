@@ -70,6 +70,11 @@ mixin template RunKill()
 					close(fd);
 					return 0;
 				}
+				if (!setOption(fd, TCPOption.REUSEPORT, true)) {
+					log("Close socket");
+					close(fd);
+					return 0;
+				}
 			} 
 
 			/// Make sure the socket returns instantly when calling listen()
