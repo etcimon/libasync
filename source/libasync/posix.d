@@ -586,21 +586,37 @@ package:
 					err = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, len);
 					if (!errorHandler())
 						return false;
-
-					// BSD systems have SO_REUSEPORT
-					import libasync.internals.socket_compat : SO_REUSEPORT;
-					err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
+					version (Posix) {
+						version (linux) {
+							return true;
+						} else {
+							// BSD systems have SO_REUSEPORT
+							import libasync.internals.socket_compat : SO_REUSEPORT;
+							err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
+							return errorHandler();
+						}
+					}
+				}
+			case TCPOption.REUSEPORT: // true/false
+				// use a standalone REUSEPORT option to handle SO_REUSEPORT on linux
+				version (linux) {
+					static if (!is(T == bool))
+						assert(false, "REUSEPORT value type must be bool, not " ~ T.stringof);
+					else {
+						// BSD systems have SO_REUSEPORT
+						import libasync.internals.socket_compat : SO_REUSEPORT;
+						int val = value?1:0;
+						err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, val.sizeof);
 					
-					// Not all linux kernels support SO_REUSEPORT
-					version(linux) {
+						// Not all linux kernels support SO_REUSEPORT
 						// ignore invalid and not supported errors on linux
 						if (errno == EINVAL || errno == ENOPROTOOPT) {
 							return true;
 						}						
-					} 
 
-					return errorHandler();
-				}
+						return errorHandler();
+					}
+				} else return true;
 			case TCPOption.QUICK_ACK:
 				static if (!is(T == bool))
 					assert(false, "QUICK_ACK value type must be bool, not " ~ T.stringof);
