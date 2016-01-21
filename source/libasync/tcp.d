@@ -331,6 +331,7 @@ enum TCPEvent : char {
 enum TCPOption : char {
 	NODELAY = 0,		// Don't delay send to coalesce packets
 	REUSEADDR = 1,
+	REUSEPORT,
 	CORK,
 	LINGER,
 	BUFFER_RECV,
