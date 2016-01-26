@@ -842,12 +842,13 @@ package:
 	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
-		socklen_t addrLen;
-		addr.family = AF_INET;
+
+		addr.family = AF_INET6;
+		socklen_t addrLen = addr.sockAddrLen;
 		int ret = .recvfrom(fd, cast(void*) data.ptr, cast(INT) data.length, 0, addr.sockAddr, &addrLen);
 		
-		if (addrLen > addr.sockAddrLen) {
-			addr.family = AF_INET6;
+		if (addrLen < addr.sockAddrLen) {
+			addr.family = AF_INET;
 		}
 		
 		try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
