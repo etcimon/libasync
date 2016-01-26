@@ -1421,11 +1421,6 @@ private:
 			closesocket(fd);
 			return false;
 		}
-		err = listen(fd, 128);
-		if (catchSocketError!"listen"(err)) {
-			closesocket(fd);
-			return false;
-		}
 		err = WSAAsyncSelect(fd, m_hwnd, WM_UDP_SOCKET, FD_READ | FD_WRITE);
 		if (catchSocketError!"WSAAsyncSelect"(err)) {
 			closesocket(fd);
