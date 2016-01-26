@@ -531,6 +531,7 @@ package:
 						err = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, len);
 						return errorHandler();
 					}
+				case TCPOption.REUSEPORT:
 				case TCPOption.REUSEADDR: // true/false
 					static if (!is(T == bool))
 						assert(false, "REUSEADDR value type must be bool, not " ~ T.stringof);
