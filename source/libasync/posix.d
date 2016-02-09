@@ -983,7 +983,13 @@ package:
 					try log("inotify_add_watch(" ~ DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd).to!string ~ ")"); catch {}
 					assert(m_dwFolders.get(tuple(cast(fd_t) fd, cast(uint)ret), DWFolderInfo.init) == DWFolderInfo.init, "Could not get a unique watch descriptor for path, got: " ~ m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)].to!string);
 					m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)] = DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd);
-					if (info.recursive) {
+				} catch (Exception e) {
+					try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add directory " ~ path.toNativeString() ~ ": " ~ e.toString() ); catch {}
+					return 0;
+				}
+
+				if (info.recursive) {
+					try {
 						foreach (de; path.toNativeString().dirEntries(SpanMode.shallow))
 						{
 							Path de_path = Path(de.name);
@@ -991,13 +997,11 @@ package:
 								de_path = path ~ Path(de.name);
 							if (isDir(de_path.toNativeString()))
 								if (addFolderRecursive(de_path) == 0)
-									return 0;
+									continue;
 						}
+					} catch (Exception e) {
+						try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add sub-directories of " ~ path.toNativeString() ~ ": " ~ e.toString() ); catch {}
 					}
-
-				} catch (Exception e) { 
-					try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add directory " ~ path.toNativeString() ~ ": " ~ e.toString() ); catch {}
-					return 0; 
 				}
 
 				return ret;
