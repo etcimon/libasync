@@ -1636,7 +1636,7 @@ mixin template TCPConnectionMixins() {
 /*
 mixin template TCPListenerDistMixins()
 {
-	import std.c.windows.windows : HWND;
+	import core.sys.windows.windows : HWND;
 	import libasync.internals.hashmap : HashMap;
 	import core.sync.mutex;
 	private {
@@ -1860,7 +1860,7 @@ package:
 		Represents a network/socket address. (taken from vibe.core.net)
 */
 public struct NetworkAddress {
-	import std.c.windows.winsock : sockaddr, sockaddr_in, sockaddr_in6;
+	import core.sys.windows.winsock2 : sockaddr, sockaddr_in, sockaddr_in6;
 	private union {
 		sockaddr addr;
 		sockaddr_in addr_ip4;
