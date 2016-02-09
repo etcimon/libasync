@@ -1265,14 +1265,18 @@ package:
 				// get a list of stuff in the created/moved folder
 				if (ev == DWFileEvent.CREATED || ev == DWFileEvent.MOVED_TO) {
 					foreach (de; dirEntries(fi.wi.path.toNativeString(), SpanMode.shallow)) {
-						Path entryPath = fi.wi.path ~ Path(de.name);
-						
+						Path entryPath = Path(de.name);
+						if (!entryPath.absolute)
+							entryPath = fi.wi.path ~ entryPath;
+
 						if (fi.wi.recursive && isDir(entryPath.toNativeString())) {
 							
 							watch(fd, WatchInfo(fi.wi.events, entryPath, fi.wi.recursive, 0) );
 							void genEvents(Path subpath) {
 								foreach (de; dirEntries(subpath.toNativeString(), SpanMode.shallow)) {
-									auto subsubpath = subpath ~ Path(de.name);
+									auto subsubpath = Path(de.name);
+									if (!subsubpath.absolute)
+										subsubpath = subpath ~ subsubpath;
 									changes.insertBack(DWChangeInfo(DWFileEvent.CREATED, subsubpath));
 									if (isDir(subsubpath.toNativeString()))
 										genEvents(subsubpath);
