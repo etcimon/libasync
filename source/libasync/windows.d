@@ -531,6 +531,7 @@ package:
 						err = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, len);
 						return errorHandler();
 					}
+				case TCPOption.REUSEPORT:
 				case TCPOption.REUSEADDR: // true/false
 					static if (!is(T == bool))
 						assert(false, "REUSEADDR value type must be bool, not " ~ T.stringof);
@@ -841,12 +842,13 @@ package:
 	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
-		socklen_t addrLen;
-		addr.family = AF_INET;
+
+		addr.family = AF_INET6;
+		socklen_t addrLen = addr.sockAddrLen;
 		int ret = .recvfrom(fd, cast(void*) data.ptr, cast(INT) data.length, 0, addr.sockAddr, &addrLen);
 		
-		if (addrLen > addr.sockAddrLen) {
-			addr.family = AF_INET6;
+		if (addrLen < addr.sockAddrLen) {
+			addr.family = AF_INET;
 		}
 		
 		try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
@@ -1417,11 +1419,6 @@ private:
 		INT err;
 		err = bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
 		if (catchSocketError!"bind"(err)) {
-			closesocket(fd);
-			return false;
-		}
-		err = listen(fd, 128);
-		if (catchSocketError!"listen"(err)) {
 			closesocket(fd);
 			return false;
 		}
