@@ -586,21 +586,37 @@ package:
 					err = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, len);
 					if (!errorHandler())
 						return false;
-
-					// BSD systems have SO_REUSEPORT
-					import libasync.internals.socket_compat : SO_REUSEPORT;
-					err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
+					version (Posix) {
+						version (linux) {
+							return true;
+						} else {
+							// BSD systems have SO_REUSEPORT
+							import libasync.internals.socket_compat : SO_REUSEPORT;
+							err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, len);
+							return errorHandler();
+						}
+					}
+				}
+			case TCPOption.REUSEPORT: // true/false
+				// use a standalone REUSEPORT option to handle SO_REUSEPORT on linux
+				version (linux) {
+					static if (!is(T == bool))
+						assert(false, "REUSEPORT value type must be bool, not " ~ T.stringof);
+					else {
+						// BSD systems have SO_REUSEPORT
+						import libasync.internals.socket_compat : SO_REUSEPORT;
+						int val = value?1:0;
+						err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, val.sizeof);
 					
-					// Not all linux kernels support SO_REUSEPORT
-					version(linux) {
+						// Not all linux kernels support SO_REUSEPORT
 						// ignore invalid and not supported errors on linux
 						if (errno == EINVAL || errno == ENOPROTOOPT) {
 							return true;
 						}						
-					} 
 
-					return errorHandler();
-				}
+						return errorHandler();
+					}
+				} else return true;
 			case TCPOption.QUICK_ACK:
 				static if (!is(T == bool))
 					assert(false, "QUICK_ACK value type must be bool, not " ~ T.stringof);
@@ -968,7 +984,13 @@ package:
 					try log("inotify_add_watch(" ~ DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd).to!string ~ ")"); catch {}
 					assert(m_dwFolders.get(tuple(cast(fd_t) fd, cast(uint)ret), DWFolderInfo.init) == DWFolderInfo.init, "Could not get a unique watch descriptor for path, got: " ~ m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)].to!string);
 					m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)] = DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd);
-					if (info.recursive) {
+				} catch (Exception e) {
+					try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add directory " ~ path.toNativeString() ~ ": " ~ e.toString() ); catch {}
+					return 0;
+				}
+
+				if (info.recursive) {
+					try {
 						foreach (de; path.toNativeString().dirEntries(SpanMode.shallow))
 						{
 							Path de_path = Path(de.name);
@@ -976,13 +998,11 @@ package:
 								de_path = path ~ Path(de.name);
 							if (isDir(de_path.toNativeString()))
 								if (addFolderRecursive(de_path) == 0)
-									return 0;
+									continue;
 						}
+					} catch (Exception e) {
+						try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add sub-directories of " ~ path.toNativeString() ~ ": " ~ e.toString() ); catch {}
 					}
-
-				} catch (Exception e) { 
-					try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add directory " ~ path.toNativeString() ~ ": " ~ e.toString() ); catch {}
-					return 0; 
 				}
 
 				return ret;
@@ -1109,18 +1129,18 @@ package:
 
 					if (fi.wi.recursive) {
 						// find all subdirectories by comparing the path
-						Array!uint remove_list;
-						foreach (ref const DWFolderInfo folder; m_dwFolders) {
+						Array!(Tuple!(fd_t, uint)) remove_list;
+						foreach (ref const key, ref const DWFolderInfo folder; m_dwFolders) {
 							if (folder.fd == fi.fd && folder.wi.path.startsWith(fi.wi.path)) {
 
 								if (!inotify_unwatch(folder.wi.wd))
 									return false;
 
-								remove_list.insertBack(fi.wi.wd);
+								remove_list.insertBack(key);
 							}
 						}
 						foreach (rm_wd; remove_list[])
-							m_dwFolders.remove(tuple(cast(fd_t) fd, rm_wd));
+							m_dwFolders.remove(rm_wd);
 
 					}
 					return true;
@@ -1250,14 +1270,18 @@ package:
 				// get a list of stuff in the created/moved folder
 				if (ev == DWFileEvent.CREATED || ev == DWFileEvent.MOVED_TO) {
 					foreach (de; dirEntries(fi.wi.path.toNativeString(), SpanMode.shallow)) {
-						Path entryPath = fi.wi.path ~ Path(de.name);
-						
+						Path entryPath = Path(de.name);
+						if (!entryPath.absolute)
+							entryPath = fi.wi.path ~ entryPath;
+
 						if (fi.wi.recursive && isDir(entryPath.toNativeString())) {
 							
 							watch(fd, WatchInfo(fi.wi.events, entryPath, fi.wi.recursive, 0) );
 							void genEvents(Path subpath) {
 								foreach (de; dirEntries(subpath.toNativeString(), SpanMode.shallow)) {
-									auto subsubpath = subpath ~ Path(de.name);
+									auto subsubpath = Path(de.name);
+									if (!subsubpath.absolute)
+										subsubpath = subpath ~ subsubpath;
 									changes.insertBack(DWChangeInfo(DWFileEvent.CREATED, subsubpath));
 									if (isDir(subsubpath.toNativeString()))
 										genEvents(subsubpath);

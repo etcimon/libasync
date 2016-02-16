@@ -4,8 +4,8 @@ module libasync.internals.win32;
 version(Windows):
 
 public import core.sys.windows.windows;
-public import std.c.windows.windows;
-public import std.c.windows.winsock;
+public import core.sys.windows.windows;
+public import core.sys.windows.winsock2;
 
 extern(System) nothrow
 {

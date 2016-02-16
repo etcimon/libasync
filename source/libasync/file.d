@@ -118,7 +118,7 @@ public:
 			{	
 				if (file.isOpen) 
 					file.close();
-				import std.c.stdio;
+				import core.stdc.stdio;
 				import std.string : toStringz;
 				FILE * f = fopen(file_path.toStringz, "w\0".ptr);
 				fclose(f);
@@ -191,7 +191,7 @@ public:
 			{	
 				if (file.isOpen) 
 					file.close();
-				import std.c.stdio;
+				import core.stdc.stdio;
 				import std.string : toStringz;
 				FILE * f = fopen(file_path.toStringz, "w\0".ptr);
 				fclose(f);
@@ -261,7 +261,7 @@ public:
 			{	
 				if (file.isOpen) 
 					file.close();
-				import std.c.stdio;
+				import core.stdc.stdio;
 				import std.string : toStringz;
 				FILE * f = fopen(file_path.toStringz, "w\0".ptr);
 				fclose(f);

@@ -145,7 +145,12 @@ package:
 		assert(m_started);
 	}
 	body {
-		DWORD msTimeout = cast(DWORD) min(timeout.total!"msecs", DWORD.max);
+		DWORD msTimeout;
+
+		if (timeout == -1.seconds)
+			msTimeout = DWORD.max;
+		else msTimeout = cast(DWORD) min(timeout.total!"msecs", DWORD.max);
+
 		/* 
 		 * Waits until one or all of the specified objects are in the signaled state
 		 * http://msdn.microsoft.com/en-us/library/windows/desktop/ms684245%28v=vs.85%29.aspx
@@ -526,6 +531,7 @@ package:
 						err = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, len);
 						return errorHandler();
 					}
+				case TCPOption.REUSEPORT:
 				case TCPOption.REUSEADDR: // true/false
 					static if (!is(T == bool))
 						assert(false, "REUSEADDR value type must be bool, not " ~ T.stringof);
@@ -836,12 +842,13 @@ package:
 	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
-		socklen_t addrLen;
-		addr.family = AF_INET;
+
+		addr.family = AF_INET6;
+		socklen_t addrLen = addr.sockAddrLen;
 		int ret = .recvfrom(fd, cast(void*) data.ptr, cast(INT) data.length, 0, addr.sockAddr, &addrLen);
 		
-		if (addrLen > addr.sockAddrLen) {
-			addr.family = AF_INET6;
+		if (addrLen < addr.sockAddrLen) {
+			addr.family = AF_INET;
 		}
 		
 		try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
@@ -1415,11 +1422,6 @@ private:
 			closesocket(fd);
 			return false;
 		}
-		err = listen(fd, 128);
-		if (catchSocketError!"listen"(err)) {
-			closesocket(fd);
-			return false;
-		}
 		err = WSAAsyncSelect(fd, m_hwnd, WM_UDP_SOCKET, FD_READ | FD_WRITE);
 		if (catchSocketError!"WSAAsyncSelect"(err)) {
 			closesocket(fd);
@@ -1631,7 +1633,7 @@ mixin template TCPConnectionMixins() {
 /*
 mixin template TCPListenerDistMixins()
 {
-	import std.c.windows.windows : HWND;
+	import core.sys.windows.windows : HWND;
 	import libasync.internals.hashmap : HashMap;
 	import core.sync.mutex;
 	private {
@@ -1855,7 +1857,7 @@ package:
 		Represents a network/socket address. (taken from vibe.core.net)
 */
 public struct NetworkAddress {
-	import std.c.windows.winsock : sockaddr, sockaddr_in, sockaddr_in6;
+	import core.sys.windows.winsock2 : sockaddr, sockaddr_in, sockaddr_in6;
 	private union {
 		sockaddr addr;
 		sockaddr_in addr_ip4;
