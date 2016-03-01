@@ -66,9 +66,13 @@ public:
 	body {
 		m_rearmed = true;
 
-		//m_timerId = m_evLoop.run(this, m_evh, dur);
+		m_timerId = m_evLoop.run(this, m_evh, dur);
 		m_timeout = dur;
-		return m_timerId != fd_t.init;
+
+		if (m_timerId == 0)
+			return false;
+		else
+			return true;
 	}
 
 	/// Starts the timer using the delegate as an expiration callback.

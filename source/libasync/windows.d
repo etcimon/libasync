@@ -347,7 +347,7 @@ package:
 			return 0;
 		}
 		
-		if (m_timer.fd == fd_t.init) 
+		if (m_timer.fd == fd_t.init || m_timer.fd == timer_id) 
 		{
 			m_timer.fd = timer_id;
 			m_timer.cb = del;
@@ -1120,16 +1120,11 @@ private:
 						cb = m_timer.cb;
 					else
 						cb = m_timerHandlers.get(cast(fd_t)msg.wParam);
-					
 					cb.ctxt.rearmed = false;
-					
-					if (cb.ctxt.oneShot)
-						kill(cb.ctxt);
-					
 					cb();
 					
-					if (cb.ctxt.oneShot && cb.ctxt.rearmed)
-						cb.ctxt.id = run(cb.ctxt, cb, cb.ctxt.timeout);
+					if (cb.ctxt.oneShot && !cb.ctxt.rearmed)
+						kill(cb.ctxt);
 					
 				}
 				catch (Exception e) {

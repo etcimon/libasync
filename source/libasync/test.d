@@ -196,7 +196,7 @@ void testOneshotTimer() {
 	AsyncTimer g_timerOneShot = new AsyncTimer(g_evl);
 	g_timerOneShot.duration(1.seconds).run({
 		assert(!g_cbCheck[4] && Clock.currTime() - gs_start > 900.msecs && Clock.currTime() - gs_start < 1100.msecs);
-		assert(g_timerOneShot.id == 0); // oneshot timers are inactive in the callback
+		assert(g_timerOneShot.id != 0);
 		g_cbCheck[4] = true;
 		
 	});
