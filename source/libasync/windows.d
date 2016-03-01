@@ -2049,10 +2049,6 @@ nothrow extern(System) {
 			return DefWindowProcA(wnd, msg, wparam, lparam);
 		auto appl = cast(EventLoopImpl*)ptr;
 		MSG obj = MSG(wnd, msg, wparam, lparam, DWORD.init, POINT.init);
-		try {
-			import std.stdio: writeln;
-			writeln(gs_availID[]);
-		} catch {}
 		if (appl.onMessage(obj)) {
 			static if (DEBUG) {
 				if (appl.status.code != Status.OK && appl.status.code != Status.ASYNC) {
