@@ -456,7 +456,7 @@ package:
 	bool kill(AsyncTimer ctxt) {
 		m_status = StatusInfo.init;
 		
-		log("Kill timer");
+		try log("Kill timer" ~ ctxt.id.to!string); catch {}
 		
 		BOOL err = KillTimer(m_hwnd, ctxt.id);
 		if (err == 0)
@@ -469,7 +469,8 @@ package:
 		}
 		
 		destroyIndex(ctxt);
-		
+		scope(exit) 
+			ctxt.id = fd_t.init;
 		if (m_timer.fd == ctxt.id) {
 			ctxt.id = 0;
 			m_timer = TimerCache.init;
@@ -1111,7 +1112,7 @@ private:
 				}
 				break;
 			case WM_TIMER:
-				log("Timer callback");
+				try log("Timer callback: " ~ m_timer.fd.to!string); catch {}
 				TimerHandler cb;
 				bool cached = (m_timer.fd == cast(fd_t)msg.wParam);
 				try {
@@ -1128,7 +1129,7 @@ private:
 					cb();
 					
 					if (cb.ctxt.oneShot && cb.ctxt.rearmed)
-						run(cb.ctxt, cb, cb.ctxt.timeout);
+						cb.ctxt.id = run(cb.ctxt, cb, cb.ctxt.timeout);
 					
 				}
 				catch (Exception e) {
@@ -1980,49 +1981,70 @@ enum WM_USER_EVENT = WM_USER+104;
 enum WM_USER_SIGNAL = WM_USER+105;
 
 nothrow:
-size_t g_idxCapacity = 8;
-Array!size_t g_idxAvailable;
 
-// called on run
-size_t createIndex() {
+__gshared Vector!(size_t, Malloc) gs_availID;
+__gshared size_t gs_maxID;
+__gshared core.sync.mutex.Mutex gs_mutex;
+
+private size_t createIndex() {
 	size_t idx;
 	import std.algorithm : max;
-	import std.range : iota;
 	try {
-		
 		size_t getIdx() {
-			
-			if (!g_idxAvailable.empty) {
-				immutable size_t ret = g_idxAvailable.back;
-				g_idxAvailable.removeBack();
+			if (!gs_availID.empty) {
+				immutable size_t ret = gs_availID.back;
+				gs_availID.removeBack();
 				return ret;
 			}
 			return 0;
 		}
 		
-		idx = getIdx();
-		if (idx == 0) {
-			import std.range : iota;
-			// todo: not sure about this
-			g_idxAvailable.insert( iota(g_idxCapacity, max(32, g_idxCapacity * 2), 1) );
-			g_idxCapacity = max(32, g_idxCapacity * 2);
+		synchronized(gs_mutex) {
 			idx = getIdx();
+			if (idx == 0) {
+				import std.range : iota;
+				gs_availID.insert( iota(gs_maxID + 1, max(32, gs_maxID * 2 + 1), 1) );
+				gs_maxID = gs_availID[$-1];
+				idx = getIdx();
+			}
 		}
-		
-	} catch {}
+	} catch (Exception e) {
+		assert(false, "Failed to generate necessary ID for Manual Event waiters: " ~ e.msg);
+	}
 	
 	return idx;
 }
 
 void destroyIndex(AsyncTimer ctxt) {
 	try {
-		g_idxAvailable.insert(ctxt.id);		
+		synchronized(gs_mutex) gs_availID ~= ctxt.id;
 	}
 	catch (Exception e) {
 		assert(false, "Error destroying index: " ~ e.msg);
 	}
 }
 
+shared static this() {
+
+	try {
+		if (!gs_mutex) {
+			import core.sync.mutex;
+			gs_mutex = new core.sync.mutex.Mutex;
+			
+			gs_availID.reserve(32);
+			
+			foreach (i; gs_availID.length .. gs_availID.capacity) {
+				gs_availID.insertBack(i + 1);
+			}
+			
+			gs_maxID = 32;
+		}
+	}
+	catch {
+		assert(false, "Couldn't reserve necessary space for available Manual Events");
+	}
+
+}
 
 nothrow extern(System) {
 	LRESULT wndProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam)
@@ -2032,6 +2054,10 @@ nothrow extern(System) {
 			return DefWindowProcA(wnd, msg, wparam, lparam);
 		auto appl = cast(EventLoopImpl*)ptr;
 		MSG obj = MSG(wnd, msg, wparam, lparam, DWORD.init, POINT.init);
+		try {
+			import std.stdio: writeln;
+			writeln(gs_availID[]);
+		} catch {}
 		if (appl.onMessage(obj)) {
 			static if (DEBUG) {
 				if (appl.status.code != Status.OK && appl.status.code != Status.ASYNC) {
