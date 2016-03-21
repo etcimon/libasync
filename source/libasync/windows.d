@@ -332,7 +332,7 @@ package:
 		try log("Timer created: " ~ timer_id.to!string ~ " with timeout: " ~ timeout.total!"msecs".to!string ~ " msecs"); catch {}
 		
 		BOOL err;
-		try err = cast(int)SetTimer(m_hwnd, timer_id, timeout.total!"msecs".to!uint+30, null);
+		try err = cast(int)SetTimer(m_hwnd, timer_id, timeout.total!"msecs".to!uint, null);
 		catch(Exception e) {
 			setInternalError!"SetTimer"(Status.ERROR);
 			return 0;
