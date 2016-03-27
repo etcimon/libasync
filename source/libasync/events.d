@@ -110,12 +110,14 @@ package:
 	{
 		return m_evLoop.recv(data, fd, dst);
 	}*/
-	
+
+	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		return m_evLoop.send(fd, data);
 	}
-	
+
+	pragma(inline, true)
 	uint read(in fd_t fd, ref ubyte[] data)
 	{
 		return m_evLoop.read(fd, data);

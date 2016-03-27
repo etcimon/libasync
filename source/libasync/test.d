@@ -33,10 +33,9 @@ unittest {
 	// writeln("Loaded. Running event loop...");
 	testFile();
 	testTCPConnect("localhost", 8081);
-
 	while(Clock.currTime() - gs_start < 7.seconds) 
 		g_evl.loop(100.msecs);
-
+	
 	int i;
 	foreach (bool b; g_cbCheck) {
 		assert(b, "Callback not triggered: g_cbCheck[" ~ i.to!string ~ "]");
@@ -197,7 +196,7 @@ void testOneshotTimer() {
 	AsyncTimer g_timerOneShot = new AsyncTimer(g_evl);
 	g_timerOneShot.duration(1.seconds).run({
 		assert(!g_cbCheck[4] && Clock.currTime() - gs_start > 900.msecs && Clock.currTime() - gs_start < 1100.msecs);
-		assert(g_timerOneShot.id > 0);
+		assert(g_timerOneShot.id != 0);
 		g_cbCheck[4] = true;
 		
 	});
