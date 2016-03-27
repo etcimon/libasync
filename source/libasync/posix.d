@@ -246,7 +246,7 @@ package:
 				assert(false, "Add SIGXCPU failed at kevent call");
 		}
 
-		try log("init in thread " ~ Thread.getThis().name); catch {}
+		static if (LOG) try log("init in thread " ~ Thread.getThis().name); catch {}
 
 		return true;
 	}
@@ -324,7 +324,7 @@ package:
 			return false;
 
 		if (num > 0)
-			log("Got " ~ num.to!string ~ " event(s)");
+			static if (LOG) log("Got " ~ num.to!string ~ " event(s)");
 
 		foreach(i; 0 .. num) {
 			success = false;
@@ -332,7 +332,7 @@ package:
 			static if (EPOLL) 
 			{
 				epoll_event _event = events[i];
-				try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch {}
+				static if (LOG) try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch {}
 				EventInfo* info = cast(EventInfo*) _event.data.ptr;
 				int event_flags = cast(int) _event.events;
 			}
@@ -346,7 +346,7 @@ package:
 			}
 
 			//if (info.owner != m_instanceId)
-			//	try log("Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
+			//	static if (LOG) try log("Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
 			//	catch{}
 			//log("owner");
 			switch (info.evType) {
@@ -358,7 +358,7 @@ package:
 
 				case EventType.Notifier:
 
-					log("Got notifier!");
+					static if (LOG) log("Got notifier!");
 					try info.evObj.notifierHandler();
 					catch (Exception e) {
 						setInternalError!"notifierHandler"(Status.ERROR);
@@ -366,7 +366,7 @@ package:
 					break;
 
 				case EventType.DirectoryWatcher:
-					log("Got DirectoryWatcher event!");
+					static if (LOG) log("Got DirectoryWatcher event!");
 					static if (!EPOLL) {
 						// in KQUEUE all events will be consumed here, because they must be pre-processed
 						try {
@@ -399,7 +399,7 @@ package:
 							}
 
 						} catch (Exception e) {
-							log("Could not process DirectoryWatcher event: " ~ e.msg);
+							static if (LOG) log("Could not process DirectoryWatcher event: " ~ e.msg);
 							break;
 						}
 
@@ -412,7 +412,7 @@ package:
 					break;
 
 				case EventType.Timer:
-					try log("Got timer! " ~ info.fd.to!string); catch {}
+					static if (LOG) try log("Got timer! " ~ info.fd.to!string); catch {}
 					static if (EPOLL) {
 						static long val;
 						import core.sys.posix.unistd : read;
@@ -436,11 +436,11 @@ package:
 					break;
 
 				case EventType.Signal:
-					try log("Got signal!"); catch {}
+					static if (LOG) try log("Got signal!"); catch {}
 
 					static if (EPOLL) {
 						
-						try log("Got signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch {}
+						static if (LOG) try log("Got signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch {}
 						import core.sys.linux.sys.signalfd : signalfd_siginfo;
 						import core.sys.posix.unistd : read;
 						signalfd_siginfo fdsi;
@@ -507,7 +507,7 @@ package:
 					nothrow void abortTCPHandler(bool graceful) {
 
 						nothrow void closeAll() {
-							try log("closeAll()"); catch {}
+							static if (LOG) try log("closeAll()"); catch {}
 							if (info.evObj.tcpEvHandler.conn.connected)
 								closeSocket(info.fd, true, true);
 							
@@ -529,7 +529,7 @@ package:
 						}
 
 						if (info.evObj.tcpEvHandler.conn.inbound) {
-							log("Freeing inbound connection FD#" ~ info.fd.to!string);
+							static if (LOG) log("Freeing inbound connection FD#" ~ info.fd.to!string);
 							try ThreadMem.free(info.evObj.tcpEvHandler.conn);
 							catch (Exception e){ assert(false, "Error freeing resources"); }
 						}
@@ -788,7 +788,7 @@ package:
 
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
-		try log("Recv from FD: " ~ fd.to!string); catch {}
+		static if (LOG) try log("Recv from FD: " ~ fd.to!string); catch {}
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : recv;
 		int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
@@ -805,10 +805,10 @@ package:
 		
 		return cast(uint) ret < 0 ? 0 : ret;
 	}
-	
+
 	uint send(in fd_t fd, in ubyte[] data)
 	{
-		try log("Send to FD: " ~ fd.to!string); catch {}
+		static if (LOG) try log("Send to FD: " ~ fd.to!string); catch {}
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : send;
 		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
@@ -837,7 +837,7 @@ package:
 			addr.family = AF_INET;
 		}
 		
-		try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
+		static if (LOG) try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
 		if (catchError!".recvfrom"(ret)) { // ret == -1
 			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 				m_status.code = Status.ASYNC;
@@ -855,7 +855,7 @@ package:
 
 		m_status = StatusInfo.init;
 
-		try log("SENDTO " ~ data.length.to!string ~ "B");
+		static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B");
 		catch{}
 		long ret = sendto(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, addr.sockAddrLen);
 		
@@ -980,7 +980,7 @@ package:
 					ret = inotify_add_watch(fd, path.toNativeString().toStringz, events);
 					if (catchError!"inotify_add_watch"(ret))
 						return fd_t.init;
-					try log("inotify_add_watch(" ~ DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd).to!string ~ ")"); catch {}
+					static if (LOG) try log("inotify_add_watch(" ~ DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd).to!string ~ ")"); catch {}
 					assert(m_dwFolders.get(tuple(cast(fd_t) fd, cast(uint)ret), DWFolderInfo.init) == DWFolderInfo.init, "Could not get a unique watch descriptor for path, got: " ~ m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)].to!string);
 					m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)] = DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd);
 				} catch (Exception e) {
@@ -1366,7 +1366,7 @@ package:
 						return cast(uint) i;
 				}
 				static if (LOG) foreach (j; 0 .. i) {
-					try log("Change occured for FD#" ~ fd.to!string ~ ": " ~ dst[j].to!string); catch {}
+					static if (LOG) try log("Change occured for FD#" ~ fd.to!string ~ ": " ~ dst[j].to!string); catch {}
 				}
 				nread = read(fd, buf.ptr, buf.sizeof);
 				if (catchError!"read()"(nread)) {
@@ -1425,7 +1425,7 @@ package:
 
 		static if (!EPOLL) {
 			kevent_t[2] events;
-			try log("!!DISC delete events"); catch {}
+			static if (LOG) try log("!!DISC delete events"); catch {}
 			EV_SET(&(events[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
 			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
 			kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
@@ -1730,10 +1730,10 @@ private:
 				try {
 					evh = del(conn);
 					if (evh == TCPEventHandler.init || !initTCPConnection(csock, conn, evh, true)) {
-						try log("Failed to connect"); catch {}
+						static if (LOG) try log("Failed to connect"); catch {}
 						return closeClient();
 					}
-					try log("Connection Started with " ~ csock.to!string); catch {}
+					static if (LOG) try log("Connection Started with " ~ csock.to!string); catch {}
 				}
 				catch (Exception e) {
 					log("Close socket");
@@ -1833,7 +1833,7 @@ private:
 
 	bool onTCPTraffic(fd_t fd, TCPEventHandler del, int events, AsyncTCPConnection conn) 
 	{
-		log("TCP Traffic at FD#" ~ fd.to!string);
+		//log("TCP Traffic at FD#" ~ fd.to!string);
 
 		static if (EPOLL) 
 		{
@@ -1859,7 +1859,7 @@ private:
 		{
 			import libasync.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			int err;
-			try log("Also got events: " ~ connect.to!string ~ " c " ~ read.to!string ~ " r " ~ write.to!string ~ " write"); catch {}
+			static if (LOG) try log("Also got events: " ~ connect.to!string ~ " c " ~ read.to!string ~ " r " ~ write.to!string ~ " write"); catch {}
 			socklen_t errlen = err.sizeof;
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen);
 			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t)err);
@@ -1876,7 +1876,7 @@ private:
 		
 		if (connect) 
 		{
-			try log("!connect"); catch {}
+			static if (LOG) try log("!connect"); catch {}
 			conn.connected = true;
 			try del(TCPEvent.CONNECT);
 			catch (Exception e) {
@@ -1890,7 +1890,7 @@ private:
 		if (write && conn.connected && !conn.disconnecting && conn.writeBlocked) 
 		{
 			conn.writeBlocked = false;
-			try log("!write"); catch {}
+			static if (LOG) try log("!write"); catch {}
 			try del(TCPEvent.WRITE);
 			catch (Exception e) {
 				setInternalError!"del@TCPEvent.WRITE"(Status.ABORT);
@@ -1903,7 +1903,7 @@ private:
 
 		if (read && conn.connected && !conn.disconnecting)
 		{
-			try log("!read"); catch {}
+			static if (LOG) try log("!read"); catch {}
 			try del(TCPEvent.READ);
 			catch (Exception e) {
 				setInternalError!"del@TCPEvent.READ"(Status.ABORT);
@@ -1913,7 +1913,7 @@ private:
 
 		if (close && conn.connected && !conn.disconnecting) 
 		{
-			try log("!close"); catch {}
+			static if (LOG) try log("!close"); catch {}
 			// todo: See if this hack is still necessary
 			if (!conn.connected && conn.disconnecting)
 				return true;
@@ -1938,7 +1938,7 @@ private:
 				catch (Exception e){ assert(false, "Error freeing resources"); }
 				
 				if (del.conn.inbound) {
-					log("Freeing inbound connection");
+					static if (LOG) log("Freeing inbound connection");
 					try ThreadMem.free(del.conn);
 					catch (Exception e){ assert(false, "Error freeing resources"); }
 				}
@@ -2117,7 +2117,7 @@ private:
 			_event.data.ptr = ev;
 			_event.events = 0 | EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP | EPOLLET;
 			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event);
-			log("Connection FD#" ~ fd.to!string ~ " added to " ~ m_epollfd.to!string);
+			static if (LOG) log("Connection FD#" ~ fd.to!string ~ " added to " ~ m_epollfd.to!string);
 			if (catchError!"epoll_ctl_add"(err))
 				return destroyEvInfo();
 
@@ -2128,7 +2128,7 @@ private:
 		else /* if KQUEUE */
 		{
 			kevent_t[2] events = void;
-			try log("Register event ptr " ~ ev.to!string); catch {}
+			static if (LOG) try log("Register event ptr " ~ ev.to!string); catch {}
 			assert(ev.evType == EventType.TCPTraffic, "Bad event type for TCP Connection");
 			EV_SET(&(events[0]), fd, EVFILT_READ, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, cast(void*) ev);
 			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, cast(void*) ev);
@@ -2216,7 +2216,7 @@ private:
 			m_status.text = TRACE;
 			m_status.code = Status.EVLOOP_FAILURE;
 			m_error = lastError();
-			log(m_status);
+			static if (LOG) log(m_status);
 			return true;
 		}
 		return false;
@@ -2240,7 +2240,7 @@ private:
 					m_status.text = TRACE;
 					m_status.code = validator[2];
 					if (m_status.code == Status.EVLOOP_TIMEOUT) {
-						log(m_status);
+						static if (LOG) log(m_status);
 						break;
 					}
 					m_error = lastError();

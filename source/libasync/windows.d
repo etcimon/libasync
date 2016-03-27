@@ -106,7 +106,7 @@ package:
 		RegisterClassW(&wc);
 		m_hwnd = CreateWindowW(wnz, clsn, 0, 0, 0, 385, 375, HWND_MESSAGE,
 		                       cast(HMENU) null, null, null);
-		try log("Window registered: " ~ m_hwnd.to!string); catch{}
+		static if (LOG) try log("Window registered: " ~ m_hwnd.to!string); catch{}
 		auto ptr = cast(ULONG_PTR)cast(void*)&this;
 		SetWindowLongPtrA(m_hwnd, GWLP_USERDATA, ptr);
 		assert( cast(EventLoopImpl*)cast(void*)GetWindowLongPtrA(m_hwnd, GWLP_USERDATA) is &this );
@@ -276,7 +276,7 @@ package:
 		}
 		
 		
-		try log("Client started FD#" ~ fd.to!string);
+		static if (LOG) try log("Client started FD#" ~ fd.to!string);
 		catch{}
 		return fd;
 	}
@@ -303,7 +303,7 @@ package:
 			}
 		}
 		
-		try log("UDP Socket started FD#" ~ fd.to!string);
+		static if (LOG) try log("UDP Socket started FD#" ~ fd.to!string);
 		catch{}
 		
 		return fd;
@@ -311,13 +311,13 @@ package:
 	
 	fd_t run(shared AsyncSignal ctxt) {
 		m_status = StatusInfo.init;
-		try log("Signal subscribed to: " ~ m_hwnd.to!string); catch {}
+		static if (LOG) try log("Signal subscribed to: " ~ m_hwnd.to!string); catch {}
 		return (cast(fd_t)m_hwnd);
 	}
 	
 	fd_t run(AsyncNotifier ctxt) {
 		m_status = StatusInfo.init;
-		//try log("Running signal " ~ (cast(AsyncNotifier)ctxt).to!string); catch {}
+		//static if (LOG) try log("Running signal " ~ (cast(AsyncNotifier)ctxt).to!string); catch {}
 		return cast(fd_t) m_hwnd;
 	}
 	
@@ -329,7 +329,7 @@ package:
 		if (timer_id == fd_t.init) {
 			timer_id = createIndex();
 		}
-		try log("Timer created: " ~ timer_id.to!string ~ " with timeout: " ~ timeout.total!"msecs".to!string ~ " msecs"); catch {}
+		static if (LOG) try log("Timer created: " ~ timer_id.to!string ~ " with timeout: " ~ timeout.total!"msecs".to!string ~ " msecs"); catch {}
 		
 		BOOL err;
 		try err = cast(int)SetTimer(m_hwnd, timer_id, timeout.total!"msecs".to!uint, null);
@@ -456,7 +456,7 @@ package:
 	bool kill(AsyncTimer ctxt) {
 		m_status = StatusInfo.init;
 		
-		try log("Kill timer" ~ ctxt.id.to!string); catch {}
+		static if (LOG) try log("Kill timer" ~ ctxt.id.to!string); catch {}
 		
 		BOOL err = KillTimer(m_hwnd, ctxt.id);
 		if (err == 0)
@@ -715,7 +715,7 @@ package:
 			import std.algorithm : min;
 			size_t cnt = min(dst.length, changes.length);
 			foreach (DWChangeInfo change; (*changes)[0 .. cnt]) {
-				try log("reading change: " ~ change.path); catch {}
+				static if (LOG) try log("reading change: " ~ change.path); catch {}
 				dst[i] = (*changes)[i];
 				i++;
 			}
@@ -725,7 +725,7 @@ package:
 			setInternalError!"watcher.readChanges"(Status.ERROR, "Could not read directory changes: " ~ e.msg);
 			return 0;
 		}
-		try log("Changes returning with: " ~ i.to!string); catch {}
+		static if (LOG) try log("Changes returning with: " ~ i.to!string); catch {}
 		return cast(uint) i;
 	}
 	
@@ -743,7 +743,7 @@ package:
 			wd = cast(uint) hndl;
 			DWHandlerInfo handler = m_dwHandlers.get(fd, DWHandlerInfo.init);
 			assert(handler !is null);
-			log("Watching: " ~ info.path.toNativeString());
+			static if (LOG) log("Watching: " ~ info.path.toNativeString());
 			(m_dwFolders)[wd] = ThreadMem.alloc!DWFolderWatcher(m_evLoop, fd, hndl, info.path, info.events, handler, info.recursive);
 		} catch (Exception e) {
 			setInternalError!"watch"(Status.ERROR, "Could not start watching directory: " ~ e.msg);
@@ -785,13 +785,13 @@ package:
 			err = PostMessageA(cast(HWND)fd, WM_USER_SIGNAL, wparam, lparam);
 		else
 			err = PostMessageA(cast(HWND)fd, WM_USER_EVENT, wparam, lparam);
-		try log("Sending notification to: " ~ (cast(HWND)fd).to!string); catch {}
+		static if (LOG) try log("Sending notification to: " ~ (cast(HWND)fd).to!string); catch {}
 		if (err == 0)
 		{
 			m_error = GetLastErrorSafe();
 			m_status.code = Status.ERROR;
 			m_status.text = "notify";
-			log(m_status);
+			static if (LOG) log(m_status);
 			return false;
 		}
 		return true;
@@ -802,7 +802,7 @@ package:
 		m_status = StatusInfo.init;
 		int ret = .recv(fd, cast(void*) data.ptr, cast(INT) data.length, 0);
 		
-		//try log("RECV " ~ ret.to!string ~ "B FD#" ~ fd.to!string); catch {}
+		//static if (LOG) try log("RECV " ~ ret.to!string ~ "B FD#" ~ fd.to!string); catch {}
 		if (catchSocketError!".recv"(ret)) { // ret == -1
 			if (m_error == error_t.WSAEWOULDBLOCK)
 				m_status.code = Status.ASYNC;
@@ -816,7 +816,7 @@ package:
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		m_status = StatusInfo.init;
-		//try log("SEND " ~ data.length.to!string ~ "B FD#" ~ fd.to!string);
+		//static if (LOG) try log("SEND " ~ data.length.to!string ~ "B FD#" ~ fd.to!string);
 		//catch{}
 		int ret = .send(fd, cast(const(void)*) data.ptr, cast(INT) data.length, 0);
 		
@@ -852,7 +852,7 @@ package:
 			addr.family = AF_INET;
 		}
 		
-		try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
+		static if (LOG) try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
 		if (catchSocketError!".recvfrom"(ret)) { // ret == -1
 			if (m_error == WSAEWOULDBLOCK)
 				m_status.code = Status.ASYNC;
@@ -866,7 +866,7 @@ package:
 	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
-		try log("SENDTO " ~ data.length.to!string ~ "B"); catch{}
+		static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B"); catch{}
 		int ret;
 		if (addr != NetworkAddress.init)
 			ret = .sendto(fd, cast(void*) data.ptr, cast(INT) data.length, 0, addr.sockAddr, addr.sockAddrLen);
@@ -908,7 +908,7 @@ package:
 		
 		INT err;
 		
-		try log("Shutdown FD#" ~ fd.to!string);
+		static if (LOG) try log("Shutdown FD#" ~ fd.to!string);
 		catch{}
 		if (forced) {
 			err = shutdown(fd, SD_BOTH);
@@ -926,7 +926,7 @@ package:
 				}
 
 				evh.conn = null;
-				//log("Remove event handler for " ~ fd.to!string);
+				//static if (LOG) log("Remove event handler for " ~ fd.to!string);
 				m_tcpHandlers.remove(fd);
 			} 
 		}
@@ -946,7 +946,7 @@ package:
 		if (!connected && forced) {
 			try {
 				if (fd in m_connHandlers) {
-					log("Removing connection handler for: " ~ fd.to!string);
+					static if (LOG) log("Removing connection handler for: " ~ fd.to!string);
 					m_connHandlers.remove(fd);
 				}
 			}
@@ -999,7 +999,7 @@ package:
 		
 		INT err = WSAStringToAddressW(str, cast(INT) addr.family, null, addr.sockAddr, &addrlen); 
 		if (port != 0) addr.port = port;
-		try log(addr.toString());
+		static if (LOG) try log(addr.toString());
 		catch {}
 		if( catchSocketError!"getAddressFromIP"(err) )
 			return NetworkAddress.init;
@@ -1057,7 +1057,7 @@ package:
 		ubyte* pAddr = cast(ubyte*) infos.ai_addr;
 		ubyte* data = cast(ubyte*) addr.sockAddr;
 		data[0 .. infos.ai_addrlen] = pAddr[0 .. infos.ai_addrlen]; // perform bit copy
-		try log("GetAddrInfoW Successfully resolved DNS to: " ~ addr.toAddressString());
+		static if (LOG) try log("GetAddrInfoW Successfully resolved DNS to: " ~ addr.toAddressString());
 		catch (Exception e){}
 		return addr;
 	}
@@ -1112,7 +1112,7 @@ private:
 				}
 				break;
 			case WM_TIMER:
-				try log("Timer callback: " ~ m_timer.fd.to!string); catch {}
+				static if (LOG) try log("Timer callback: " ~ m_timer.fd.to!string); catch {}
 				TimerHandler cb;
 				bool cached = (m_timer.fd == cast(fd_t)msg.wParam);
 				try {
@@ -1134,7 +1134,7 @@ private:
 				
 				break;
 			case WM_USER_EVENT:
-				log("User event");
+				static if (LOG) log("User event");
 
 				ulong uwParam = cast(ulong)msg.wParam;
 				ulong ulParam = cast(ulong)msg.lParam;
@@ -1143,7 +1143,7 @@ private:
 				void* payloadPtr = cast(void*) payloadAddr;
 				shared AsyncSignal ctxt = cast(shared AsyncSignal) payloadPtr;
 
-				try log("Got notification in : " ~ m_hwnd.to!string ~ " pointer: " ~ payloadPtr.to!string); catch {}
+				static if (LOG) try log("Got notification in : " ~ m_hwnd.to!string ~ " pointer: " ~ payloadPtr.to!string); catch {}
 				try {
 					assert(ctxt.id != 0);
 					ctxt.handler();
@@ -1153,7 +1153,7 @@ private:
 				}
 				break;
 			case WM_USER_SIGNAL:
-				log("User signal");
+				static if (LOG) log("User signal");
 
 				ulong uwParam = cast(ulong)msg.wParam;
 				ulong ulParam = cast(ulong)msg.lParam;
@@ -1199,7 +1199,7 @@ private:
 			default: break;
 			case FD_READ:
 				try {
-					log("READ FD#" ~ sock.to!string);
+					static if (LOG) log("READ FD#" ~ sock.to!string);
 					cb = m_udpHandlers.get(sock);
 					assert(cb != UDPHandler.init, "Socket " ~ sock.to!string ~ " could not yield a callback");
 					cb(UDPEvent.READ);
@@ -1211,7 +1211,7 @@ private:
 				break;
 			case FD_WRITE:
 				try {
-					log("WRITE FD#" ~ sock.to!string);
+					static if (LOG) log("WRITE FD#" ~ sock.to!string);
 					cb = m_udpHandlers.get(sock);
 					assert(cb != UDPHandler.init, "Socket " ~ sock.to!string ~ " could not yield a callback");
 					cb(UDPEvent.WRITE);
@@ -1251,8 +1251,8 @@ private:
 			case FD_ACCEPT:
 				version(Distributed) gs_mtx.lock_nothrow();
 
-				log("TCP Handlers: " ~ m_tcpHandlers.length.to!string);
-				log("Accepting connection");
+				static if (LOG) log("TCP Handlers: " ~ m_tcpHandlers.length.to!string);
+				static if (LOG) log("Accepting connection");
 				/// Let another listener take the next connection
 				TCPAcceptHandler list;
 				try list = m_connHandlers[sock]; catch { assert(false, "Listening on an invalid socket..."); }
@@ -1271,7 +1271,7 @@ private:
 									assert(false, "Could not set listener back to window HANDLE " ~ m_hwnd.to!string); 
 							}
 						}
-						else log("Returned init!!");
+						else static if (LOG) log("Returned init!!");
 						gs_mtx.unlock_nothrow();
 					}
 				}
@@ -1296,7 +1296,7 @@ private:
 				if ( catchSocketError!"WSAAsyncSelect"(ok) ) 
 					return false;
 
-				log("Connection accepted: " ~ csock.to!string);
+				static if (LOG) log("Connection accepted: " ~ csock.to!string);
 
 				AsyncTCPConnection conn;
 				try conn = ThreadMem.alloc!AsyncTCPConnection(m_evLoop);
@@ -1316,7 +1316,7 @@ private:
 
 				try {
 					m_tcpHandlers[csock] = cb; // keep the handler to setup the connection
-					log("ACCEPT&CONNECT FD#" ~ csock.to!string);
+					static if (LOG) log("ACCEPT&CONNECT FD#" ~ csock.to!string);
 					*conn.connected = true;
 					cb(TCPEvent.CONNECT);
 				}
@@ -1327,7 +1327,7 @@ private:
 				break;
 			case FD_CONNECT:
 				try {
-					log("CONNECT FD#" ~ sock.to!string);
+					static if (LOG) log("CONNECT FD#" ~ sock.to!string);
 					cb = m_tcpHandlers.get(sock);
 					if (cb == TCPEventHandler.init) break;//, "Socket " ~ sock.to!string ~ " could not yield a callback");
 					*cb.conn.connecting = true;
@@ -1339,7 +1339,7 @@ private:
 				break;
 			case FD_READ:
 				try {
-					log("READ FD#" ~ sock.to!string);
+					static if (LOG) log("READ FD#" ~ sock.to!string);
 					cb = m_tcpHandlers.get(sock);
 					if (cb == TCPEventHandler.init) break; //, "Socket " ~ sock.to!string ~ " could not yield a callback");
 					if (!cb.conn) break;
@@ -1361,7 +1361,7 @@ private:
 				
 				try {
 					//import std.stdio;
-					log("WRITE FD#" ~ sock.to!string);
+					static if (LOG) log("WRITE FD#" ~ sock.to!string);
 					cb = m_tcpHandlers.get(sock);
 					if (cb == TCPEventHandler.init) break;//assert(cb != TCPEventHandler.init, "Socket " ~ sock.to!string ~ " could not yield a callback");
 					if (!cb.conn) break;
@@ -1384,7 +1384,7 @@ private:
 				INT ret;
 				bool connected = true;
 				try {
-					log("CLOSE FD#" ~ sock.to!string);
+					static if (LOG) log("CLOSE FD#" ~ sock.to!string);
 					if (sock in m_tcpHandlers) {
 						cb = m_tcpHandlers.get(sock);
 						if (*cb.conn.connected) {
@@ -1503,7 +1503,7 @@ private:
 				m_status.text = TRACE;
 				m_status.code = validator[1];
 				if (m_status.code == Status.EVLOOP_TIMEOUT) {
-					log(m_status);
+					static if (LOG) log(m_status);
 					break;
 				}
 				m_error = GetLastErrorSafe();

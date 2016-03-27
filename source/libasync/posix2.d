@@ -20,7 +20,7 @@ mixin template RunKill()
 		
 		/// Make sure the socket doesn't block on recv/send
 		if (!setNonBlock(fd)) {
-			log("Close socket");
+			static if (LOG) log("Close socket");
 			close(fd);
 			return 0;
 		}
@@ -28,7 +28,7 @@ mixin template RunKill()
 		/// Enable Nagel's algorithm if specified
 		if (ctxt.noDelay) {
 			if (!setOption(fd, TCPOption.NODELAY, true)) {
-				try log("Closing connection"); catch {}
+				static if (LOG) try log("Closing connection"); catch {}
 				close(fd);
 				return 0;
 			}
@@ -66,12 +66,12 @@ mixin template RunKill()
 					return 0;
 				/// Allow multiple threads to listen on this address
 				if (!setOption(fd, TCPOption.REUSEADDR, true)) {
-					log("Close socket");
+					static if (LOG) log("Close socket");
 					close(fd);
 					return 0;
 				}
 				if (!setOption(fd, TCPOption.REUSEPORT, true)) {
-					log("Close socket");
+					static if (LOG) log("Close socket");
 					close(fd);
 					return 0;
 				}
@@ -79,7 +79,7 @@ mixin template RunKill()
 
 			/// Make sure the socket returns instantly when calling listen()
 			if (!setNonBlock(fd)) {
-				log("Close socket");
+				static if (LOG) log("Close socket");
 				close(fd);
 				return 0;
 			}
@@ -89,7 +89,7 @@ mixin template RunKill()
 			/// Automatically starts connections with noDelay if specified
 			if (ctxt.noDelay) {
 				if (!setOption(fd, TCPOption.NODELAY, true)) {
-					try log("Closing connection"); catch {}
+					static if (LOG) try log("Closing connection"); catch {}
 					close(fd);
 					return 0;
 				}
@@ -99,7 +99,7 @@ mixin template RunKill()
 
 		/// Setup the event polling
 		if (!initTCPListener(fd, ctxt, del, reusing)) {
-			log("Close socket");
+			static if (LOG) log("Close socket");
 			close(fd);
 			return 0;
 		}
@@ -116,7 +116,7 @@ mixin template RunKill()
 		import core.sys.posix.unistd;
 		fd_t fd = ctxt.preInitializedSocket;
 
-		try log("Address: " ~ ctxt.local.toString()); catch {}
+		static if (LOG) try log("Address: " ~ ctxt.local.toString()); catch {}
 
 		if (fd == fd_t.init)
 			fd = socket(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP);
@@ -131,7 +131,7 @@ mixin template RunKill()
 		if (!initUDPSocket(fd, ctxt, del))
 			return 0;
 
-		try log("UDP Socket started FD#" ~ fd.to!string);
+		static if (LOG) try log("UDP Socket started FD#" ~ fd.to!string);
 		catch{}
 		/*
 		static if (!EPOLL) {
@@ -467,7 +467,7 @@ mixin template RunKill()
 	
 	bool kill(AsyncTCPConnection ctxt, bool forced = false)
 	{
-		log("Kill socket");
+		static if (LOG) log("Kill socket");
 		m_status = StatusInfo.init;
 		fd_t fd = ctxt.socket;
 		bool has_socket = fd > 0;
@@ -488,7 +488,7 @@ mixin template RunKill()
 
 	bool kill(AsyncTCPListener ctxt)
 	{
-		log("Kill listener");
+		static if (LOG) log("Kill listener");
 		m_status = StatusInfo.init;
 		nothrow void cleanup() {
 			try ThreadMem.free(ctxt.evInfo);
