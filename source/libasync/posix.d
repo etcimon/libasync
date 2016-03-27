@@ -1677,21 +1677,18 @@ private:
 					fd_t csock = accept4(fd, addr.sockAddr, &addrlen, O_NONBLOCK);
 
 					if (catchError!".accept"(csock)) {
-						ret = false;
-						return ret;
+						return true;
 					}
 				} else /* if KQUEUE */ {
 					fd_t csock = accept(fd, addr.sockAddr, &addrlen);
 					
 					if (catchError!".accept"(csock)) {
-						ret = false;
-						return ret;
+						return true;
 					}
 					
 					// Make non-blocking so subsequent calls to recv/send return immediately
 					if (!setNonBlock(csock)) {
-						ret = false;
-						return ret;
+						continue;
 					}
 				}
 
@@ -1702,10 +1699,7 @@ private:
 					setInternalError!"addrlen"(Status.ABORT);
 					import core.sys.posix.unistd : close;
 					close(csock);
-					{
-						ret = false;
-						return ret;
-					}
+					continue;
 				}
 
 				// Allocate a new connection handler object
@@ -1716,14 +1710,10 @@ private:
 				conn.socket = csock;
 				conn.inbound = true;
 
-				nothrow bool closeClient() {
+				nothrow void closeClient() {
 					try ThreadMem.free(conn);
 					catch (Exception e){ assert(false, "Free failure"); }
 					closeSocket(csock, true, true);
-					{
-						ret = false;
-						return ret;
-					}
 				}
 
 				// Get the connection handler from the callback
@@ -1732,13 +1722,15 @@ private:
 					evh = del(conn);
 					if (evh == TCPEventHandler.init || !initTCPConnection(csock, conn, evh, true)) {
 						try log("Failed to connect"); catch {}
-						return closeClient();
+						closeClient();
+						continue;
 					}
 					try log("Connection Started with " ~ csock.to!string); catch {}
 				}
 				catch (Exception e) {
 					log("Close socket");
-					return closeClient();
+					closeClient();
+					continue;
 				}
 
 				// Announce connection state to the connection handler
@@ -1748,11 +1740,9 @@ private:
 					evh(TCPEvent.CONNECT);
 				}
 				catch (Exception e) {
+					closeClient();
 					setInternalError!"del@TCPEvent.CONNECT"(Status.ABORT);
-					{
-						ret = false;
-						return ret;
-					}
+					continue;
 				}
 			} while(true);
 
