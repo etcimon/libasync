@@ -49,7 +49,7 @@ unittest {
 	g_notifier.kill();
 	g_listnr.kill();
 	version(LDC) {
-		import core.c.stdlib; exit(0);
+		import core.stdc.stdlib; exit(0);
 	}
 	
 }
