@@ -4,6 +4,7 @@ import libasync.events;
 import std.stdio;
 import std.datetime;
 import libasync.file;
+import std.conv : to;
 
 AsyncDirectoryWatcher g_watcher;
 shared AsyncDNS g_dns;

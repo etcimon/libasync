@@ -1,5 +1,4 @@
 ﻿module libasync.internals.path;
-package:
 /**
 Contains routines for high level path handling.
 Copyright: © 2012 RejectedSoftware e.K.
