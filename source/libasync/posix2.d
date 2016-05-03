@@ -43,7 +43,52 @@ mixin template RunKill()
 		return fd;
 		
 	}
-	
+
+	bool run(AsyncEvent ctxt, EventHandler del)
+	{
+		fd_t fd = ctxt.id;
+		import libasync.internals.socket_compat : bind;
+		import core.sys.posix.unistd;
+		
+		fd_t err;
+		
+		EventObject eo;
+		eo.eventHandler = del;
+		EventInfo* ev;
+		try ev = ThreadMem.alloc!EventInfo(fd, EventType.Event, eo, m_instanceId);
+		catch (Exception e){ assert(false, "Allocation error"); }
+		ctxt.evInfo = ev;
+		nothrow bool closeAll() {
+			try ThreadMem.free(ev);
+			catch(Exception e){ assert(false, "Failed to free resources"); }
+			ctxt.evInfo = null;
+			// fd must be closed by the caller if return false
+			return false;
+		}
+		
+		static if (EPOLL)
+		{
+			epoll_event _event;
+			_event.data.ptr = ev;
+			_event.events = EPOLLIN | EPOLLOUT | EPOLLET;
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event);
+			if (catchError!"epoll_ctl"(err)) {
+				return closeAll();
+			}
+		}
+		else /* if KQUEUE */
+		{
+			kevent_t[2] _event;
+			EV_SET(&(_event[0]), fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, ev);
+			EV_SET(&(_event[1]), fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, ev);
+			err = kevent(m_kqueuefd, &(_event[0]), 2, null, 0, null);
+			if (catchError!"kevent_add_udp"(err))
+				return closeAll();
+			
+		}
+		return true;
+	}
+
 	fd_t run(AsyncTCPListener ctxt, TCPAcceptHandler del)
 	in { 
 		//assert(ctxt.socket == fd_t.init, "TCP Listener already bound. Please run another instance."); 
@@ -54,7 +99,6 @@ mixin template RunKill()
 		import libasync.internals.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR, IPPROTO_TCP;
 		import core.sys.posix.unistd : close;
 		import core.sync.mutex;
-		__gshared Mutex g_mtx;
 		fd_t fd = ctxt.socket;
 		bool reusing = true;
 		try if (fd == 0) {
@@ -125,11 +169,15 @@ mixin template RunKill()
 		if (catchError!("run AsyncUDPSocket")(fd))
 			return 0;
 		
-		if (!setNonBlock(fd))
+		if (!setNonBlock(fd)) {
+			close(fd);
 			return 0;
+		}
 		
-		if (!initUDPSocket(fd, ctxt, del))
+		if (!initUDPSocket(fd, ctxt, del)) {
+			close(fd);
 			return 0;
+		}
 
 		static if (LOG) try log("UDP Socket started FD#" ~ fd.to!string);
 		catch{}
@@ -614,8 +662,33 @@ mixin template RunKill()
 			
 			if (catchError!"event_del(udp)"(err)) 
 				return false;
-		}
+		}		
 		
+		try ThreadMem.free(ctxt.evInfo);
+		catch (Exception e){
+			assert(false, "Failed to free resources: " ~ e.msg);
+		}
+		ctxt.evInfo = null;
+		return true;
+	}
+
+	bool kill(AsyncEvent ctxt) {
+		import core.sys.posix.unistd : close;		
+		
+		m_status = StatusInfo.init;
+		
+		fd_t fd = ctxt.id;
+
+		static if (!EPOLL)
+		{
+			kevent_t[2] events;
+			EV_SET(&(events[0]), ctxt.socket, EVFILT_READ, EV_DELETE, 0, 0, null);
+			EV_SET(&(events[1]), ctxt.socket, EVFILT_WRITE, EV_DELETE, 0, 0, null);
+			err = kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
+			
+			if (catchError!"event_del(udp)"(err)) 
+				return false;
+		}		
 		
 		try ThreadMem.free(ctxt.evInfo);
 		catch (Exception e){

@@ -350,6 +350,19 @@ package:
 			//	catch{}
 			//log("owner");
 			switch (info.evType) {
+				case EventType.Event:
+					if (info.fd == 0)
+						break;
+
+					import core.sys.posix.unistd : close;
+					success = onEvent(info.fd, info.evObj.eventHandler, event_flags);
+										
+					if (!success) {
+						close(info.fd);
+						try ThreadMem.free(info);
+						catch (Exception e){ assert(false, "Error freeing resources"); }						
+					}
+					break;
 				case EventType.TCPAccept:
 					if (info.fd == 0)
 						break;
@@ -936,7 +949,7 @@ package:
 			addSignal(ctxt);
 
 			try {
-				log("Notified fd: " ~ fd.to!string ~ " of PID " ~ getpid().to!string); 
+				static if (LOG) log("Notified fd: " ~ fd.to!string ~ " of PID " ~ getpid().to!string); 
 				int err = core.sys.posix.signal.kill(getpid(), SIGXCPU);
 				if (catchError!"notify(signal)"(err))
 					assert(false, "Signal could not be raised");
@@ -1035,7 +1048,7 @@ package:
 			nothrow fd_t addRecursive(Path path, bool is_dir) {
 				int ret;
 				try {
-					log("Adding path: " ~ path.toNativeString());
+					static if (LOG) log("Adding path: " ~ path.toNativeString());
 
 					ret = open(path.toNativeString().toStringz, O_EVTONLY);
 					if (catchError!"open(watch)"(ret))
@@ -1416,7 +1429,7 @@ package:
 	private bool closeRemoteSocket(fd_t fd, bool forced) {
 		
 		int err;
-		log("shutdown");
+		static if (LOG) log("shutdown");
 		import libasync.internals.socket_compat : shutdown, SHUT_WR, SHUT_RDWR, SHUT_RD;
 		if (forced) 
 			err = shutdown(fd, SHUT_RDWR);
@@ -1441,7 +1454,7 @@ package:
 	// for connected sockets
 	bool closeSocket(fd_t fd, bool connected, bool forced = false)
 	{
-		log("closeSocket");
+		static if (LOG) log("closeSocket");
 		if (connected && !closeRemoteSocket(fd, forced) && !forced)
 			return false;
 		
@@ -1449,7 +1462,7 @@ package:
 			// todo: flush the socket here?
 
 			import core.sys.posix.unistd : close;
-			log("close");
+			static if (LOG) log("close");
 			int err = close(fd);
 			if (catchError!"closesocket"(err)) 
 				return false;
@@ -1521,7 +1534,7 @@ private:
 					if (file.folder != wd) continue; // this file isn't in the evented folder
 					if (file.path == entryPath) {
 						found = true;
-						log("File modified? " ~ entryPath.toNativeString() ~ " at: " ~ de.timeLastModified.to!string ~ " vs: " ~ file.lastModified.to!string);
+						static if (LOG) log("File modified? " ~ entryPath.toNativeString() ~ " at: " ~ de.timeLastModified.to!string ~ " vs: " ~ file.lastModified.to!string);
 						// Check if it was modified
 						if (!isDir(entryPath.toNativeString()) && de.timeLastModified > file.lastModified)
 						{
@@ -1561,7 +1574,7 @@ private:
 						EventInfo* evinfo;
 						try evinfo = m_watchers[fd]; catch { assert(false, "Could retrieve event info, directory watcher was not initialized properly, or you are operating on a closed directory watcher."); }
 
-						log("Adding path: " ~ path.toNativeString());
+						static if (LOG) log("Adding path: " ~ path.toNativeString());
 
 						import core.sys.posix.fcntl : open;
 						fd_t fwd = open(entryPath.toNativeString().toStringz, O_EVTONLY);
@@ -1736,13 +1749,13 @@ private:
 					static if (LOG) try log("Connection Started with " ~ csock.to!string); catch {}
 				}
 				catch (Exception e) {
-					log("Close socket");
+					static if (LOG) log("Close socket");
 					return closeClient();
 				}
 
 				// Announce connection state to the connection handler
 				try {
-					log("Connected to: " ~ addr.toString());
+					static if (LOG) log("Connected to: " ~ addr.toString());
 					evh.conn.connected = true;
 					evh(TCPEvent.CONNECT);
 				}
@@ -1826,11 +1839,59 @@ private:
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen);
 			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t)err);
 			close(fd);
+			return false;
 		}
 		
 		return true;
 	}
 
+	bool onEvent(fd_t fd, EventHandler del, int events) 
+	{
+		static if (EPOLL) 
+		{
+			const uint epoll_events = cast(uint) events;
+			const bool read = cast(bool) (epoll_events & EPOLLIN);
+			const bool write = cast(bool) (epoll_events & EPOLLOUT);
+			const bool error = cast(bool) (epoll_events & EPOLLERR);
+		}
+		else 
+		{
+			const short kqueue_events = cast(short) (events >> 16);
+			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
+			const bool read = cast(bool) (kqueue_events & EVFILT_READ);
+			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
+			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
+		}
+		
+		if (read) {
+			try {
+				del(EventCode.READ);
+			}
+			catch (Exception e) {
+				setInternalError!"del@Event.READ"(Status.ABORT);
+				return false;
+			}
+		}
+		
+		if (write) { 
+			
+			try {
+				del(EventCode.WRITE);
+			}
+			catch (Exception e) {
+				setInternalError!"del@Event.WRITE"(Status.ABORT);
+				return false;
+			}
+		}
+		
+		if (error) // failure
+		{ 
+			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t)err);
+			return false;
+		}
+		
+		return true;
+	}
 	bool onTCPTraffic(fd_t fd, TCPEventHandler del, int events, AsyncTCPConnection conn) 
 	{
 		//log("TCP Traffic at FD#" ~ fd.to!string);
@@ -2008,8 +2069,7 @@ private:
 
 		return true;
 	}
-
-	
+		
 	bool initTCPListener(fd_t fd, AsyncTCPListener ctxt, TCPAcceptHandler del, bool reusing = false)
 	in {
 		assert(ctxt.local !is NetworkAddress.init);
@@ -2671,6 +2731,8 @@ union EventObject {
 	DWHandler dwHandler;
 	UDPHandler udpHandler;
 	NotifierHandler notifierHandler;
+	EventHandler eventHandler;
+
 }
 
 enum EventType : char {
@@ -2680,7 +2742,8 @@ enum EventType : char {
 	Notifier,
 	Signal,
 	Timer,
-	DirectoryWatcher
+	DirectoryWatcher,
+	Event // custom
 }
 
 struct EventInfo {
@@ -2755,42 +2818,63 @@ public struct NetworkAddress {
 	body { return &addr_ip6; }
 	
 	/** Returns a string representation of the IP address
-	 */
+	*/
 	string toAddressString()
 	const {
 		import std.array : appender;
-		import std.string : format;
+		auto ret = appender!string();
+		ret.reserve(40);
+		toAddressString(str => ret.put(str));
+		return ret.data;
+	}
+	/// ditto
+	void toAddressString(scope void delegate(const(char)[]) @safe sink)
+	const {
+		import std.array : appender;
 		import std.format : formattedWrite;
+		ubyte[2] _dummy = void; // Workaround for DMD regression in master
 		
 		switch (this.family) {
 			default: assert(false, "toAddressString() called for invalid address family.");
 			case AF_INET:
-				ubyte[4] ip = (cast(ubyte*)&addr_ip4.sin_addr.s_addr)[0 .. 4];
-				return format("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+				ubyte[4] ip = () @trusted { return (cast(ubyte*)&addr_ip4.sin_addr.s_addr)[0 .. 4]; } ();
+				sink.formattedWrite("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+				break;
 			case AF_INET6:
 				ubyte[16] ip = addr_ip6.sin6_addr.s6_addr;
-				auto ret = appender!string();
-				ret.reserve(40);
 				foreach (i; 0 .. 8) {
-					if (i > 0) ret.put(':');
-					ret.formattedWrite("%x", bigEndianToNative!ushort(cast(ubyte[2])ip[i*2 .. i*2+2].ptr[0 .. 2]));
+					if (i > 0) sink(":");
+					_dummy[] = ip[i*2 .. i*2+2];
+					sink.formattedWrite("%x", bigEndianToNative!ushort(_dummy));
 				}
-				return ret.data;
+				break;
 		}
 	}
 	
 	/** Returns a full string representation of the address, including the port number.
-	 */
+	*/
 	string toString()
 	const {
-		
-		import std.string : format;
-		
-		auto ret = toAddressString();
+		import std.array : appender;
+		auto ret = appender!string();
+		toString(str => ret.put(str));
+		return ret.data;
+	}
+	/// ditto
+	void toString(scope void delegate(const(char)[]) @safe sink)
+	const {
+		import std.format : formattedWrite;
 		switch (this.family) {
 			default: assert(false, "toString() called for invalid address family.");
-			case AF_INET: return ret ~ format(":%s", port);
-			case AF_INET6: return format("[%s]:%s", ret, port);
+			case AF_INET:
+				toAddressString(sink);
+				sink.formattedWrite(":%s", port);
+				break;
+			case AF_INET6:
+				sink("[");
+				toAddressString(sink);
+				sink.formattedWrite("]:%s", port);
+				break;
 		}
 	}
 	
