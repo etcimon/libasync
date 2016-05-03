@@ -1886,7 +1886,7 @@ private:
 		
 		if (error) // failure
 		{ 
-			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t)err);
+			setInternalError!"EPOLLERR"(Status.ABORT, null);
 			return false;
 		}
 		

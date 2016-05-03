@@ -64,7 +64,7 @@ public:
 	}
 	
 package:
-	version(Posix) mixin EvInfoMixinsShared;
+	version(Posix) mixin EvInfoMixins;
 
 }
 
