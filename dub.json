@@ -22,6 +22,7 @@
                     "dflags-windows-x86": ["-m32mscoff"],
                     "subConfigurations": { "memutils": "32mscoff" }
             }
-    ]
+    ],
+    "versions": ["EnableDebugger"]
 
 }
