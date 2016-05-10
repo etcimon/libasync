@@ -316,6 +316,7 @@ package:
 				return 0;
 			}
 		}
+		else return 0;
 		
 		static if (LOG) try log("UDP Socket started FD#" ~ fd.to!string);
 		catch{}
@@ -848,12 +849,21 @@ package:
 	}
 	
 	bool broadcast(in fd_t fd, bool b) {
-		int val = b?1:0;
-		socklen_t len = val.sizeof;
-		int err = setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &val, len);
-		if (catchSocketError!"setsockopt"(err))
-			return false;
-		
+		{
+			int val = b?1:0;
+			socklen_t len = val.sizeof;
+			int err = setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &val, len);
+			if (catchSocketError!"setsockopt"(err))
+				return false;
+		}
+		{
+			INT val = 4;
+			socklen_t len = val.sizeof;
+			int err = setsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL, &val, len);
+			if (catchSocketError!"setsockopt"(err)) {
+				return false;
+			}
+		}
 		return true;
 		
 	}
@@ -884,9 +894,9 @@ package:
 	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
-		static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B"); catch{}
+		static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B " ~ addr.toString()); catch{}
 		int ret;
-		if (addr != NetworkAddress.init)
+		if (addr != NetworkAddress.init) 
 			ret = .sendto(fd, cast(void*) data.ptr, cast(INT) data.length, 0, addr.sockAddr, addr.sockAddrLen);
 		else
 			ret = .send(fd, cast(void*) data.ptr, cast(INT) data.length, 0);
@@ -1431,6 +1441,13 @@ private:
 	bool initUDPSocket(fd_t fd, AsyncUDPSocket ctxt)
 	{
 		INT err;
+		static if (LOG) log("Binding to UDP " ~ ctxt.local.toString());
+
+		if (!setOption(fd, TCPOption.REUSEADDR, true)) {
+			closesocket(fd);
+			return false;
+		}
+
 		err = bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
 		if (catchSocketError!"bind"(err)) {
 			closesocket(fd);
