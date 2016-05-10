@@ -682,8 +682,8 @@ mixin template RunKill()
 		static if (!EPOLL)
 		{
 			kevent_t[2] events;
-			EV_SET(&(events[0]), ctxt.socket, EVFILT_READ, EV_DELETE, 0, 0, null);
-			EV_SET(&(events[1]), ctxt.socket, EVFILT_WRITE, EV_DELETE, 0, 0, null);
+			EV_SET(&(events[0]), fd, EVFILT_READ, EV_DELETE, 0, 0, null);
+			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_DELETE, 0, 0, null);
 			err = kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
 			
 			if (catchError!"event_del(udp)"(err)) 
