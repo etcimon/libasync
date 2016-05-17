@@ -1722,7 +1722,7 @@ private:
 				conn.socket = csock;
 				conn.inbound = true;
 
-				nothrow bool closeClient() {
+				nothrow void closeClient() {
 					try ThreadMem.free(conn);
 					catch (Exception e){ assert(false, "Free failure"); }
 					closeSocket(csock, true, true);
