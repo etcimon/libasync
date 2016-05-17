@@ -33,7 +33,7 @@ public:
 
 	/// Grants broadcast permissions to the socket (must be set before run).
 	bool broadcast(bool b) 
-	in { assert(m_socket == fd_t.init, "Cannot change state on unbound UDP socket"); }	
+	in { assert(m_socket != fd_t.init, "Cannot change state on unbound UDP socket"); }	
 	body {
 		return m_evLoop.broadcast(m_socket, b);
 	}

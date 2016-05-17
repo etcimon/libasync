@@ -171,7 +171,7 @@ package:
 			return true;
 		
 		if (catchErrors!"MsgWaitForMultipleObjectsEx"(signal, errors)) {
-			log("Event Loop Exiting because of error");
+			static if (LOG) log("Event Loop Exiting because of error");
 			return false; 
 		}
 		
@@ -182,13 +182,18 @@ package:
 			DispatchMessageW(&msg);
 
 			if (m_status.code == Status.ERROR) {
-				log(m_status.text);
+				static if (LOG) log(m_status.text);
 				return false;
 			}
 		}
 		return true;
 	}
-	
+
+	bool run(AsyncEvent ctxt, EventHandler del)
+	{
+		return true;
+	}
+
 	fd_t run(AsyncTCPListener ctxt, TCPAcceptHandler del)
 	{
 		m_status = StatusInfo.init;
@@ -201,21 +206,24 @@ package:
 			if (catchSocketError!("run AsyncTCPConnection")(fd, INVALID_SOCKET))
 				return 0;
 			
-			if (!setOption(fd, TCPOption.REUSEADDR, true))
+			if (!setOption(fd, TCPOption.REUSEADDR, true)) {
+				closeSocket(fd, false);
 				return 0;
-			
+			}
 			// todo: defer accept?
 			
 			if (ctxt.noDelay) {
-				if (!setOption(fd, TCPOption.NODELAY, true))
+				if (!setOption(fd, TCPOption.NODELAY, true)) {
+					closeSocket(fd, false);
 					return 0;
+				}
 			}
 		} else reusing = true;
 
 		if (initTCPListener(fd, ctxt, reusing))
 		{
 			try {
-				log("Running listener on socket fd#" ~ fd.to!string);
+				static if (LOG) log("Running listener on socket fd#" ~ fd.to!string);
 				m_connHandlers[fd] = del;
 				version(Distributed)ctxt.init(m_hwnd, fd);
 			}
@@ -245,7 +253,7 @@ package:
 
 		if (fd == fd_t.init)
 			fd = WSASocketW(cast(int)ctxt.peer.family, SOCK_STREAM, IPPROTO_TCP, null, 0, WSA_FLAG_OVERLAPPED);
-		log("Starting connection at: " ~ fd.to!string);
+		static if (LOG) log("Starting connection at: " ~ fd.to!string);
 		if (catchSocketError!("run AsyncTCPConnection")(fd, INVALID_SOCKET))
 			return 0;
 		
@@ -254,24 +262,30 @@ package:
 		}
 		catch (Exception e) {
 			setInternalError!"m_tcpHandlers assign"(Status.ERROR, e.msg);
+			closeSocket(fd, false);
 			return 0;
 		}
-		
-		if (ctxt.noDelay) {
-			if (!setOption(fd, TCPOption.NODELAY, true))
-				return 0;
-		}
-		
-		if (!initTCPConnection(fd, ctxt)) {
+
+		nothrow void closeAll() {
 			try {
-				log("Remove event handler for " ~ fd.to!string);
+				static if (LOG) log("Remove event handler for " ~ fd.to!string);
 				m_tcpHandlers.remove(fd);
 			}
 			catch (Exception e) {
 				setInternalError!"m_tcpHandlers remove"(Status.ERROR, e.msg);
 			}
-			
 			closeSocket(fd, false);
+		}
+
+		if (ctxt.noDelay) {
+			if (!setOption(fd, TCPOption.NODELAY, true)) {
+				closeAll();
+				return 0;
+			}
+		}
+		
+		if (!initTCPConnection(fd, ctxt)) {
+			closeAll();
 			return 0;
 		}
 		
@@ -298,10 +312,11 @@ package:
 			}
 			catch (Exception e) {
 				setInternalError!"m_udpHandlers assign"(Status.ERROR, e.msg);
-				closeSocket(fd, false);
+				closesocket(fd);
 				return 0;
 			}
 		}
+		else return 0;
 		
 		static if (LOG) try log("UDP Socket started FD#" ~ fd.to!string);
 		catch{}
@@ -343,7 +358,7 @@ package:
 			m_error = GetLastErrorSafe();
 			m_status.code = Status.ERROR;
 			m_status.text = "kill(AsyncTimer)";
-			log(m_status);
+			static if (LOG) log(m_status);
 			return 0;
 		}
 		
@@ -412,7 +427,7 @@ package:
 		m_status = StatusInfo.init;
 		fd_t fd = ctxt.socket;
 		
-		log("Killing socket "~ fd.to!string);
+		static if (LOG) log("Killing socket "~ fd.to!string);
 		try { 
 			auto cb = m_tcpHandlers.get(ctxt.socket);
 			if (cb != TCPEventHandler.init){
@@ -464,7 +479,7 @@ package:
 			m_error = GetLastErrorSafe();
 			m_status.code = Status.ERROR;
 			m_status.text = "kill(AsyncTimer)";
-			log(m_status);
+			static if (LOG) log(m_status);
 			return false;
 		}
 		
@@ -487,7 +502,11 @@ package:
 		
 		return true;
 	}
-	
+
+	bool kill(AsyncEvent ctxt) {
+		return true;
+	}
+
 	bool kill(AsyncUDPSocket ctxt) {
 		m_status = StatusInfo.init;
 		
@@ -796,7 +815,8 @@ package:
 		}
 		return true;
 	}
-	
+
+	pragma(inline, true)
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
 		m_status = StatusInfo.init;
@@ -808,11 +828,11 @@ package:
 				m_status.code = Status.ASYNC;
 			return 0; // TODO: handle some errors more specifically
 		}
-		m_status.code = Status.OK;
 		
 		return cast(uint) ret;
 	}
-	
+		
+	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		m_status = StatusInfo.init;
@@ -825,17 +845,25 @@ package:
 				m_status.code = Status.ASYNC;
 			return 0; // TODO: handle some errors more specifically
 		}
-		m_status.code = Status.ASYNC;
 		return cast(uint) ret;
 	}
 	
 	bool broadcast(in fd_t fd, bool b) {
-		int val = b?1:0;
-		socklen_t len = val.sizeof;
-		int err = setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &val, len);
-		if (catchSocketError!"setsockopt"(err))
-			return false;
-		
+		{
+			int val = b?1:0;
+			socklen_t len = val.sizeof;
+			int err = setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &val, len);
+			if (catchSocketError!"setsockopt"(err))
+				return false;
+		}
+		{
+			INT val = 4;
+			socklen_t len = val.sizeof;
+			int err = setsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL, &val, len);
+			if (catchSocketError!"setsockopt"(err)) {
+				return false;
+			}
+		}
 		return true;
 		
 	}
@@ -866,9 +894,9 @@ package:
 	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
-		static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B"); catch{}
+		static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B " ~ addr.toString()); catch{}
 		int ret;
-		if (addr != NetworkAddress.init)
+		if (addr != NetworkAddress.init) 
 			ret = .sendto(fd, cast(void*) data.ptr, cast(INT) data.length, 0, addr.sockAddr, addr.sockAddrLen);
 		else
 			ret = .send(fd, cast(void*) data.ptr, cast(INT) data.length, 0);
@@ -1061,7 +1089,8 @@ package:
 		catch (Exception e){}
 		return addr;
 	}
-	
+		
+	pragma(inline, true)
 	void setInternalError(string TRACE)(in Status s, in string details = "", in error_t error = EWIN.ERROR_ACCESS_DENIED)
 	{
 		if (details.length > 0)
@@ -1413,6 +1442,13 @@ private:
 	bool initUDPSocket(fd_t fd, AsyncUDPSocket ctxt)
 	{
 		INT err;
+		static if (LOG) log("Binding to UDP " ~ ctxt.local.toString());
+
+		if (!setOption(fd, TCPOption.REUSEADDR, true)) {
+			closesocket(fd);
+			return false;
+		}
+
 		err = bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
 		if (catchSocketError!"bind"(err)) {
 			closesocket(fd);
@@ -1513,7 +1549,8 @@ private:
 		}
 		return false;
 	}
-	
+		
+	pragma(inline, true)
 	bool catchSocketErrors(string TRACE, T)(T val, Tuple!(T, Status)[] cmp ...)
 		if (isIntegral!T)
 	{
@@ -1546,9 +1583,9 @@ private:
 			}
 		}
 		return false;
-	}
-	
-	
+	}	
+
+	pragma(inline, true)
 	bool catchSocketError(string TRACE, T)(T val, T cmp = SOCKET_ERROR)
 		if (isIntegral!T)
 	{
@@ -1561,7 +1598,8 @@ private:
 		}
 		return false;
 	}
-	
+
+	pragma(inline, true)
 	error_t WSAGetLastErrorSafe() {
 		try {
 			return cast(error_t) WSAGetLastError();
@@ -1569,7 +1607,8 @@ private:
 			return EWIN.ERROR_ACCESS_DENIED;
 		}
 	}
-	
+		
+	pragma(inline, true)
 	error_t GetLastErrorSafe() {
 		try {
 			return cast(error_t) GetLastError();
@@ -1912,42 +1951,63 @@ public struct NetworkAddress {
 	body { return &addr_ip6; }
 	
 	/** Returns a string representation of the IP address
-		*/
+	*/
 	string toAddressString()
 	const {
 		import std.array : appender;
-		import std.string : format;
+		auto ret = appender!string();
+		ret.reserve(40);
+		toAddressString(str => ret.put(str));
+		return ret.data;
+	}
+	/// ditto
+	void toAddressString(scope void delegate(const(char)[]) @safe sink)
+	const {
+		import std.array : appender;
 		import std.format : formattedWrite;
+		ubyte[2] _dummy = void; // Workaround for DMD regression in master
 		
 		switch (this.family) {
 			default: assert(false, "toAddressString() called for invalid address family.");
 			case AF_INET:
-				ubyte[4] ip = (cast(ubyte*)&addr_ip4.sin_addr.s_addr)[0 .. 4];
-				return format("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+				ubyte[4] ip = () @trusted { return (cast(ubyte*)&addr_ip4.sin_addr.s_addr)[0 .. 4]; } ();
+				sink.formattedWrite("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+				break;
 			case AF_INET6:
 				ubyte[16] ip = addr_ip6.sin6_addr.s6_addr;
-				auto ret = appender!string();
-				ret.reserve(40);
 				foreach (i; 0 .. 8) {
-					if (i > 0) ret.put(':');
-					ret.formattedWrite("%x", bigEndianToNative!ushort(cast(ubyte[2])ip[i*2 .. i*2+2].ptr[0 .. 2]));
+					if (i > 0) sink(":");
+					_dummy[] = ip[i*2 .. i*2+2];
+					sink.formattedWrite("%x", bigEndianToNative!ushort(_dummy));
 				}
-				return ret.data;
+				break;
 		}
 	}
-	
+
 	/** Returns a full string representation of the address, including the port number.
-		*/
+	*/
 	string toString()
 	const {
-		
-		import std.string : format;
-		
-		auto ret = toAddressString();
+		import std.array : appender;
+		auto ret = appender!string();
+		toString(str => ret.put(str));
+		return ret.data;
+	}
+	/// ditto
+	void toString(scope void delegate(const(char)[]) @safe sink)
+	const {
+		import std.format : formattedWrite;
 		switch (this.family) {
 			default: assert(false, "toString() called for invalid address family.");
-			case AF_INET: return ret ~ format(":%s", port);
-			case AF_INET6: return format("[%s]:%s", ret, port);
+			case AF_INET:
+				toAddressString(sink);
+				sink.formattedWrite(":%s", port);
+				break;
+			case AF_INET6:
+				sink("[");
+				toAddressString(sink);
+				sink.formattedWrite("]:%s", port);
+				break;
 		}
 	}
 	

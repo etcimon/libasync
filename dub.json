@@ -10,7 +10,7 @@
     "libs-windows": ["ws2_32", "advapi32", "user32"],
     "libs-linux": ["rt"],
     "dependencies": {
-            "memutils": { "version": "~>0.4.4" }
+            "memutils": { "version": "~>0.4.5" }
     },
     "configurations": [
             {
@@ -22,6 +22,7 @@
                     "dflags-windows-x86": ["-m32mscoff"],
                     "subConfigurations": { "memutils": "32mscoff" }
             }
-    ]
+    ],
+    "versions": ["EnableDebugger"]
 
 }

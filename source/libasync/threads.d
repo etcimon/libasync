@@ -6,6 +6,7 @@ import libasync.events;
 import std.stdio;
 import std.container : Array;
 import core.atomic;
+import std.conv : to;
 
 nothrow {
 	struct Waiter {

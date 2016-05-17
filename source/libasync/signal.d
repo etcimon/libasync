@@ -53,7 +53,7 @@ public:
 	}
 
 	/// Registers the signal handler in the event loop
-	bool run(void delegate() del) 
+	synchronized bool run(void delegate() del) 
 	in {
 		debug assert(Thread.getThis() is cast(Thread)m_owner);
 	}

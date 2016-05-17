@@ -19,6 +19,7 @@ public import libasync.signal;
 public import libasync.watcher;
 public import libasync.file;
 public import libasync.threads;
+public import libasync.event;
 
 version(Windows) {
 	public import libasync.windows;
@@ -169,6 +170,10 @@ package:
 		return m_evLoop.closeSocket(fd, connected, listener);
 	}
 
+	bool run(AsyncEvent ctxt, EventHandler del) {
+		return m_evLoop.run(ctxt, del);
+	}
+
 	fd_t run(AsyncTCPConnection ctxt, TCPEventHandler del) {
 		return m_evLoop.run(ctxt, del);
 	}
@@ -195,6 +200,10 @@ package:
 
 	fd_t run(AsyncDirectoryWatcher ctxt, DWHandler del) {
 		return m_evLoop.run(ctxt, del);
+	}
+
+	bool kill(AsyncEvent obj) {
+		return m_evLoop.kill(obj);
 	}
 
 	bool kill(AsyncDirectoryWatcher obj) {
@@ -238,8 +247,9 @@ package:
 			m_asyncThreadsStarted = true;
 		}
 
-		if (!m_evLoop.loop(max_timeout) && m_evLoop.status.code == Status.EVLOOP_FAILURE)
+		if (!m_evLoop.loop(max_timeout) && m_evLoop.status.code == Status.EVLOOP_FAILURE) {
 			return false;
+		}
 
 		return true;
 	}

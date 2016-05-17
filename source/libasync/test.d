@@ -4,6 +4,7 @@ import libasync.events;
 import std.stdio;
 import std.datetime;
 import libasync.file;
+import std.conv : to;
 
 AsyncDirectoryWatcher g_watcher;
 shared AsyncDNS g_dns;
@@ -47,6 +48,10 @@ unittest {
 	g_watcher.kill();
 	g_notifier.kill();
 	g_listnr.kill();
+	version(LDC) {
+		import core.stdc.stdlib; exit(0);
+	}
+	
 }
 
 StopWatch g_swDns;
@@ -85,6 +90,7 @@ void testDirectoryWatcher() {
 		mkdir("./hey");
 		assert(g_watcher.watchDir("./hey/"));
 		tm.duration(1.seconds).run({
+			import std.file : write;
 			writeln("Writing to ./hey/tmp.tmp for the first time");
 			std.file.write("./hey/tmp.tmp", "some string");
 			tm.duration(100.msecs).run({
