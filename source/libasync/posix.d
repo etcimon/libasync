@@ -1689,21 +1689,18 @@ private:
 					fd_t csock = accept4(fd, addr.sockAddr, &addrlen, O_NONBLOCK);
 
 					if (catchError!".accept"(csock)) {
-						ret = false;
-						return ret;
+						return true;// this way we know there's nothing left to accept
 					}
 				} else /* if KQUEUE */ {
 					fd_t csock = accept(fd, addr.sockAddr, &addrlen);
 					
 					if (catchError!".accept"(csock)) {
-						ret = false;
-						return ret;
+						return true;
 					}
 					
 					// Make non-blocking so subsequent calls to recv/send return immediately
 					if (!setNonBlock(csock)) {
-						ret = false;
-						return ret;
+						continue;
 					}
 				}
 
@@ -1714,10 +1711,7 @@ private:
 					setInternalError!"addrlen"(Status.ABORT);
 					import core.sys.posix.unistd : close;
 					close(csock);
-					{
-						ret = false;
-						return ret;
-					}
+					continue;
 				}
 
 				// Allocate a new connection handler object
@@ -1732,10 +1726,6 @@ private:
 					try ThreadMem.free(conn);
 					catch (Exception e){ assert(false, "Free failure"); }
 					closeSocket(csock, true, true);
-					{
-						ret = false;
-						return ret;
-					}
 				}
 
 				// Get the connection handler from the callback
@@ -1744,13 +1734,15 @@ private:
 					evh = del(conn);
 					if (evh == TCPEventHandler.init || !initTCPConnection(csock, conn, evh, true)) {
 						static if (LOG) try log("Failed to connect"); catch {}
-						return closeClient();
+						closeClient();
+						continue;
 					}
 					static if (LOG) try log("Connection Started with " ~ csock.to!string); catch {}
 				}
 				catch (Exception e) {
 					static if (LOG) log("Close socket");
-					return closeClient();
+					closeClient();
+					continue;
 				}
 
 				// Announce connection state to the connection handler
@@ -1760,11 +1752,13 @@ private:
 					evh(TCPEvent.CONNECT);
 				}
 				catch (Exception e) {
+					closeClient();
 					setInternalError!"del@TCPEvent.CONNECT"(Status.ABORT);
-					{
-						ret = false;
-						return ret;
-					}
+				}
+				if (m_status.code == Status.ABORT)
+				{
+					try evh(TCPEvent.ERROR);
+					catch {}
 				}
 			} while(true);
 
