@@ -20,7 +20,6 @@ nothrow:
 	fd_t m_preInitializedSocket;
 	bool m_noDelay;
 	bool m_inbound;
-	debug bool m_dataRemaining;
 public:
 	this(EventLoop evl, fd_t preInitializedSocket = fd_t.init)
 	in { assert(evl !is null); }
@@ -121,27 +120,25 @@ public:
 		if (m_socket == 0)
 			return false;
 		else
-			return true;
-		
+			return true;		
 	}
 
 	/// Receive data from the underlying stream. To be used when TCPEvent.READ is received by the
 	/// callback handler. IMPORTANT: This must be called until is returns a lower value than the buffer!
+	final pragma(inline, true)
 	uint recv(ref ubyte[] ub)
-	in { assert(isConnected, "No socket to operate on"); }
-	body {
-		uint cnt = m_evLoop.recv(m_socket, ub);
-		debug {
-			if (ub.length > cnt)
-			m_dataRemaining = false;
-		}
-		return cnt;
+	//in { assert(isConnected, "No socket to operate on"); }
+	//body 
+	{
+		return m_evLoop.recv(m_socket, ub);
 	}
 
 	/// Send data through the underlying stream by moving it into the OS buffer.
+	final pragma(inline, true)
 	uint send(in ubyte[] ub)
-	in { assert(isConnected, "No socket to operate on"); }
-	body {
+	//in { assert(isConnected, "No socket to operate on"); }
+	//body
+	{
 		version(Posix)
 			scope(exit)
 				if (m_evLoop.status.code == Status.ASYNC)
@@ -295,12 +292,8 @@ package struct TCPEventHandler {
 	void delegate(TCPEvent) del;
 
 	void opCall(TCPEvent ev){
-		if (conn is null) return; //, "Connection was disposed before shutdown could be completed");
-		if (!conn.isConnected)
-			return;
-		debug conn.m_dataRemaining = true;
+		if (conn is null || !conn.isConnected) return; //, "Connection was disposed before shutdown could be completed");
 		del(ev);
-		//debug assert(!conn.m_dataRemaining, "You must recv the whole buffer, because TCP events are edge triggered!");
 		return;
 	}
 }

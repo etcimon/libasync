@@ -815,7 +815,8 @@ package:
 		}
 		return true;
 	}
-	
+
+	pragma(inline, true)
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
 		m_status = StatusInfo.init;
@@ -827,11 +828,11 @@ package:
 				m_status.code = Status.ASYNC;
 			return 0; // TODO: handle some errors more specifically
 		}
-		m_status.code = Status.OK;
 		
 		return cast(uint) ret;
 	}
-	
+		
+	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		m_status = StatusInfo.init;
@@ -844,7 +845,6 @@ package:
 				m_status.code = Status.ASYNC;
 			return 0; // TODO: handle some errors more specifically
 		}
-		m_status.code = Status.ASYNC;
 		return cast(uint) ret;
 	}
 	
@@ -1089,7 +1089,8 @@ package:
 		catch (Exception e){}
 		return addr;
 	}
-	
+		
+	pragma(inline, true)
 	void setInternalError(string TRACE)(in Status s, in string details = "", in error_t error = EWIN.ERROR_ACCESS_DENIED)
 	{
 		if (details.length > 0)
@@ -1548,7 +1549,8 @@ private:
 		}
 		return false;
 	}
-	
+		
+	pragma(inline, true)
 	bool catchSocketErrors(string TRACE, T)(T val, Tuple!(T, Status)[] cmp ...)
 		if (isIntegral!T)
 	{
@@ -1581,9 +1583,9 @@ private:
 			}
 		}
 		return false;
-	}
-	
-	
+	}	
+
+	pragma(inline, true)
 	bool catchSocketError(string TRACE, T)(T val, T cmp = SOCKET_ERROR)
 		if (isIntegral!T)
 	{
@@ -1596,7 +1598,8 @@ private:
 		}
 		return false;
 	}
-	
+
+	pragma(inline, true)
 	error_t WSAGetLastErrorSafe() {
 		try {
 			return cast(error_t) WSAGetLastError();
@@ -1604,7 +1607,8 @@ private:
 			return EWIN.ERROR_ACCESS_DENIED;
 		}
 	}
-	
+		
+	pragma(inline, true)
 	error_t GetLastErrorSafe() {
 		try {
 			return cast(error_t) GetLastError();
