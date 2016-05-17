@@ -798,7 +798,8 @@ package:
 		}
 
 	}
-
+	
+	pragma(inline, true)
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
 		static if (LOG) try log("Recv from FD: " ~ fd.to!string); catch {}
@@ -814,26 +815,25 @@ package:
 			return 0; // TODO: handle some errors more specifically
 		}
 
-		m_status.code = Status.OK;
+		//m_status.code = Status.OK;
 		
 		return cast(uint) ret < 0 ? 0 : ret;
 	}
-
+	
+	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		static if (LOG) try log("Send to FD: " ~ fd.to!string); catch {}
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : send;
 		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
-		try log("Sent: " ~ ret.to!string); catch {}
+		static if (LOG) try log("Sent: " ~ ret.to!string); catch {}
 		if (catchError!"send"(ret)) { // ret == -1
-			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-				try log("Write block"); catch {}
+			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) 
 				m_status.code = Status.ASYNC;
-				return 0;
-			}
-		} else
-			m_status.code = Status.OK;
+			return 0;
+			
+		}
 		return cast(uint) ret < 0 ? 0 : ret;
 	}
 
@@ -1690,7 +1690,7 @@ private:
 					fd_t csock = accept4(fd, addr.sockAddr, &addrlen, O_NONBLOCK);
 
 					if (catchError!".accept"(csock)) {
-						return true;
+						return true;// this way we know there's nothing left to accept
 					}
 				} else /* if KQUEUE */ {
 					fd_t csock = accept(fd, addr.sockAddr, &addrlen);
@@ -1755,7 +1755,11 @@ private:
 				catch (Exception e) {
 					closeClient();
 					setInternalError!"del@TCPEvent.CONNECT"(Status.ABORT);
-					continue;
+				}
+				if (m_status.code == Status.ABORT)
+				{
+					try evh(TCPEvent.ERROR);
+					catch {}
 				}
 			} while(true);
 
@@ -2219,6 +2223,7 @@ private:
 		return true;
 	}
 
+	pragma(inline, true)
 	bool catchError(string TRACE, T)(T val, T cmp = SOCKET_ERROR)
 		if (isIntegral!T)
 	{
@@ -2231,7 +2236,8 @@ private:
 		}
 		return false;
 	}
-
+	
+	pragma(inline, true)
 	bool catchSocketError(string TRACE)(fd_t fd)
 	{
 		m_status.text = TRACE;
@@ -2303,7 +2309,7 @@ private:
 		return false;
 	}
 
-	
+	pragma(inline, true)
 	error_t lastError() {
 		try {
 			return cast(error_t) errno;
