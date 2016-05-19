@@ -1,6 +1,6 @@
 ﻿module libasync.types;
 package:
-enum LOG = false; //trace
+enum LOG = true; //trace
 enum DEBUG = false;
 
 import std.typecons: Flag;

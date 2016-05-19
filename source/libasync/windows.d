@@ -836,8 +836,8 @@ package:
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		m_status = StatusInfo.init;
-		//static if (LOG) try log("SEND " ~ data.length.to!string ~ "B FD#" ~ fd.to!string);
-		//catch{}
+		static if (LOG) try log("SEND " ~ data.length.to!string ~ "B FD#" ~ fd.to!string);
+		catch{}
 		int ret = .send(fd, cast(const(void)*) data.ptr, cast(INT) data.length, 0);
 		
 		if (catchSocketError!"send"(ret)) {
@@ -1373,12 +1373,16 @@ private:
 					if (cb == TCPEventHandler.init) break; //, "Socket " ~ sock.to!string ~ " could not yield a callback");
 					if (!cb.conn) break;
 					if (*cb.conn.connected == false && *cb.conn.connecting) {
+						static if (LOG) log("TCPEvent CONNECT FD#" ~ sock.to!string);
+
 						*cb.conn.connecting = false;
 						*cb.conn.connected = true;
 						cb(TCPEvent.CONNECT);
 					}
-					else 
+					else { 
+						static if (LOG) log("TCPEvent READ FD#" ~ sock.to!string);
 						cb(TCPEvent.READ);
+					}
 				}
 				catch (Exception e) {
 					setInternalError!"del@TCPEvent.READ"(Status.ABORT); 
@@ -1416,7 +1420,7 @@ private:
 					static if (LOG) log("CLOSE FD#" ~ sock.to!string);
 					if (sock in m_tcpHandlers) {
 						cb = m_tcpHandlers.get(sock);
-						if (*cb.conn.connected) {
+						if (*cb.conn.connected || *cb.conn.connecting) {
 							cb(TCPEvent.CLOSE);
 							*cb.conn.connecting = false;
 							*cb.conn.connected = false;
@@ -1523,8 +1527,10 @@ private:
 		
 		auto errors = [	tuple(cast(size_t) SOCKET_ERROR, EWIN.WSAEWOULDBLOCK, Status.ASYNC) ];		
 		
-		if (catchSocketErrorsEq!"connectEQ"(err, errors))
+		if (catchSocketErrorsEq!"connectEQ"(err, errors)) {
+			*ctxt.connecting = true;
 			return true;
+		}
 		else if (catchSocketError!"connect"(err))
 			return false;
 		
