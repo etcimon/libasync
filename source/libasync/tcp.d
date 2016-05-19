@@ -139,11 +139,11 @@ public:
 	//in { assert(isConnected, "No socket to operate on"); }
 	//body
 	{
+		uint ret = m_evLoop.send(m_socket, ub);
 		version(Posix)
-			scope(exit)
-				if (m_evLoop.status.code == Status.ASYNC)
-					this.writeBlocked = true;
-		return m_evLoop.send(m_socket, ub);
+			if (m_evLoop.status.code == Status.ASYNC)
+				this.writeBlocked = true;
+		return ret;
 	}
 
 	/// Removes the connection from the event loop, closing it if necessary, and
