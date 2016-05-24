@@ -124,7 +124,8 @@ package struct UDPHandler {
 	AsyncUDPSocket conn;
 	void delegate(UDPEvent) del;
 	void opCall(UDPEvent code){
-		assert(conn !is null);
+		if(conn is null)
+			return;
 		del(code);
 		assert(conn !is null);
 		return;

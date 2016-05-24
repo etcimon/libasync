@@ -2041,8 +2041,8 @@ private:
 		else /* if KQUEUE */
 		{
 			kevent_t[2] _event;
-			EV_SET(&(_event[0]), fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, ev);
-			EV_SET(&(_event[1]), fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, ev);
+			EV_SET(&(_event[0]), fd, EVFILT_READ, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, ev);
+			EV_SET(&(_event[1]), fd, EVFILT_WRITE, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, ev);
 			err = kevent(m_kqueuefd, &(_event[0]), 2, null, 0, null);
 			if (catchError!"kevent_add_udp"(err))
 				return closeAll();
