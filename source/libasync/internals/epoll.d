@@ -19,75 +19,32 @@ nothrow:
 // Backport fix from druntime commit c94547af8d55e1490b51aac358171b761da6a657
 static if (__VERSION__ < 2071)
 {
-	version (X86)
+	version (X86) immutable PackedEvent = true;
+	else version (X86_64) immutable PackedEvent = true;
+	else version (ARM) immutable PackedEvent = false;
+	else version (AArch64) immutable PackedEvent = false;
+	else version (PPC) immutable PackedEvent = false;
+	else version (PPC64) immutable PackedEvent = false;
+	else version (MIPS64) immutable PackedEvent = false;
+	else version (SystemZ) immutable PackedEvent = false;
+	else static assert(false, "Platform not supported");
+
+	static if (PackedEvent)
 	{
 		align(1) struct epoll_event
 		{
 		align(1):
-			uint events;
-			epoll_data_t data;
-		}
-	}
-	else version (X86_64)
-	{
-		align(1) struct epoll_event
-		{
-		align(1):
-			uint events;
-			epoll_data_t data;
-		}
-	}
-	else version (ARM)
-	{
-		struct epoll_event
-		{
-			uint events;
-			epoll_data_t data;
-		}
-	}
-	else version (AArch64)
-	{
-		struct epoll_event
-		{
-			uint events;
-			epoll_data_t data;
-		}
-	}
-	else version (PPC)
-	{
-		struct epoll_event
-		{
-			uint events;
-			epoll_data_t data;
-		}
-	}
-	else version (PPC64)
-	{
-		struct epoll_event
-		{
-			uint events;
-			epoll_data_t data;
-		}
-	}
-	else version (MIPS64)
-	{
-		struct epoll_event
-		{
-			uint events;
-			epoll_data_t data;
-		}
-	}
-	else version (SystemZ)
-	{
-		struct epoll_event
-		{
 			uint events;
 			epoll_data_t data;
 		}
 	}
 	else
 	{
-		static assert(false, "Platform not supported");
+		struct epoll_event
+		{
+			uint events;
+			epoll_data_t data;
+		}
 	}
 
 	int epoll_ctl (int epfd, int op, int fd, epoll_event *event);
