@@ -1,18 +1,32 @@
 ﻿module libasync.internals.kqueue;
 nothrow:
-import core.stdc.stdint;    // intptr_t, uintptr_t
-import core.stdc.time : time_t;
-import core.stdc.config : c_long;
+import core.stdc.stdint : intptr_t, uintptr_t;
+public import core.sys.posix.signal : timespec;
+
+version (FreeBSD) {
+	public import core.sys.freebsd.sys.event;
+	immutable HasKqueue = true;
+}
+version (OSX) immutable HasKqueue = true;
+else immutable HasKqueue = false;
 
 extern(C):
 @nogc:
-struct timespec
-{
-	time_t  tv_sec;
-	c_long  tv_nsec;
+
+enum O_EVTONLY = 0x8000;
+
+/* While these are in druntime, they are - as of 2.071 - not marked as @nogc.
+ * So declare them here as such for platforms with kqueue. */
+static if (HasKqueue) {
+	int kqueue();
+	int kevent(int kq, const kevent_t *changelist, int nchanges,
+	           kevent_t *eventlist, int nevents,
+	           const timespec *timeout);
 }
 
-version(OSX) enum : short
+version(OSX):
+
+enum : short
 {
 	EVFILT_READ     =  -1,
 	EVFILT_WRITE    =  -2,
@@ -28,22 +42,7 @@ version(OSX) enum : short
 	EVFILT_SYSCOUNT =  11
 }
 
-version(FreeBSD) enum : short {
-
-	EVFILT_READ     =  -1,
-	EVFILT_WRITE    =  -2,
-	EVFILT_AIO      =  -3, /* attached to aio requests */
-	EVFILT_VNODE    =  -4, /* attached to vnodes */
-	EVFILT_PROC     =  -5, /* attached to struct proc */
-	EVFILT_SIGNAL   =  -6, /* attached to struct proc */
-	EVFILT_TIMER    =  -7, /* timers */
-	// EVFILT_NETDEV   =  -8, /* no longer supported */
-	EVFILT_FS       =  -9, /* filesystem events */
-	EVFILT_USER      = -11, /* User events */
-	EVFILT_SYSCOUNT =  11
-}
-
-void EV_SET(kevent_t* kevp, typeof(kevent_t.tupleof) args)
+extern(D) void EV_SET(kevent_t* kevp, typeof(kevent_t.tupleof) args)
 {
 	*kevp = kevent_t(args);
 }
@@ -56,10 +55,6 @@ struct kevent_t
 	uint        fflags;
 	intptr_t      data;
 	void        *udata; /* opaque user data identifier */
-}
-
-enum : uint {
-	O_EVTONLY = 0x8000
 }
 
 enum : ushort
@@ -87,14 +82,14 @@ enum : ushort
 enum : uint
 {
 	/*
-     * data/hint flags/masks for EVFILT_USER, shared with userspace
-     *
-     * On input, the top two bits of fflags specifies how the lower twenty four
-     * bits should be applied to the stored value of fflags.
-     *
-     * On output, the top two bits will always be set to NOTE_FFNOP and the
-     * remaining twenty four bits will contain the stored fflags value.
-     */
+	 * data/hint flags/masks for EVFILT_USER, shared with userspace
+	 *
+	 * On input, the top two bits of fflags specifies how the lower twenty four
+	 * bits should be applied to the stored value of fflags.
+	 *
+	 * On output, the top two bits will always be set to NOTE_FFNOP and the
+	 * remaining twenty four bits will contain the stored fflags value.
+	 */
 	NOTE_FFNOP      = 0x00000000, /* ignore input fflags */
 	NOTE_FFAND      = 0x40000000, /* AND fflags */
 	NOTE_FFOR       = 0x80000000, /* OR fflags */
@@ -103,16 +98,16 @@ enum : uint
 	NOTE_FFLAGSMASK = 0x00ffffff,
 	
 	NOTE_TRIGGER    = 0x01000000, /* Cause the event to be
-                                  triggered for output. */
+								  triggered for output. */
 	
 	/*
-     * data/hint flags for EVFILT_{READ|WRITE}, shared with userspace
-     */
+	 * data/hint flags for EVFILT_{READ|WRITE}, shared with userspace
+	 */
 	NOTE_LOWAT      = 0x0001, /* low water mark */
 	
 	/*
-     * data/hint flags for EVFILT_VNODE, shared with userspace
-     */
+	 * data/hint flags for EVFILT_VNODE, shared with userspace
+	 */
 	NOTE_DELETE     = 0x0001, /* vnode was removed */
 	NOTE_WRITE      = 0x0002, /* data contents changed */
 	NOTE_EXTEND     = 0x0004, /* size increased */
@@ -122,8 +117,8 @@ enum : uint
 	NOTE_REVOKE     = 0x0040, /* vnode access was revoked */
 	
 	/*
-     * data/hint flags for EVFILT_PROC, shared with userspace
-     */
+	 * data/hint flags for EVFILT_PROC, shared with userspace
+	 */
 	NOTE_EXIT       = 0x80000000, /* process exited */
 	NOTE_FORK       = 0x40000000, /* process forked */
 	NOTE_EXEC       = 0x20000000, /* process exec'd */
@@ -135,8 +130,3 @@ enum : uint
 	NOTE_TRACKERR   = 0x00000002, /* could not track child */
 	NOTE_CHILD      = 0x00000004, /* am a child process */
 }
-
-int kqueue();
-int kevent(int kq, const kevent_t *changelist, int nchanges,
-           kevent_t *eventlist, int nevents,
-           const timespec *timeout);
