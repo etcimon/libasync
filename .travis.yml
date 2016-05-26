@@ -8,11 +8,6 @@ d:
   - ldc-0.17.1
   - ldc-0.17.0
 
-
-matrix:
-  allow_failures:
-    - d: dmd-2.069.2
-
 script:
   - dub test --compiler=$DC
 
