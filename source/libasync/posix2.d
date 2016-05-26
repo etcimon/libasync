@@ -678,6 +678,10 @@ mixin template RunKill()
 		m_status = StatusInfo.init;
 		
 		fd_t fd = ctxt.id;
+		fd_t err = close(fd);
+
+		if (catchError!"event close"(err))
+				return false;
 
 		static if (!EPOLL)
 		{
@@ -686,7 +690,7 @@ mixin template RunKill()
 			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_DELETE, 0, 0, null);
 			err = kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
 			
-			if (catchError!"event_del(udp)"(err)) 
+			if (catchError!"event_del(event)"(err)) 
 				return false;
 		}		
 		
