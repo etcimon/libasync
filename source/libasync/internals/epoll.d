@@ -8,69 +8,108 @@
  */
 module libasync.internals.epoll;
 
+public import core.sys.linux.epoll;
+
 version (linux):
 
 extern (C):
 @system:
 nothrow:
 
-enum
+// Backport fix from druntime commit c94547af8d55e1490b51aac358171b761da6a657
+static if (__VERSION__ < 2071)
 {
-	EPOLL_CLOEXEC  = 0x80000,
-	EPOLL_NONBLOCK = 0x800
+	version (X86)
+	{
+		align(1) struct epoll_event
+		{
+		align(1):
+			uint events;
+			epoll_data_t data;
+		}
+	}
+	else version (X86_64)
+	{
+		align(1) struct epoll_event
+		{
+		align(1):
+			uint events;
+			epoll_data_t data;
+		}
+	}
+	else version (ARM)
+	{
+		struct epoll_event
+		{
+			uint events;
+			epoll_data_t data;
+		}
+	}
+	else version (AArch64)
+	{
+		struct epoll_event
+		{
+			uint events;
+			epoll_data_t data;
+		}
+	}
+	else version (PPC)
+	{
+		struct epoll_event
+		{
+			uint events;
+			epoll_data_t data;
+		}
+	}
+	else version (PPC64)
+	{
+		struct epoll_event
+		{
+			uint events;
+			epoll_data_t data;
+		}
+	}
+	else version (MIPS64)
+	{
+		struct epoll_event
+		{
+			uint events;
+			epoll_data_t data;
+		}
+	}
+	else version (SystemZ)
+	{
+		struct epoll_event
+		{
+			uint events;
+			epoll_data_t data;
+		}
+	}
+	else
+	{
+		static assert(false, "Platform not supported");
+	}
+
+	int epoll_ctl (int epfd, int op, int fd, epoll_event *event);
+	int epoll_wait (int epfd, epoll_event *events, int maxevents, int timeout);
 }
-
-enum 
-{
-	EPOLLIN 	= 0x001,
-	EPOLLPRI 	= 0x002,
-	EPOLLOUT 	= 0x004,
-	EPOLLRDNORM = 0x040,
-	EPOLLRDBAND = 0x080,
-	EPOLLWRNORM = 0x100,
-	EPOLLWRBAND = 0x200,
-	EPOLLMSG 	= 0x400,
-	EPOLLERR 	= 0x008,
-	EPOLLHUP 	= 0x010,
-	EPOLLRDHUP 	= 0x2000, // since Linux 2.6.17
-	EPOLLONESHOT = 1u << 30,
-	EPOLLET 	= 1u << 31
-}
-
-/* Valid opcodes ( "op" parameter ) to issue to epoll_ctl().  */
-enum
-{
-	EPOLL_CTL_ADD = 1, // Add a file descriptor to the interface.
-	EPOLL_CTL_DEL = 2, // Remove a file descriptor from the interface.
-	EPOLL_CTL_MOD = 3, // Change file descriptor epoll_event structure.
-}
-
-align(1) struct epoll_event 
-{
-align(1):
-	uint events;
-	epoll_data_t data;
-};
-
-union epoll_data_t 
-{
-	void *ptr;
-	int fd;
-	uint u32;
-	ulong u64;
-};
-
-int epoll_create (int size);
-int epoll_create1 (int flags);
-int epoll_ctl (int epfd, int op, int fd, epoll_event *event);
-int epoll_wait (int epfd, epoll_event *events, int maxevents, int timeout);
 
 enum EFD_NONBLOCK = 0x800;
 
 int eventfd (uint initval, int flags);
-int timerfd_create (int clockid, int flags);
+
+// Available as of druntime commit d4ef137ffd1a92e003b45d5a53958322d317271c
+static if (__VERSION__ >= 2069)
+{
+	public import core.sys.linux.timerfd : timerfd_create, timerfd_settime;
+}
+else
+{
+	int timerfd_create (int clockid, int flags);
+	int timerfd_settime (int fd, int flags, itimerspec* new_value, itimerspec* old_value);
+}
+
 import core.sys.posix.time : itimerspec;
-int timerfd_settime (int fd, int flags, itimerspec* new_value, itimerspec* old_value);
 
 import core.sys.posix.pthread : pthread_t;
 import core.sys.posix.signal : sigval;
