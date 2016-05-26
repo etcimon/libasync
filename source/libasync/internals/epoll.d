@@ -99,7 +99,7 @@ enum EFD_NONBLOCK = 0x800;
 int eventfd (uint initval, int flags);
 
 // Available as of druntime commit d4ef137ffd1a92e003b45d5a53958322d317271c
-static if (__VERSION__ >= 2069)
+static if (__VERSION__ >= 2070)
 {
 	public import core.sys.linux.timerfd : timerfd_create, timerfd_settime;
 }
