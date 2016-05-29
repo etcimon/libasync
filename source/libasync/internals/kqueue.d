@@ -1,7 +1,16 @@
 ﻿module libasync.internals.kqueue;
 nothrow:
 import core.stdc.stdint : intptr_t, uintptr_t;
-public import core.sys.posix.signal : timespec;
+version (Windows) {
+	import core.stdc.time : time_t;
+	import core.stdc.config : c_long;
+	extern(C) @nogc struct timespec {
+		time_t  tv_sec;
+		c_long  tv_nsec;
+	}
+} else {
+	public import core.sys.posix.signal : timespec;
+}
 
 version (FreeBSD) {
 	public import core.sys.freebsd.sys.event;
