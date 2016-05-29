@@ -1,7 +1,8 @@
 ﻿module libasync.internals.kqueue;
 nothrow:
 import core.stdc.stdint : intptr_t, uintptr_t;
-public import core.sys.posix.signal : timespec;
+version(Posix)
+	public import core.sys.posix.signal : timespec;
 
 version (FreeBSD) {
 	public import core.sys.freebsd.sys.event;
