@@ -255,6 +255,8 @@ public:
 		if (m_socket == fd_t.init)
 			return false;
 		else {
+			if (m_local.port == 0)
+				m_local = m_evLoop.localAddr(m_socket, m_local.ipv6);
 			m_started = true;
 			return true;
 		}
