@@ -208,8 +208,8 @@ package:
 		return m_evLoop.run(ctxt, del);
 	}
 
-	bool kill(AsyncEvent obj) {
-		return m_evLoop.kill(obj);
+	bool kill(AsyncEvent obj, bool forced = true) {
+		return m_evLoop.kill(obj, forced);
 	}
 
 	bool kill(AsyncDirectoryWatcher obj) {

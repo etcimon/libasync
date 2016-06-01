@@ -47,7 +47,7 @@ mixin template RunKill()
 	fd_t run(AsyncUDSConnection ctxt)
 	in { assert(ctxt.socket == fd_t.init, "UDS Connection is active. Use another instance."); }
 	body {
-		//m_status = StatusInfo.init;
+		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : socket, connect, SOCK_STREAM, IPPROTO_TCP, AF_UNIX;
 		import core.sys.posix.unistd : close;
 
@@ -705,22 +705,44 @@ mixin template RunKill()
 		return true;
 	}
 
-	bool kill(AsyncEvent ctxt) {
-		import core.sys.posix.unistd : close;		
-		
+	bool kill(AsyncEvent ctxt, bool forced = false) {
+		import core.sys.posix.unistd : close;
+
+		static if (LOG) log("Kill event");
 		m_status = StatusInfo.init;
-		
 		fd_t fd = ctxt.id;
-		fd_t err = close(fd);
 
-		if (catchError!"event close"(err))
-				return false;
+		if (ctxt.statefulSocket) {
+			bool has_socket = fd > 0;
+			ctxt.disconnecting = true;
 
-		try ThreadMem.free(ctxt.evInfo);
-		catch (Exception e){
-			assert(false, "Failed to free resources: " ~ e.msg);
+			if (forced) {
+				ctxt.connected = false;
+				ctxt.disconnecting = false;
+				if (ctxt.evInfo) {
+					try ThreadMem.free(ctxt.evInfo);
+					catch (Exception e) {
+						assert(false, "Failed to free resources: " ~ e.msg);
+					}
+					ctxt.evInfo = null;
+				}
+			}
+
+			return has_socket ? closeSocket(fd, true, forced) : true;
 		}
-		ctxt.evInfo = null;
+
+		fd_t err = close(fd);
+		if (catchError!"event close"(err))
+			return false;
+
+		if (ctxt.evInfo) {
+			try ThreadMem.free(ctxt.evInfo);
+			catch (Exception e) {
+				assert(false, "Failed to free resources: " ~ e.msg);
+			}
+			ctxt.evInfo = null;
+		}
+
 		return true;
 	}
 
