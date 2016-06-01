@@ -1840,36 +1840,63 @@ private:
 		return true;
 	}
 
-	bool onEvent(fd_t fd, EventHandler del, int events) 
+	bool onEvent(fd_t fd, EventHandler del, int events)
 	{
-		static if (EPOLL) 
+		bool connect = void, close = void;
+		auto conn = del.ev;
+
+		static if (EPOLL)
 		{
 			const uint epoll_events = cast(uint) events;
 			const bool read = cast(bool) (epoll_events & EPOLLIN);
 			const bool write = cast(bool) (epoll_events & EPOLLOUT);
 			const bool error = cast(bool) (epoll_events & EPOLLERR);
+			if (conn.statefulSocket) {
+				connect = ((cast(bool) (epoll_events & EPOLLIN)) || (cast(bool) (epoll_events & EPOLLOUT))) && !conn.disconnecting && !conn.connected;
+				close = (cast(bool) (epoll_events & EPOLLRDHUP)) || (cast(bool) (events & EPOLLHUP));
+			}
 		}
-		else 
+		else
 		{
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
 			const bool read = cast(bool) (kqueue_events & EVFILT_READ);
 			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
-		}
-		
-		if (read) {
-			try {
-				del(EventCode.READ);
+			if (conn.statefulSocket) {
+				connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !conn.disconnecting && !conn.connected);
+				close = cast(bool) (kqueue_flags & EV_EOF);
 			}
+		}
+
+		if (error) // failure
+		{
+			setInternalError!"EPOLLERR"(Status.ABORT, null);
+			try {
+				del(EventCode.ERROR);
+			}
+			catch (Exception e)
+			{
+				setInternalError!"del@Event.ERROR"(Status.ABORT);
+				// ignore failure...
+			}
+			return false;
+		}
+
+		if (conn.statefulSocket && connect) {
+			static if (LOG) try log("!connect"); catch {}
+			conn.connected = true;
+			try del(EventCode.CONNECT);
 			catch (Exception e) {
-				setInternalError!"del@Event.READ"(Status.ABORT);
+				setInternalError!"del@Event.CONNECT"(Status.ABORT);
 				return false;
 			}
+			return true;
 		}
-		
-		if (write) { 
-			
+
+		if (write && (!conn.statefulSocket || conn.connected && !conn.disconnecting && conn.writeBlocked)) {
+			if (conn.statefulSocket) conn.writeBlocked = false;
+			static if (LOG) try log("!write"); catch {}
 			try {
 				del(EventCode.WRITE);
 			}
@@ -1878,13 +1905,46 @@ private:
 				return false;
 			}
 		}
-		
-		if (error) // failure
-		{ 
-			setInternalError!"EPOLLERR"(Status.ABORT, null);
-			return false;
+
+		if (read && (!conn.statefulSocket || conn.connected && !conn.disconnecting)) {
+			static if (LOG) try log("!read"); catch {}
+			try {
+				del(EventCode.READ);
+			}
+			catch (Exception e) {
+				setInternalError!"del@Event.READ"(Status.ABORT);
+				return false;
+			}
 		}
-		
+
+		if (conn.statefulSocket && close && conn.connected && !conn.disconnecting)
+		{
+			static if (LOG) try log("!close"); catch {}
+			// todo: See if this hack is still necessary
+			if (!conn.connected && conn.disconnecting)
+				return true;
+
+			try del(EventCode.CLOSE);
+			catch (Exception e) {
+				setInternalError!"del@Event.CLOSE"(Status.ABORT);
+				return false;
+			}
+
+			// Careful here, the delegate might have closed the connection already
+			if (conn.connected) {
+				closeSocket(fd, !conn.disconnecting, conn.connected);
+
+				m_status.code = Status.ABORT;
+				conn.disconnecting = true;
+				conn.connected = false;
+				conn.writeBlocked = true;
+				conn.id = 0;
+
+				try ThreadMem.free(conn.evInfo);
+				catch (Exception e){ assert(false, "Error freeing resources"); }
+			}
+		}
+
 		return true;
 	}
 	bool onTCPTraffic(fd_t fd, TCPEventHandler del, int events, AsyncTCPConnection conn) 
@@ -2617,7 +2677,7 @@ static if (!EPOLL)
 	}
 }
 
-mixin template TCPConnectionMixins() {
+mixin template StatefulSocketMixins() {
 	
 	private CleanupData m_impl;
 	

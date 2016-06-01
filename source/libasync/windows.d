@@ -1653,8 +1653,8 @@ private:
 	
 }
 
-mixin template TCPConnectionMixins() {
-	
+mixin template StatefulSocketMixins() {
+
 	private CleanupData m_impl;
 	
 	struct CleanupData {

@@ -161,7 +161,7 @@ public:
 	}
 
 package:
-	mixin TCPConnectionMixins;
+	mixin StatefulSocketMixins;
 
 	@property void inbound(bool b) {
 		m_inbound = b;

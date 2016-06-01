@@ -13,9 +13,10 @@ private:
 	Thread m_owner;
 	EventLoop m_evLoop;
 	fd_t m_evId;
+	bool m_statefulSocket;
 
 public:
-	this(EventLoop evl, fd_t ev_id) 
+	this(EventLoop evl, fd_t ev_id, bool statefulSocket = false)
 	in {
 		assert(evl !is null && ev_id > 0);
 	}
@@ -24,6 +25,7 @@ public:
 		import core.thread : Thread;
 		m_owner = Thread.getThis();
 		m_evId = ev_id;
+		m_statefulSocket = statefulSocket;
 	}
 	
 	@property bool hasError() const 
@@ -64,8 +66,15 @@ public:
 	}
 	
 package:
-	version(Posix) mixin EvInfoMixins;
+	mixin StatefulSocketMixins;
 
+	@property bool statefulSocket() const {
+		return m_statefulSocket;
+	}
+
+	@property void id(fd_t id) {
+		m_evId = id;
+	}
 }
 
 package struct EventHandler {
@@ -81,6 +90,8 @@ package struct EventHandler {
 
 enum EventCode : char {
 	ERROR = 0,
-	READ, 
-	WRITE
+	READ,
+	WRITE,
+	CONNECT,
+	CLOSE
 }

@@ -39,9 +39,42 @@ mixin template RunKill()
 			close(fd);
 			return 0;
 		}
-		
+
 		return fd;
-		
+
+	}
+
+	fd_t run(AsyncUDSConnection ctxt)
+	in { assert(ctxt.socket == fd_t.init, "UDS Connection is active. Use another instance."); }
+	body {
+		//m_status = StatusInfo.init;
+		import libasync.internals.socket_compat : socket, connect, SOCK_STREAM, IPPROTO_TCP, AF_UNIX;
+		import core.sys.posix.unistd : close;
+
+		auto fd = ctxt.preInitializedSocket;
+		if (fd == fd_t.init) {
+			fd = socket(AF_UNIX, SOCK_STREAM, 0);
+		}
+
+		if (catchError!"run AsyncUDSConnection"(fd)) {
+			return 0;
+		}
+
+		/// Make sure the socket doesn't block on recv/send
+		if (!setNonBlock(fd)) {
+			static if (LOG) log("Close socket");
+			close(fd);
+			return 0;
+		}
+
+		/// Start the connection
+		auto err = connect(fd, ctxt.peer.name, ctxt.peer.nameLen);
+		if (catchError!"connect"(err)) {
+			close(fd);
+			return 0;
+		}
+
+		return fd;
 	}
 
 	bool run(AsyncEvent ctxt, EventHandler del)

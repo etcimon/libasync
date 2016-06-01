@@ -12,6 +12,7 @@ public import libasync.types;
 public import libasync.bufferedtcp;
 public import libasync.tcp;
 public import libasync.udp;
+public import libasync.uds;
 public import libasync.notifier;
 public import libasync.dns;
 public import libasync.timer;
@@ -181,7 +182,12 @@ package:
 	fd_t run(AsyncTCPListener ctxt, TCPAcceptHandler del) {
 		return m_evLoop.run(ctxt, del);
 	}
-	
+
+	version (Posix)
+	fd_t run(AsyncUDSConnection ctxt) {
+		return m_evLoop.run(ctxt);
+	}
+
 	fd_t run(shared AsyncSignal ctxt) {
 		return m_evLoop.run(ctxt);
 	}
