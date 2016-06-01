@@ -9,7 +9,7 @@ import std.file;
 
 /// Watches one or more directories in the local filesystem for the specified events
 /// by calling a custom event handler asynchroneously when they occur.
-/// 
+///
 /// Usage: run() the object, start watching directories, receive an event in your handler,
 /// read the changes by draining the buffer.
 final nothrow class AsyncDirectoryWatcher
@@ -24,7 +24,7 @@ public:
 	this(EventLoop evl)
 	in { assert(evl !is null); }
 	body { m_evLoop = evl; }
-	
+
 	mixin DefStatus;
 
 	/// Fills the buffer with file/folder events and returns the number
@@ -45,22 +45,22 @@ public:
 		DWHandler handler;
 		handler.del = del;
 		handler.ctxt = this;
-		
+
 		m_fd = m_evLoop.run(this, handler);
 		// import std.stdio;
 		// try writeln("Running with FD: ", m_fd); catch {}
-		
+
 		if (m_fd == fd_t.init)
 			return false;
 		return true;
 	}
 
-	/// Starts watching for file events in the specified directory, 
+	/// Starts watching for file events in the specified directory,
 	/// recursing into subdirectories will add those and its files
 	/// to the watch list as well.
 	bool watchDir(string path, DWFileEvent ev = DWFileEvent.ALL, bool recursive = false) {
 
-		try 
+		try
 		{
 			path = Path(path).toNativeString();
 			//import std.stdio;
@@ -134,18 +134,18 @@ public:
 	body {
 		return m_evLoop.kill(this);
 	}
-	
+
 	@property fd_t fd() const {
 		return m_fd;
 	}
-	
+
 package:
 	version(Posix) mixin EvInfoMixins;
 
 	@property void fd(fd_t val) {
 		m_fd = val;
 	}
-	
+
 }
 
 /// Represents one event on one file in a watched directory.
@@ -172,7 +172,7 @@ enum DWFileEvent : uint {
 	MODIFIED = 0x00000002,
 	MOVED_FROM = 0x00000040,
 	MOVED_TO = 0x00000080,
-	CREATED = 0x00000100, 
+	CREATED = 0x00000100,
 	DELETED = 0x00000200,
 	ALL = MODIFIED | MOVED_FROM | MOVED_TO | CREATED | DELETED
 }

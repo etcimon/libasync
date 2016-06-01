@@ -8,7 +8,7 @@ void main() {
 	void handler(TCPEvent ev) {
 		writeln("Event ", ev);
 	}
-	
+
 	auto evl = ThreadMem.alloc!EventLoop();
 	auto count = 1000;
 	foreach(_;0 .. count) {

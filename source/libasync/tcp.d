@@ -5,7 +5,7 @@ import libasync.events;
 import std.typecons : Tuple;
 
 /// Wraps a TCP stream between 2 network adapters, using a custom handler to
-/// signal related events. Many of these objects can be active concurrently 
+/// signal related events. Many of these objects can be active concurrently
 /// in a thread if the event loop is running and the handlers do not block.
 final class AsyncTCPConnection
 {
@@ -40,7 +40,7 @@ public:
 		return m_inbound;
 	}
 
-	/// Disables(true)/enables(false) nagle's algorithm (default:enabled). 
+	/// Disables(true)/enables(false) nagle's algorithm (default:enabled).
 	@property void noDelay(bool b)
 	{
 		if (m_socket == fd_t.init)
@@ -50,20 +50,20 @@ public:
 	}
 
 	/// Changes the default OS configurations for this underlying TCP Socket.
-	bool setOption(T)(TCPOption op, in T val) 
+	bool setOption(T)(TCPOption op, in T val)
 	in { assert(isConnected, "No socket to operate on"); }
 	body {
 		return m_evLoop.setOption(m_socket, op, val);
 	}
 
-	/// Returns the OS-specific structure of the internet address 
+	/// Returns the OS-specific structure of the internet address
 	/// of the remote network adapter
-	@property NetworkAddress peer() const 
+	@property NetworkAddress peer() const
 	{
 		return m_peer;
 	}
 
-	/// Returns the OS-specific structure of the internet address 
+	/// Returns the OS-specific structure of the internet address
 	/// for the local end of the connection.
 	@property NetworkAddress local()
 	in {
@@ -75,8 +75,8 @@ public:
 
 	/// Sets the remote address as an OS-specific structure (only usable before connecting).
 	@property void peer(NetworkAddress addr)
-	in { 
-		assert(!isConnected, "Cannot change remote address on a connected socket"); 
+	in {
+		assert(!isConnected, "Cannot change remote address on a connected socket");
 		assert(addr != NetworkAddress.init);
 	}
 	body {
@@ -86,8 +86,8 @@ public:
 	/// (Blocking) Resolves the specified host and resets the peer to this address.
 	/// Use AsyncDNS for a non-blocking resolver. (only usable before connecting).
 	typeof(this) host(string hostname, size_t port)
-	in { 
-		assert(!isConnected, "Cannot change remote address on a connected socket"); 
+	in {
+		assert(!isConnected, "Cannot change remote address on a connected socket");
 	}
 	body {
 		m_peer = m_evLoop.resolveHost(hostname, cast(ushort) port);
@@ -96,8 +96,8 @@ public:
 
 	/// Sets the peer to the specified IP address and port. (only usable before connecting).
 	typeof(this) ip(string ip, size_t port)
-	in { 
-		assert(!isConnected, "Cannot change remote address on a connected socket"); 
+	in {
+		assert(!isConnected, "Cannot change remote address on a connected socket");
 	}
 	body {
 		m_peer = m_evLoop.resolveIP(ip, cast(ushort) port);
@@ -112,7 +112,7 @@ public:
 		handler.conn = this;
 		return run(handler);
 	}
-	
+
 	bool run(TCPEventHandler del)
 	in { assert(!isConnected); }
 	body {
@@ -120,7 +120,7 @@ public:
 		if (m_socket == 0)
 			return false;
 		else
-			return true;		
+			return true;
 	}
 
 	/// Receive data from the underlying stream. To be used when TCPEvent.READ is received by the
@@ -128,7 +128,7 @@ public:
 	final pragma(inline, true)
 	uint recv(ref ubyte[] ub)
 	//in { assert(isConnected, "No socket to operate on"); }
-	//body 
+	//body
 	{
 		return m_evLoop.recv(m_socket, ub);
 	}
@@ -181,9 +181,9 @@ package:
 	}
 }
 
-/// Accepts connections on a single IP:PORT tuple by sending a new inbound AsyncTCPConnection 
+/// Accepts connections on a single IP:PORT tuple by sending a new inbound AsyncTCPConnection
 /// object to the handler for every newly completed handshake.
-/// 
+///
 /// Note: If multiple threads are listening to the same IP:PORT tuple, the connections will
 /// be distributed evenly between them. However, this behavior on Windows is not implemented yet.
 final class AsyncTCPListener
@@ -247,7 +247,7 @@ public:
 	}
 
 	private bool run(TCPAcceptHandler del)
-	in { 
+	in {
 		assert(m_local != NetworkAddress.init, "Cannot bind without an address. Please run .host() or .ip()");
 	}
 	body {
@@ -289,7 +289,7 @@ package:
 package struct TCPEventHandler {
 	AsyncTCPConnection conn;
 
-	/// Use getContext/setContext to persist the context in each activity. Using AsyncTCPConnection in args 
+	/// Use getContext/setContext to persist the context in each activity. Using AsyncTCPConnection in args
 	/// allows the EventLoop implementation to create and pass a new object, which is necessary for listeners.
 	void delegate(TCPEvent) del;
 

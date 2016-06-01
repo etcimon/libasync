@@ -12,7 +12,7 @@ shared AsyncDNS g_dns;
 
 unittest {
 	spawnAsyncThreads();
-	scope(exit) 
+	scope(exit)
 		destroyAsyncThreads();
 	// writeln("Unit test started");
 	g_cbCheck = new shared bool[19];
@@ -22,7 +22,7 @@ unittest {
 	g_evl.loop(1.msecs);
 	// writeln("Loading objects...");
 	testDirectoryWatcher();
-	
+
 	testDNS();
  	testOneshotTimer();
 	testMultiTimer();
@@ -34,9 +34,9 @@ unittest {
 	// writeln("Loaded. Running event loop...");
 	testFile();
 	testTCPConnect("localhost", 8081);
-	while(Clock.currTime() - gs_start < 7.seconds) 
+	while(Clock.currTime() - gs_start < 7.seconds)
 		g_evl.loop(100.msecs);
-	
+
 	int i;
 	foreach (bool b; g_cbCheck) {
 		assert(b, "Callback not triggered: g_cbCheck[" ~ i.to!string ~ "]");
@@ -51,7 +51,7 @@ unittest {
 	version(LDC) {
 		import core.stdc.stdlib; exit(0);
 	}
-	
+
 }
 
 StopWatch g_swDns;
@@ -189,26 +189,26 @@ void testSharedEvent() {
 
 	gs_shrEvent.trigger(evl2);
 
-	while(Clock.currTime() - gs_start < 1.seconds) 
+	while(Clock.currTime() - gs_start < 1.seconds)
 		evl2.loop();
 
 	gs_shrEvent.trigger(evl2);
 
-	while(Clock.currTime() - gs_start < 4.seconds) 
+	while(Clock.currTime() - gs_start < 4.seconds)
 		evl2.loop();
 }
 
-void testOneshotTimer() {	
+void testOneshotTimer() {
 	AsyncTimer g_timerOneShot = new AsyncTimer(g_evl);
 	g_timerOneShot.duration(1.seconds).run({
 		assert(!g_cbCheck[4] && Clock.currTime() - gs_start > 900.msecs && Clock.currTime() - gs_start < 1100.msecs);
 		assert(g_timerOneShot.id != 0);
 		g_cbCheck[4] = true;
-		
+
 	});
 }
 
-void testMultiTimer() {	
+void testMultiTimer() {
 	AsyncTimer g_timerMulti = new AsyncTimer(g_evl);
 	g_timerMulti.periodic().duration(1.seconds).run({
 		assert(g_lastTimer !is SysTime.init && Clock.currTime() - g_lastTimer > 900.msecs && Clock.currTime() - g_lastTimer < 1100.msecs);
@@ -279,7 +279,7 @@ void trafficHandler(TCPEvent ev){
 			// writeln("!!Server Error!");
 			break;
 	}
-	
+
 	return;
 }
 
@@ -407,7 +407,7 @@ void testHTTPConnect() {
 		return;
 	};
 
-	
+
 	conn.run(del);
 }
 

@@ -3,7 +3,7 @@
  * Available since Linux 2.6
  *
  * Copyright: Copyright Adil Baig 2012.
- * License : $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0) 
+ * License : $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
  * Authors  : Adil Baig (github.com/adilbaig)
  */
 module libasync.internals.epoll;

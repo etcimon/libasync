@@ -5,7 +5,7 @@ import libasync.types;
 import libasync.events;
 import core.thread;
 
-/// Enqueues a signal in the event loop of the AsyncSignal owner's thread, 
+/// Enqueues a signal in the event loop of the AsyncSignal owner's thread,
 /// which allows a foreign thread to trigger the callback handler safely.
 shared final class AsyncSignal
 {
@@ -18,7 +18,7 @@ private:
 
 public:
 
-	this(EventLoop evl) 
+	this(EventLoop evl)
 	in {
 		assert(evl !is null);
 	}
@@ -37,7 +37,7 @@ public:
 		}
 	}
 
-	@property bool hasError() const 
+	@property bool hasError() const
 	{
 		return (cast(EventLoop)m_evLoop).status.code != Status.OK;
 	}
@@ -53,7 +53,7 @@ public:
 	}
 
 	/// Registers the signal handler in the event loop
-	synchronized bool run(void delegate() del) 
+	synchronized bool run(void delegate() del)
 	in {
 		debug assert(Thread.getThis() is cast(Thread)m_owner);
 	}
@@ -69,7 +69,7 @@ public:
 	}
 
 	/// Cleans up underlying resources. This object must be run() again afterwards to be valid
-	bool kill() 
+	bool kill()
 	in {
 		debug assert(Thread.getThis() is cast(Thread)m_owner);
 	}

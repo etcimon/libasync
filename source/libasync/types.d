@@ -11,14 +11,14 @@ alias isForced = Flag!"ForceFind";
 mixin template DefStatus() {
 
 	/// Check this property to make sure the event loop hasn't failed
-	@property bool hasError() const 
+	@property bool hasError() const
 	{
 		return m_evLoop.status.code != Status.OK && m_evLoop.status.code != Status.ASYNC;
 	}
 
-	/* 
-	 * The status code is Status.ASYNC if the call is delayed (yield), Status.ABORT if an 
-	 * unrecoverable socket/fd error occurs (throw), or Status.ERROR if an internal error 
+	/*
+	 * The status code is Status.ASYNC if the call is delayed (yield), Status.ABORT if an
+	 * unrecoverable socket/fd error occurs (throw), or Status.ERROR if an internal error
 	 * occured (assert).
 	*/
 	@property StatusInfo status() const {
@@ -32,18 +32,18 @@ mixin template DefStatus() {
 }
 
 mixin template ContextMgr() {
-	T getContext(T)() 
+	T getContext(T)()
 		if (isPointer!T)
 	{
 		return cast(T*) m_ctxt;
 	}
-	
-	T getContext(T)() 
+
+	T getContext(T)()
 		if (is(T == class))
 	{
 		return cast(T) m_ctxt;
 	}
-	
+
 	void setContext(T)(T ctxt)
 		if (isPointer!T || is(T == class))
 	{
@@ -880,13 +880,13 @@ version(OSX) enum EPosix : int {
 	/* math software */
 	EDOM			=	33,		/* Numerical argument out of domain */
 	ERANGE			=	34,		/* Result too large */
-	
+
 	/* non-blocking and interrupt i/o */
 	EAGAIN			=	35,		/* Resource temporarily unavailable */
 	EWOULDBLOCK		= 	EAGAIN,	/* Operation would block */
 	EINPROGRESS		=	36,		/* Operation now in progress */
 	EALREADY		=	37,		/* Operation already in progress */
-	
+
 	/* ipc/network software -- argument errors */
 	ENOTSOCK		=	38,		/* Socket operation on non-socket */
 	EDESTADDRREQ	=	39,		/* Destination address required */
@@ -901,7 +901,7 @@ version(OSX) enum EPosix : int {
 	EAFNOSUPPORT	=	47,		/* Address family not supported by protocol family */
 	EADDRINUSE		=	48,		/* Address already in use */
 	EADDRNOTAVAIL	=	49,		/* Can't assign requested address */
-	
+
 	/* ipc/network software -- operational errors */
 	ENETDOWN		=	50,		/* Network is down */
 	ENETUNREACH		=	51,		/* Network is unreachable */
@@ -915,15 +915,15 @@ version(OSX) enum EPosix : int {
 	ETOOMANYREFS	=	59,		/* Too many references: can't splice */
 	ETIMEDOUT		=	60,		/* Operation timed out */
 	ECONNREFUSED	=	61,		/* Connection refused */
-	
+
 	ELOOP			=	62,		/* Too many levels of symbolic links */
 	ENAMETOOLONG	=	63,		/* File name too long */
-	
+
 	/* should be rearranged */
 	EHOSTDOWN		=	64,		/* Host is down */
 	EHOSTUNREACH	=	65,		/* No route to host */
 	ENOTEMPTY		=	66,		/* Directory not empty */
-	
+
 	/* quotas & mush */
 	EPROCLIM		=	67,		/* Too many processes */
 	EUSERS			=	68,		/* Too many users */
@@ -937,7 +937,7 @@ version(OSX) enum EPosix : int {
 	EPROGUNAVAIL	=	74,		/* RPC prog. not avail */
 	EPROGMISMATCH	=	75,		/* Program version wrong */
 	EPROCUNAVAIL	=	76,		/* Bad procedure for program */
-	
+
 	ENOLCK			=	77,		/* No locks available */
 	ENOSYS			=	78,		/* Function not implemented */
 	EFTYPE			=	79,		/* Inappropriate file type or format */
@@ -951,7 +951,7 @@ version(OSX) enum EPosix : int {
 	ENOATTR			=	87,		/* Attribute not found */
 
 	EDOOFUS			=	88,		/* Programming error */
-	
+
 	EBADMSG			=	89,		/* Bad message */
 	EMULTIHOP		=	90,		/* Multihop attempted */
 	ENOLINK			=	91,		/* Link has been severed */

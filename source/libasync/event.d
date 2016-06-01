@@ -27,24 +27,24 @@ public:
 		m_evId = ev_id;
 		m_statefulSocket = statefulSocket;
 	}
-	
-	@property bool hasError() const 
+
+	@property bool hasError() const
 	{
 		return (cast(EventLoop)m_evLoop).status.code != Status.OK;
 	}
-	
+
 	/// Used to diagnose errors when run() or kill() returns false
 	@property StatusInfo status() const {
 		return (cast(EventLoop)m_evLoop).status;
 	}
-	
+
 	/// Human-readable string describing the error
 	@property string error() const {
 		return (cast(EventLoop)m_evLoop).error;
 	}
-	
+
 	/// Registers the signal handler in the event loop
-	bool run(void delegate(EventCode) del) 
+	bool run(void delegate(EventCode) del)
 	in {
 		debug assert(Thread.getThis() is cast(Thread)m_owner);
 	}
@@ -52,7 +52,7 @@ public:
 
 		EventHandler handler;
 		handler.del = del;
-		handler.ev = this;		
+		handler.ev = this;
 		return (cast(EventLoop) m_evLoop).run(this, handler);
 	}
 
@@ -60,11 +60,11 @@ public:
 	synchronized @property Thread owner() const {
 		return cast(Thread) m_owner;
 	}
-	
+
 	@property fd_t id() const {
 		return m_evId;
 	}
-	
+
 package:
 	mixin StatefulSocketMixins;
 

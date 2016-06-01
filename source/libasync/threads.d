@@ -22,17 +22,17 @@ nothrow {
 
 	__gshared ThreadGroup gs_threads; // daemon threads
 	shared(int) gs_threadCnt;
-	
+
 }
 
-final class CmdProcessor : Thread 
+final class CmdProcessor : Thread
 {
 nothrow:
 private:
 	EventLoop m_evLoop;
 	Waiter m_waiter;
 	shared(bool) g_stop;
-	
+
 	this() {
 		try {
 			Mutex mtx = new Mutex;
@@ -54,7 +54,7 @@ private:
 		DNSCmd cmd;
 		Waiter waiter;
 		string url;
-		cmd = cmdInfo.command; 
+		cmd = cmdInfo.command;
 		waiter = cast(Waiter)cmdInfo.waiter;
 		url = cmdInfo.url;
 		try assert(m_waiter == waiter, "File processor is handling a command from the wrong thread"); catch {}
@@ -75,7 +75,7 @@ private:
 			try status.text = e.toString(); catch {}
 			ctxt.status = status;
 		}
-		
+
 		try {
 			cmdInfo.ready.trigger(m_evLoop);
 			synchronized(gs_wlock)
@@ -89,13 +89,13 @@ private:
 			ctxt.status = status;
 		}
 	}
-	
+
 	void process(shared AsyncFile ctxt) {
 		auto cmdInfo = ctxt.cmdInfo;
 		auto mutex = cmdInfo.mtx;
 		FileCmd cmd;
 		Waiter waiter;
-		cmd = cmdInfo.command; 
+		cmd = cmdInfo.command;
 		waiter = cast(Waiter)cmdInfo.waiter;
 
 		try assert(m_waiter == waiter, "File processor is handling a command from the wrong thread"); catch {}
@@ -112,7 +112,7 @@ private:
 					ctxt.offset = cast(ulong) (ctxt.offset + res.length);
 
 				break;
-				
+
 			case FileCmd.WRITE:
 
 				File file = cast(File)ctxt.file;
@@ -125,7 +125,7 @@ private:
 				ctxt.offset = cast(ulong) (ctxt.offset + ctxt.buffer.length);
 				break;
 
-			case FileCmd.APPEND:				
+			case FileCmd.APPEND:
 				File file = cast(File)ctxt.file;
 				synchronized(mutex) file.rawWrite(cast(ubyte[]) ctxt.buffer);
 				ctxt.offset = cast(ulong) file.size();
@@ -157,7 +157,7 @@ private:
 			ctxt.status = status;
 		}
 	}
-	
+
 	void run()
 	{
 		core.atomic.atomicOp!"+="(gs_threadCnt, cast(int) 1);
@@ -166,7 +166,7 @@ private:
 			synchronized(gs_wlock) {
 				gs_waiters.insertBack(m_waiter);
 			}
-			
+
 			gs_started.notifyAll();
 
 			process();
@@ -178,7 +178,7 @@ private:
 
 		core.atomic.atomicOp!"-="(gs_threadCnt, cast(int) 1);
 	}
-	
+
 	void stop()
 	{
 		atomicStore(g_stop, true);
@@ -189,7 +189,7 @@ private:
 			}
 		}
 	}
-	
+
 	private void process() {
 		while(!atomicLoad(g_stop)) {
 			CommandInfo cmd;
@@ -231,11 +231,11 @@ Waiter popWaiter() {
 			thr.start();
 			gs_threads.add(thr);
 		}
-		
+
 		synchronized(gs_wlock) {
 			if (start_thread && !gs_started.wait(5.seconds))
 				continue;
-			
+
 			try {
 				if (!cmd_handler.mtx && !gs_waiters.empty) {
 					cmd_handler = gs_waiters.back;

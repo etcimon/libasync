@@ -17,11 +17,11 @@ void main() {
 
 class TCPConnection {
 	AsyncTCPConnection m_conn;
-	
+
 	this(string host, size_t port)
 	{
 		m_conn = new AsyncTCPConnection(g_evl);
-		
+
 		if (!m_conn.host(host, port).run(&handler)) {
 			writeln(m_conn.status);
 		}
@@ -31,12 +31,12 @@ class TCPConnection {
 		onRead();
 		onWrite();
 	}
-	
+
 	void onRead() {
 		static ubyte[] bin = new ubyte[4092];
 		while (true) {
 			uint len = m_conn.recv(bin);
-			
+
 			if (len > 0) {
 				string res = cast(string)bin[0..len];
 				writeln("Received data: ", res);
@@ -45,22 +45,22 @@ class TCPConnection {
 			if (len < bin.length)
 				break;
 		}
-		
+
 
 	}
-	
+
 	void onWrite() {
 		m_conn.send(cast(ubyte[])"My Message");
 		writeln("Sent: My Message");
 	}
-	
+
 	void onClose() {
 		writeln("Connection closed");
 		g_closed = true;
 	}
-	
+
 	void handler(TCPEvent ev) {
-		
+
 		try final switch (ev) {
 			case TCPEvent.CONNECT:
 				onConnect();
@@ -81,5 +81,5 @@ class TCPConnection {
 		}
 		return;
 	}
-	
+
 }

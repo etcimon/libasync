@@ -40,7 +40,7 @@ EventLoop getThreadEventLoop() nothrow {
 
 /// Event handlers can be registered to the event loop by being run(), all events
 /// associated with them will trigger the OS to resume the underlying thread which
-/// enables the existence of all the asynchroneous event objects in this library. 
+/// enables the existence of all the asynchroneous event objects in this library.
 final class EventLoop
 {
 
@@ -50,7 +50,7 @@ package:
 
 nothrow:
 public:
-	this() { 
+	this() {
 		if (m_evLoop.started || !m_evLoop.init(this))
 			assert(false, "Event loop initialization failure");
 	}
@@ -71,7 +71,7 @@ public:
 			addr = m_evLoop.getAddressFromIP(ip, port, !ipv6, tcp);
 		return addr;
 	}
-	
+
 	/* Blocks until the hostname is resolved, unless it's invalid. */
 	NetworkAddress resolveHost(in string host, ushort port = 0, isIPv6 ipv6 = isIPv6.no, isTCP tcp = isTCP.yes, isForced force = isForced.yes)
 	{
@@ -90,7 +90,7 @@ package:
 		return m_evLoop.status;
 	}
 
-	@property string error() const 
+	@property string error() const
 	{
 		return m_evLoop.error;
 	}
@@ -151,12 +151,12 @@ package:
 		return m_evLoop.localAddr(fd, ipv6);
 	}
 
-	bool notify(T)(in fd_t fd, T payload) 
+	bool notify(T)(in fd_t fd, T payload)
 		if (is(T == shared AsyncSignal) || is(T == AsyncNotifier))
 	{
 		return m_evLoop.notify(fd, payload);
 	}
-	
+
 	bool setOption(T)(in fd_t fd, TCPOption option, in T val) {
 		return m_evLoop.setOption(fd, option, val);
 	}
@@ -191,11 +191,11 @@ package:
 	fd_t run(shared AsyncSignal ctxt) {
 		return m_evLoop.run(ctxt);
 	}
-	
+
 	fd_t run(AsyncNotifier ctxt) {
 		return m_evLoop.run(ctxt);
 	}
-	
+
 	fd_t run(AsyncTimer ctxt, TimerHandler del, Duration timeout) {
 		return m_evLoop.run(ctxt, del, timeout);
 	}
@@ -223,11 +223,11 @@ package:
 	bool kill(AsyncTCPListener obj) {
 		return m_evLoop.kill(obj);
 	}
-	
+
 	bool kill(shared AsyncSignal obj) {
 		return m_evLoop.kill(obj);
 	}
-	
+
 	bool kill(AsyncNotifier obj) {
 		return m_evLoop.kill(obj);
 	}
@@ -259,5 +259,5 @@ package:
 
 		return true;
 	}
-	
+
 }

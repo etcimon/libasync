@@ -24,20 +24,20 @@ public:
 
 	mixin DefStatus;
 
-	
-	/// Returns the locally bound address as an OS-specific structure. 
+
+	/// Returns the locally bound address as an OS-specific structure.
 	@property NetworkAddress local() const
 	{
 		return m_local;
 	}
 
 	/// Grants broadcast permissions to the socket (must be set before run).
-	bool broadcast(bool b) 
-	in { assert(m_socket != fd_t.init, "Cannot change state on unbound UDP socket"); }	
+	bool broadcast(bool b)
+	in { assert(m_socket != fd_t.init, "Cannot change state on unbound UDP socket"); }
 	body {
 		return m_evLoop.broadcast(m_socket, b);
 	}
-	
+
 	/// Sets the hostname and port to which the UDP socket must be bound locally.
 	typeof(this) host(string hostname, size_t port)
 	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
@@ -46,7 +46,7 @@ public:
 		m_local = m_evLoop.resolveHost(hostname, cast(ushort) port);
 		return this;
 	}
-	
+
 	/// Sets the IP and port to which the UDP socket will be bound locally.
 	typeof(this) ip(string ip, size_t port)
 	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
@@ -56,10 +56,10 @@ public:
 	}
 
 	/// Sets the local network address to which this UDP Socket will be bound.
-	@property void local(NetworkAddress l) 
-	in { 
+	@property void local(NetworkAddress l)
+	in {
 		assert(l != NetworkAddress.init, "The local address is empty");
-		assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); 
+		assert(m_socket == fd_t.init, "Cannot rebind an UDP socket");
 	}
 	body {
 		m_local = l;
@@ -67,14 +67,14 @@ public:
 
 	/// Registers the UDP socket in the underlying OS event loop, forwards
 	/// all related events to the specified delegate.
-	bool run(void delegate(UDPEvent) del) 
+	bool run(void delegate(UDPEvent) del)
 	{
 		UDPHandler handler;
 		handler.del = del;
 		handler.conn = this;
 		return run(handler);
 	}
-	
+
 	private bool run(UDPHandler del)
 	in { assert(m_local != NetworkAddress.init && m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
 	body {
@@ -137,6 +137,6 @@ package struct UDPHandler {
 
 enum UDPEvent : char {
 	ERROR = 0,
-	READ, 
+	READ,
 	WRITE
 }
