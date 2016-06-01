@@ -716,17 +716,6 @@ mixin template RunKill()
 		if (catchError!"event close"(err))
 				return false;
 
-		static if (!EPOLL)
-		{
-			kevent_t[2] events;
-			EV_SET(&(events[0]), fd, EVFILT_READ, EV_DELETE, 0, 0, null);
-			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_DELETE, 0, 0, null);
-			err = kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
-			
-			if (catchError!"event_del(event)"(err)) 
-				return false;
-		}		
-		
 		try ThreadMem.free(ctxt.evInfo);
 		catch (Exception e){
 			assert(false, "Failed to free resources: " ~ e.msg);
