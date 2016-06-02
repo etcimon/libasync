@@ -1,5 +1,7 @@
 ﻿module libasync.posix2;
 
+version (Posix):
+
 // workaround for IDE indent bug on too big files
 mixin template RunKill()
 {
@@ -44,7 +46,7 @@ mixin template RunKill()
 
 	}
 
-	fd_t run(AsyncUDSConnection ctxt)
+	fd_t run(AsyncUDSConnection ctxt, bool inbound = false)
 	in { assert(ctxt.socket == fd_t.init, "UDS Connection is active. Use another instance."); }
 	body {
 		m_status = StatusInfo.init;
@@ -60,6 +62,9 @@ mixin template RunKill()
 			return 0;
 		}
 
+		// Inbound sockets are already connected
+		if (inbound) return fd;
+
 		/// Make sure the socket doesn't block on recv/send
 		if (!setNonBlock(fd)) {
 			static if (LOG) log("Close socket");
@@ -70,6 +75,62 @@ mixin template RunKill()
 		/// Start the connection
 		auto err = connect(fd, ctxt.peer.name, ctxt.peer.nameLen);
 		if (catchError!"connect"(err)) {
+			close(fd);
+			return 0;
+		}
+
+		return fd;
+	}
+
+	fd_t run(AsyncUDSListener ctxt)
+	in {
+		assert(ctxt.socket == fd_t.init, "UDS Listener already bound. Please run another instance.");
+		assert(ctxt.local !is UnixAddress.init, "No locally binding address specified. Use AsyncUDSListener.local = new UnixAddress(*)");
+	}
+	body {
+		import libasync.internals.socket_compat : socket, bind, listen, SOCK_STREAM, AF_UNIX, SOMAXCONN;
+		import core.sys.posix.unistd : close, unlink;
+		import core.sys.posix.sys.un : sockaddr_un;
+
+		int err;
+		m_status = StatusInfo.init;
+
+		if (ctxt.unlinkFirst) {
+			import core.stdc.errno : errno, ENOENT;
+			err = unlink(cast(char*) (cast(sockaddr_un*) ctxt.local.name).sun_path);
+			if (err == -1 && errno != ENOENT) {
+				catchError!"unlink"(err);
+				return 0;
+			}
+		}
+
+		auto fd = ctxt.socket;
+		if (fd == fd_t.init) {
+			fd = socket(AF_UNIX, SOCK_STREAM, 0);
+		}
+
+		if (catchError!"run AsyncUDSAccept"(fd)) {
+			return 0;
+		}
+
+		/// Make sure the socket returns instantly when calling listen()
+		if (!setNonBlock(fd)) {
+			static if (LOG) log("Close socket");
+			close(fd);
+			return 0;
+		}
+
+		/// Bind and listen to socket
+		err = bind(fd, ctxt.local.name, ctxt.local.nameLen);
+		if (catchError!"bind"(err)) {
+			static if (LOG) log("Close socket");
+			close(fd);
+			return 0;
+		}
+
+		err = listen(fd, SOMAXCONN);
+		if (catchError!"listen"(err)) {
+			static if (LOG) log("Close socket");
 			close(fd);
 			return 0;
 		}
@@ -493,6 +554,28 @@ mixin template RunKill()
 			return fd;
 
 		}
+	}
+
+	AsyncUDSConnection accept(AsyncUDSListener ctxt) {
+		import core.stdc.errno : errno, EAGAIN, EWOULDBLOCK;
+		import libasync.internals.socket_compat : accept;
+
+		auto clientSocket = accept(ctxt.socket, null, null);
+		if (clientSocket == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+			// No more new incoming connections
+			return null;
+		} else if (catchError!".accept"(clientSocket)) {
+			// An error occured
+			return null;
+		}
+
+		// Allocate a new connection handler
+		AsyncUDSConnection conn;
+		try conn = ThreadMem.alloc!AsyncUDSConnection(ctxt.m_evLoop);
+		catch (Exception e){ assert(false, "Allocation failure"); }
+		conn.preInitializedSocket = clientSocket;
+
+		return conn;
 	}
 
 	bool kill(AsyncDirectoryWatcher ctxt) {

@@ -184,7 +184,12 @@ package:
 	}
 
 	version (Posix)
-	fd_t run(AsyncUDSConnection ctxt) {
+	fd_t run(AsyncUDSConnection ctxt, bool inbound = false) {
+		return m_evLoop.run(ctxt, inbound);
+	}
+
+	version (Posix)
+	fd_t run(AsyncUDSListener ctxt) {
 		return m_evLoop.run(ctxt);
 	}
 
@@ -206,6 +211,11 @@ package:
 
 	fd_t run(AsyncDirectoryWatcher ctxt, DWHandler del) {
 		return m_evLoop.run(ctxt, del);
+	}
+
+	version (Posix)
+	AsyncUDSConnection accept(AsyncUDSListener ctxt) {
+		return m_evLoop.accept(ctxt);
 	}
 
 	bool kill(AsyncEvent obj, bool forced = true) {
