@@ -1756,11 +1756,11 @@ private:
 					closeClient();
 					setInternalError!"del@TCPEvent.CONNECT"(Status.ABORT);
 				}
-				if (m_status.code == Status.ABORT)
+				/*if (m_status.code == Status.ABORT)
 				{
 					try evh(TCPEvent.ERROR);
 					catch {}
-				}
+				}*/
 			} while(true);
 
 		}
