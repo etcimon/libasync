@@ -81,8 +81,11 @@ public:
 		m_socket = m_evLoop.run(this, del);
 		if (m_socket == fd_t.init)
 			return false;
-		else
+		else {
+			if (m_local.port == 0)
+				m_local = m_evLoop.localAddr(m_socket, m_local.ipv6);
 			return true;
+		}
 	}
 
 	/// Receives data from one peer and copies its address to the
