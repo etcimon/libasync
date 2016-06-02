@@ -1,0 +1,7 @@
+{
+    "name": "uds_listener",
+    "description": "A simple numbers station with unix domain sockets",
+    "dependencies": {
+        "libasync": { "path": "../../" }
+    }
+}
