@@ -1653,7 +1653,7 @@ private:
 
 }
 
-mixin template StatefulSocketMixins() {
+mixin template StatefulFDMixins() {
 
 	private CleanupData m_impl;
 

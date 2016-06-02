@@ -5,7 +5,8 @@ import libasync.types;
 import libasync.events;
 
 /// Takes a raw kernel-emitted file descriptor and registers its events into the event loop for async processing
-/// note: If it's a socket, it must be made non-blocking before being passed here.
+/// NOTE: If it's a socket, it must be made non-blocking before being passed here.
+/// NOTE: By default dispatched events are READ, WRITE, and ERROR; enabling 'stateful' adds CONNECT and CLOSE
 class AsyncEvent
 {
 nothrow:
@@ -13,10 +14,10 @@ private:
 	Thread m_owner;
 	EventLoop m_evLoop;
 	fd_t m_evId;
-	bool m_statefulSocket;
+	bool m_stateful;
 
 public:
-	this(EventLoop evl, fd_t ev_id, bool statefulSocket = false)
+	this(EventLoop evl, fd_t ev_id, bool stateful = false)
 	in {
 		assert(evl !is null && ev_id > 0);
 	}
@@ -25,7 +26,7 @@ public:
 		import core.thread : Thread;
 		m_owner = Thread.getThis();
 		m_evId = ev_id;
-		m_statefulSocket = statefulSocket;
+		m_stateful = stateful;
 	}
 
 	@property bool hasError() const
@@ -66,10 +67,10 @@ public:
 	}
 
 package:
-	mixin StatefulSocketMixins;
+	mixin StatefulFDMixins;
 
-	@property bool statefulSocket() const {
-		return m_statefulSocket;
+	@property bool stateful() const {
+		return m_stateful;
 	}
 
 	@property void id(fd_t id) {

@@ -48,7 +48,7 @@ mixin template RunKill()
 	in { assert(ctxt.socket == fd_t.init, "UDS Connection is active. Use another instance."); }
 	body {
 		m_status = StatusInfo.init;
-		import libasync.internals.socket_compat : socket, connect, SOCK_STREAM, IPPROTO_TCP, AF_UNIX;
+		import libasync.internals.socket_compat : socket, connect, SOCK_STREAM, AF_UNIX;
 		import core.sys.posix.unistd : close;
 
 		auto fd = ctxt.preInitializedSocket;
@@ -712,7 +712,7 @@ mixin template RunKill()
 		m_status = StatusInfo.init;
 		fd_t fd = ctxt.id;
 
-		if (ctxt.statefulSocket) {
+		if (ctxt.stateful) {
 			bool has_socket = fd > 0;
 			ctxt.disconnecting = true;
 

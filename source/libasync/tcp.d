@@ -161,7 +161,7 @@ public:
 	}
 
 package:
-	mixin StatefulSocketMixins;
+	mixin StatefulFDMixins;
 
 	@property void inbound(bool b) {
 		m_inbound = b;

@@ -1851,7 +1851,7 @@ private:
 			const bool read = cast(bool) (epoll_events & EPOLLIN);
 			const bool write = cast(bool) (epoll_events & EPOLLOUT);
 			const bool error = cast(bool) (epoll_events & EPOLLERR);
-			if (conn.statefulSocket) {
+			if (conn.stateful) {
 				connect = ((cast(bool) (epoll_events & EPOLLIN)) || (cast(bool) (epoll_events & EPOLLOUT))) && !conn.disconnecting && !conn.connected;
 				close = (cast(bool) (epoll_events & EPOLLRDHUP)) || (cast(bool) (events & EPOLLHUP));
 			}
@@ -1863,7 +1863,7 @@ private:
 			const bool read = cast(bool) (kqueue_events & EVFILT_READ);
 			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
-			if (conn.statefulSocket) {
+			if (conn.stateful) {
 				connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !conn.disconnecting && !conn.connected);
 				close = cast(bool) (kqueue_flags & EV_EOF);
 			}
@@ -1883,7 +1883,7 @@ private:
 			return false;
 		}
 
-		if (conn.statefulSocket && connect) {
+		if (conn.stateful && connect) {
 			static if (LOG) try log("!connect"); catch {}
 			conn.connected = true;
 			try del(EventCode.CONNECT);
@@ -1894,8 +1894,8 @@ private:
 			return true;
 		}
 
-		if (write && (!conn.statefulSocket || conn.connected && !conn.disconnecting && conn.writeBlocked)) {
-			if (conn.statefulSocket) conn.writeBlocked = false;
+		if (write && (!conn.stateful || conn.connected && !conn.disconnecting && conn.writeBlocked)) {
+			if (conn.stateful) conn.writeBlocked = false;
 			static if (LOG) try log("!write"); catch {}
 			try {
 				del(EventCode.WRITE);
@@ -1906,7 +1906,7 @@ private:
 			}
 		}
 
-		if (read && (!conn.statefulSocket || conn.connected && !conn.disconnecting)) {
+		if (read && (!conn.stateful || conn.connected && !conn.disconnecting)) {
 			static if (LOG) try log("!read"); catch {}
 			try {
 				del(EventCode.READ);
@@ -1917,7 +1917,7 @@ private:
 			}
 		}
 
-		if (conn.statefulSocket && close && conn.connected && !conn.disconnecting)
+		if (conn.stateful && close && conn.connected && !conn.disconnecting)
 		{
 			static if (LOG) try log("!close"); catch {}
 			// todo: See if this hack is still necessary
@@ -2677,7 +2677,7 @@ static if (!EPOLL)
 	}
 }
 
-mixin template StatefulSocketMixins() {
+mixin template StatefulFDMixins() {
 
 	private CleanupData m_impl;
 
