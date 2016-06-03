@@ -503,7 +503,7 @@ package:
 		return true;
 	}
 
-	bool kill(AsyncEvent ctxt) {
+	bool kill(AsyncEvent ctxt, bool forced = false) {
 		return true;
 	}
 
