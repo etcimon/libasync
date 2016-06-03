@@ -310,12 +310,16 @@ package:
 				try events = allocArray!kevent_t(manualAllocator(), 128);
 				catch (Exception e) { assert(false, "Could not allocate events array"); }
 			}
-			time_t secs = timeout.split!("seconds", "nsecs")().seconds;
-			c_long ns = timeout.split!("seconds", "nsecs")().nsecs;
-			auto tspec = libasync.internals.kqueue.timespec(secs, ns);
 
-			num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, &tspec);
+			if (timeout != -1.seconds) {
+				time_t secs = timeout.split!("seconds", "nsecs")().seconds;
+				c_long ns = timeout.split!("seconds", "nsecs")().nsecs;
+				auto tspec = libasync.internals.kqueue.timespec(secs, ns);
 
+				num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, &tspec);
+			} else {
+				num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, null);
+			}
 		}
 
 		auto errors = [	tuple(EINTR, Status.EVLOOP_TIMEOUT) ];
