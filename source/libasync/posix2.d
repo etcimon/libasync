@@ -99,7 +99,7 @@ mixin template RunKill()
 			import core.stdc.errno : errno, ENOENT;
 			err = unlink(cast(char*) (cast(sockaddr_un*) ctxt.local.name).sun_path);
 			if (err == -1 && errno != ENOENT) {
-				catchError!"unlink"(err);
+				if (catchError!"unlink"(err)) {}
 				return 0;
 			}
 		}
