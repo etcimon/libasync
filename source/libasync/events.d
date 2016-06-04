@@ -184,8 +184,8 @@ package:
 	}
 
 	version (Posix)
-	fd_t run(AsyncUDSConnection ctxt, bool inbound = false) {
-		return m_evLoop.run(ctxt, inbound);
+	fd_t run(AsyncUDSConnection ctxt) {
+		return m_evLoop.run(ctxt);
 	}
 
 	version (Posix)

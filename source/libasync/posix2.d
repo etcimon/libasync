@@ -46,7 +46,7 @@ mixin template RunKill()
 
 	}
 
-	fd_t run(AsyncUDSConnection ctxt, bool inbound = false)
+	fd_t run(AsyncUDSConnection ctxt)
 	in { assert(ctxt.socket == fd_t.init, "UDS Connection is active. Use another instance."); }
 	body {
 		m_status = StatusInfo.init;
@@ -63,7 +63,7 @@ mixin template RunKill()
 		}
 
 		// Inbound sockets are already connected
-		if (inbound) return fd;
+		if (ctxt.inbound) return fd;
 
 		/// Make sure the socket doesn't block on recv/send
 		if (!setNonBlock(fd)) {
@@ -571,9 +571,9 @@ mixin template RunKill()
 
 		// Allocate a new connection handler
 		AsyncUDSConnection conn;
-		try conn = ThreadMem.alloc!AsyncUDSConnection(ctxt.m_evLoop);
+		try conn = ThreadMem.alloc!AsyncUDSConnection(ctxt.m_evLoop, clientSocket);
 		catch (Exception e){ assert(false, "Allocation failure"); }
-		conn.preInitializedSocket = clientSocket;
+		conn.inbound = true;
 
 		return conn;
 	}

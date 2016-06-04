@@ -19,6 +19,7 @@ package:
 private:
 	UnixAddress m_peer;
 	fd_t m_socket, m_preInitializedSocket;
+	bool m_inbound;
 
 nothrow:
 
@@ -31,26 +32,28 @@ package:
 		return m_preInitializedSocket;
 	}
 
-	@property void preInitializedSocket(fd_t preInitializedSocket)
-	in {
-		assert(m_socket == fd_t.init, "Cannot change the initializing socket on a connected socket");
-	}
-	body {
-		m_preInitializedSocket = preInitializedSocket;
+	@property void inbound(bool inbound) {
+		m_inbound = inbound;
 	}
 
 public:
-	this(EventLoop evl)
+	this(EventLoop evl, fd_t preInitializedSocket = fd_t.init)
 	in { assert(evl !is null); }
 	body {
 		m_evLoop = evl;
+		m_preInitializedSocket = preInitializedSocket;
 	}
 
 	mixin DefStatus;
 
-	// Returns false if the connection has gone.
+	/// Returns false if the connection has gone.
 	@property bool isConnected() const {
 		return m_socket != fd_t.init;
+	}
+
+	/// Returns true if this connection was accepted by an AsyncUDSListener instance.
+	@property bool inbound() const {
+		return m_inbound;
 	}
 
 	@property UnixAddress peer() const
@@ -70,8 +73,7 @@ public:
 	bool run(void delegate(EventCode) del)
 	in { assert(!isConnected); }
 	body {
-		bool inbound = m_preInitializedSocket != fd_t.init;
-		m_socket = m_evLoop.run(this, inbound);
+		m_socket = m_evLoop.run(this);
 		if (m_socket == 0) return false;
 
 		m_event = new AsyncEvent(m_evLoop, m_socket, true);
