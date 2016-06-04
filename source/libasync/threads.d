@@ -265,13 +265,15 @@ shared static this() {
 	gs_started = new Condition(gs_wlock);
 }
 
-bool spawnAsyncThreads() nothrow {
+bool spawnAsyncThreads(int threadCount = 4) nothrow
+in { assert(threadCount >= 1, "At least one file/dns worker thread is required."); }
+body {
 	import core.atomic : atomicLoad;
 	try {
 		if(!atomicLoad(gs_closing) && atomicLoad(gs_threadCnt) == 0) {
 			synchronized {
 				if(!atomicLoad(gs_closing) && atomicLoad(gs_threadCnt) == 0) {
-					foreach (i; 0 .. 4) {
+					foreach (i; 0 .. threadCount) {
 						Thread thr = new CmdProcessor;
 						thr.isDaemon = true;
 						thr.name = "CmdProcessor";
