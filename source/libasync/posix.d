@@ -37,7 +37,7 @@ version(linux) {
 			sigset_t mask;
 			// todo: use more signals for more event loops per thread.. (is this necessary?)
 			//foreach (j; __libc_current_sigrtmin() .. __libc_current_sigrtmax() + 1) {
-			//import std.stdio : writeln; 
+			//import std.stdio : writeln;
 			//try writeln("Blocked signal " ~ (__libc_current_sigrtmin() + j).to!string ~ " in instance " ~ m_instanceId.to!string); catch {}
 			sigemptyset(&mask);
 			sigaddset(&mask, cast(int) __libc_current_sigrtmin());
@@ -112,7 +112,7 @@ private:
 	}
 
 package:
-	
+
 	/// workaround for IDE indent bug on too big files
 	mixin RunKill!();
 
@@ -129,7 +129,7 @@ package:
 		shared static ushort i;
 		string* failer = null;
 
-		
+
 		m_instanceId = i;
 		static if (!EPOLL) g_threadId = new size_t(cast(size_t)m_instanceId);
 
@@ -155,7 +155,7 @@ package:
 
 			if (catchError!"epoll_create1"(m_epollfd))
 				return false;
-			
+
 			import core.sys.linux.sys.signalfd;
 			import core.thread : getpid;
 
@@ -175,7 +175,7 @@ package:
 				}
 			} catch { }
 
-			
+
 
 			sfd = signalfd(-1, &mask, SFD_NONBLOCK);
 			assert(sfd > 0, "Failed to setup signalfd in epoll");
@@ -185,10 +185,10 @@ package:
 			epoll_event _event;
 			_event.events = EPOLLIN;
 			evtype = EventType.Signal;
-			try 
+			try
 				m_evSignal = ThreadMem.alloc!EventInfo(sfd, evtype, EventObject.init, m_instanceId);
-			catch (Exception e){ 
-				assert(false, "Allocation error"); 
+			catch (Exception e){
+				assert(false, "Allocation error");
 			}
 			_event.data.ptr = cast(void*) m_evSignal;
 
@@ -199,7 +199,7 @@ package:
 			}
 
 		}
-			else /* if KQUEUE */ 
+			else /* if KQUEUE */
 		{
 			try {
 				if (!gs_queueMutex) {
@@ -209,7 +209,7 @@ package:
 				}
 				if (g_evIdxAvailable.empty) {
 					g_evIdxAvailable.reserve(32);
-					
+
 					foreach (k; g_evIdxAvailable.length .. g_evIdxAvailable.capacity) {
 						g_evIdxAvailable.insertBack(k + 1);
 					}
@@ -223,14 +223,14 @@ package:
 				sigset_t mask;
 				sigemptyset(&mask);
 				sigaddset(&mask, SIGXCPU);
-				
+
 				err = sigprocmask(SIG_BLOCK, &mask, null);
 			} catch {}
 
 			EventType evtype = EventType.Signal;
 
 			// use GC because ThreadMem fails at emplace for shared objects
-			try 
+			try
 				m_evSignal = ThreadMem.alloc!EventInfo(SIGXCPU, evtype, EventObject.init, m_instanceId);
 			catch (Exception e) {
 				assert(false, "Failed to allocate resources");
@@ -300,27 +300,31 @@ package:
 			num = epoll_wait(m_epollfd, cast(epoll_event*)&events[0], 128, timeout_ms);
 			assert(events !is null && events.length <= 128);
 
-			
+
 		}
 		else /* if KQUEUE */ {
 			import core.sys.posix.time : time_t;
 			import core.sys.posix.config : c_long;
 			static kevent_t[] events;
 			if (events.length == 0) {
-				try events = allocArray!kevent_t(manualAllocator(), 128); 
-				catch (Exception e) { assert(false, "Could not allocate events array"); }				
+				try events = allocArray!kevent_t(manualAllocator(), 128);
+				catch (Exception e) { assert(false, "Could not allocate events array"); }
 			}
-			time_t secs = timeout.split!("seconds", "nsecs")().seconds;
-			c_long ns = timeout.split!("seconds", "nsecs")().nsecs;
-			auto tspec = libasync.internals.kqueue.timespec(secs, ns);
 
-			num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, &tspec);
+			if (timeout != -1.seconds) {
+				time_t secs = timeout.split!("seconds", "nsecs")().seconds;
+				c_long ns = timeout.split!("seconds", "nsecs")().nsecs;
+				auto tspec = libasync.internals.kqueue.timespec(secs, ns);
 
+				num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, &tspec);
+			} else {
+				num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, null);
+			}
 		}
 
 		auto errors = [	tuple(EINTR, Status.EVLOOP_TIMEOUT) ];
-		
-		if (catchEvLoopErrors!"event_poll'ing"(num, errors)) 
+
+		if (catchEvLoopErrors!"event_poll'ing"(num, errors))
 			return false;
 
 		if (num > 0)
@@ -329,7 +333,7 @@ package:
 		foreach(i; 0 .. num) {
 			success = false;
 			m_status = StatusInfo.init;
-			static if (EPOLL) 
+			static if (EPOLL)
 			{
 				epoll_event _event = events[i];
 				static if (LOG) try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch {}
@@ -356,11 +360,11 @@ package:
 
 					import core.sys.posix.unistd : close;
 					success = onEvent(info.fd, info.evObj.eventHandler, event_flags);
-										
+
 					if (!success) {
 						close(info.fd);
 						try ThreadMem.free(info);
-						catch (Exception e){ assert(false, "Error freeing resources"); }						
+						catch (Exception e){ assert(false, "Error freeing resources"); }
 					}
 					break;
 				case EventType.TCPAccept:
@@ -452,7 +456,7 @@ package:
 					static if (LOG) try log("Got signal!"); catch {}
 
 					static if (EPOLL) {
-						
+
 						static if (LOG) try log("Got signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch {}
 						import core.sys.linux.sys.signalfd : signalfd_siginfo;
 						import core.sys.posix.unistd : read;
@@ -465,15 +469,15 @@ package:
 							setInternalError!"signal handler"(Status.ERROR);
 						}
 
-						
+
 					}
 					else /* if KQUEUE */
 					{
 						static AsyncSignal[] sigarr;
-						
+
 						if (sigarr.length == 0) {
-							try sigarr = new AsyncSignal[32]; 
-							catch (Exception e) { assert(false, "Could not allocate signals array"); }		
+							try sigarr = new AsyncSignal[32];
+							catch (Exception e) { assert(false, "Could not allocate signals array"); }
 						}
 
 						bool more = popSignals(sigarr);
@@ -503,13 +507,13 @@ package:
 						try ThreadMem.free(info);
 						catch (Exception e){ assert(false, "Error freeing resources"); }
 					}
-					
+
 					if (!success && m_status.code == Status.ABORT) {
 						abortHandler(true);
-						
+
 					}
 					else if (!success && m_status.code == Status.ERROR) {
-						abortHandler(false); 
+						abortHandler(false);
 					}
 					break;
 				case EventType.TCPTraffic:
@@ -523,7 +527,7 @@ package:
 							static if (LOG) try log("closeAll()"); catch {}
 							if (info.evObj.tcpEvHandler.conn.connected)
 								closeSocket(info.fd, true, true);
-							
+
 							info.evObj.tcpEvHandler.conn.socket = 0;
 						}
 
@@ -620,12 +624,12 @@ package:
 						import libasync.internals.socket_compat : SO_REUSEPORT;
 						int val = value?1:0;
 						err = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &val, val.sizeof);
-					
+
 						// Not all linux kernels support SO_REUSEPORT
 						// ignore invalid and not supported errors on linux
 						if (errno == EINVAL || errno == ENOPROTOOPT) {
 							return true;
-						}						
+						}
 
 						return errorHandler();
 					}
@@ -798,7 +802,7 @@ package:
 		}
 
 	}
-	
+
 	pragma(inline, true)
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
@@ -806,7 +810,7 @@ package:
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : recv;
 		int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
-		
+
 		static if (LOG) log(".recv " ~ ret.to!string ~ " bytes of " ~ data.length.to!string ~ " @ " ~ fd.to!string);
 		if (catchError!".recv"(ret)){ // ret == SOCKET_ERROR == -1 ?
 			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
@@ -816,10 +820,10 @@ package:
 		}
 
 		//m_status.code = Status.OK;
-		
+
 		return cast(uint) ret < 0 ? 0 : ret;
 	}
-	
+
 	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
 	{
@@ -829,10 +833,10 @@ package:
 		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
 		static if (LOG) try log("Sent: " ~ ret.to!string); catch {}
 		if (catchError!"send"(ret)) { // ret == -1
-			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) 
+			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 				m_status.code = Status.ASYNC;
 			return 0;
-			
+
 		}
 		return cast(uint) ret < 0 ? 0 : ret;
 	}
@@ -846,11 +850,11 @@ package:
 		addr.family = AF_INET6;
 		socklen_t addrLen = addr.sockAddrLen;
 		long ret = recvfrom(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, &addrLen);
-		
+
 		if (addrLen < addr.sockAddrLen) {
 			addr.family = AF_INET;
 		}
-		
+
 		static if (LOG) try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
 		if (catchError!".recvfrom"(ret)) { // ret == -1
 			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
@@ -859,10 +863,10 @@ package:
 		}
 
 		m_status.code = Status.OK;
-		
+
 		return cast(uint) ret;
 	}
-	
+
 	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
 	{
 		import libasync.internals.socket_compat : sendto;
@@ -872,7 +876,7 @@ package:
 		static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B");
 		catch{}
 		long ret = sendto(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, addr.sockAddrLen);
-		
+
 		if (catchError!".sendto"(ret)) { // ret == -1
 			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 				m_status.code = Status.ASYNC;
@@ -910,18 +914,18 @@ package:
 
 			long val = 1;
 			fd_t err = cast(fd_t) write(fd, &val, long.sizeof);
-			
+
 			if (catchError!"write(notify)"(err)) {
 				return false;
 			}
 			return true;
 		}
 		else /* if KQUEUE */
-		{			
+		{
 			kevent_t _event;
 			EV_SET(&_event, fd, EVFILT_USER, EV_ENABLE | EV_CLEAR, NOTE_TRIGGER | 0x1, 0, ctxt.evInfo);
 			int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
-			
+
 			if (catchError!"kevent_notify"(err)) {
 				return false;
 			}
@@ -931,7 +935,7 @@ package:
 
 	bool notify(in fd_t fd, shared AsyncSignal ctxt)
 	{
-		static if (EPOLL) 
+		static if (EPOLL)
 		{
 
 			sigval sigvl;
@@ -942,7 +946,7 @@ package:
 				return false;
 			}
 		}
-		else /* if KQUEUE */ 
+		else /* if KQUEUE */
 		{
 
 			import core.thread : getpid;
@@ -950,7 +954,7 @@ package:
 			addSignal(ctxt);
 
 			try {
-				static if (LOG) log("Notified fd: " ~ fd.to!string ~ " of PID " ~ getpid().to!string); 
+				static if (LOG) log("Notified fd: " ~ fd.to!string ~ " of PID " ~ getpid().to!string);
 				int err = core.sys.posix.signal.kill(getpid(), SIGXCPU);
 				if (catchError!"notify(signal)"(err))
 					assert(false, "Signal could not be raised");
@@ -1024,7 +1028,7 @@ package:
 			return addFolderRecursive(info.path);
 
 		} else /* if KQUEUE */ {
-			/// Manually handle recursivity & file tracking. Each folder is an event! 
+			/// Manually handle recursivity & file tracking. Each folder is an event!
 			/// E.g. file creation shows up as a folder change, we must be prepared to seek the file.
 			import core.sys.posix.fcntl;
 			import libasync.internals.kqueue;
@@ -1059,15 +1063,15 @@ package:
 						m_dwFolders[ret] = DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd);
 
 					kevent_t _event;
-					
+
 					EV_SET(&_event, ret, EVFILT_VNODE, EV_ADD | EV_CLEAR, events, 0, cast(void*) evinfo);
-					
+
 					int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
-					
+
 					if (catchError!"kevent_timer_add"(err))
 						return 0;
 
-					
+
 					if (is_dir) foreach (de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
 						Path filePath = Path(de.name);
 						if (!filePath.absolute)
@@ -1079,12 +1083,12 @@ package:
 							fwd = addRecursive(filePath, false); // gets an ID but will not scan
 							m_dwFiles[fwd] = DWFileInfo(ret, filePath, de.timeLastModified, isDir(filePath.toNativeString()));
 						}
-						
+
 					}
 
-				} catch (Exception e) { 
+				} catch (Exception e) {
 					try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add directory " ~ path.toNativeString() ~ ": " ~ e.msg);  catch {}
-					return 0; 
+					return 0;
 				}
 				return ret;
 			}
@@ -1099,7 +1103,7 @@ package:
 
 			}
 			catch (Exception e) {
-				setInternalError!"dw.watch"(Status.ERROR, "Failed to watch directory: " ~ e.msg); 
+				setInternalError!"dw.watch"(Status.ERROR, "Failed to watch directory: " ~ e.msg);
 			}
 
 			return cast(uint) wd;
@@ -1138,7 +1142,7 @@ package:
 					 m_dwFiles.remove(id);
 					 }
 					 }*/
-					m_dwFolders.remove(tuple(cast(fd_t)fd, fi.wi.wd)); 
+					m_dwFolders.remove(tuple(cast(fd_t)fd, fi.wi.wd));
 
 					if (fi.wi.recursive) {
 						// find all subdirectories by comparing the path
@@ -1157,9 +1161,9 @@ package:
 
 					}
 					return true;
-				} catch (Exception e) { 
+				} catch (Exception e) {
 					try setInternalError!"inotify_rm_watch"(Status.ERROR, "Could not unwatch directory: " ~ e.toString()); catch {}
-					return false; 
+					return false;
 				}
 			}
 
@@ -1183,7 +1187,7 @@ package:
 			nothrow bool removeAll(DWFolderInfo fi) {
 				import core.sys.posix.unistd : close;
 
-				
+
 				bool event_unset(uint id) {
 					kevent_t _event;
 					EV_SET(&_event, cast(int) id, EVFILT_VNODE, EV_DELETE, 0, 0, null);
@@ -1213,7 +1217,7 @@ package:
 						// search for subfolders and unset them / close their wd
 						foreach (ref const DWFolderInfo folder; m_dwFolders) {
 							if (folder.fd == fi.fd && folder.wi.path.startsWith(fi.wi.path)) {
-								
+
 								if (!event_unset(folder.wi.wd))
 									return false;
 
@@ -1235,7 +1239,7 @@ package:
 						foreach (rm_wd; remove_list[])
 							removeFolder(rm_wd);
 
-						
+
 					}
 				} catch (Exception e) {
 					try setInternalError!"dwFolders.get(wd)"(Status.ERROR, "Could not close the folder " ~ fi.to!string ~ ": " ~ e.toString()); catch {}
@@ -1268,12 +1272,12 @@ package:
 			ssize_t nread = read(fd, buf.ptr, cast(uint)buf.sizeof);
 			if (catchError!"read()"(nread))
 			{
-				if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) 
+				if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 					m_status.code = Status.ASYNC;
 				return 0;
 			}
 			assert(nread > 0);
-			
+
 
 			/// starts (recursively) watching all newly created folders in a recursive entry,
 			/// creates events for additional files/folders founds, and unwatches all deleted folders
@@ -1288,7 +1292,7 @@ package:
 							entryPath = fi.wi.path ~ entryPath;
 
 						if (fi.wi.recursive && isDir(entryPath.toNativeString())) {
-							
+
 							watch(fd, WatchInfo(fi.wi.events, entryPath, fi.wi.recursive, 0) );
 							void genEvents(Path subpath) {
 								foreach (de; dirEntries(subpath.toNativeString(), SpanMode.shallow)) {
@@ -1300,9 +1304,9 @@ package:
 										genEvents(subsubpath);
 								}
 							}
-							
+
 							genEvents(entryPath);
-							
+
 						}
 					}
 				}
@@ -1337,14 +1341,14 @@ package:
 					try {
 						fi = m_dwFolders.get(tuple(cast(fd_t)fd,cast(uint)ev.wd), DWFolderInfo.init);
 						if (fi == DWFolderInfo.init) {
-							setInternalError!"m_dwFolders[ev.wd]"(Status.ERROR, "Could not retrieve wd index in folders: " ~ ev.wd.to!string); 
+							setInternalError!"m_dwFolders[ev.wd]"(Status.ERROR, "Could not retrieve wd index in folders: " ~ ev.wd.to!string);
 							continue;
 						}
-						path = fi.wi.path ~ Path(name); 
+						path = fi.wi.path ~ Path(name);
 					}
-					catch (Exception e) { 
-						setInternalError!"m_dwFolders[ev.wd]"(Status.ERROR, "Could not retrieve wd index in folders"); 
-						return 0; 
+					catch (Exception e) {
+						setInternalError!"m_dwFolders[ev.wd]"(Status.ERROR, "Could not retrieve wd index in folders");
+						return 0;
 					}
 
 					dst[i] = DWChangeInfo(evtype, path);
@@ -1368,13 +1372,13 @@ package:
 							}
 						}
 						catch (Exception e) {
-							setInternalError!"recurseInto"(Status.ERROR, "Failed to watch/unwatch contents of folder recursively."); 
-							return 0; 
+							setInternalError!"recurseInto"(Status.ERROR, "Failed to watch/unwatch contents of folder recursively.");
+							return 0;
 						}
 
 					}
 
-					
+
 					i++;
 					if (i >= dst.length)
 						return cast(uint) i;
@@ -1428,11 +1432,11 @@ package:
 	}
 
 	private bool closeRemoteSocket(fd_t fd, bool forced) {
-		
+
 		int err;
 		static if (LOG) log("shutdown");
 		import libasync.internals.socket_compat : shutdown, SHUT_WR, SHUT_RDWR, SHUT_RD;
-		if (forced) 
+		if (forced)
 			err = shutdown(fd, SHUT_RDWR);
 		else
 			err = shutdown(fd, SHUT_WR);
@@ -1458,21 +1462,21 @@ package:
 		static if (LOG) log("closeSocket");
 		if (connected && !closeRemoteSocket(fd, forced) && !forced)
 			return false;
-		
+
 		if (!connected || forced) {
 			// todo: flush the socket here?
 
 			import core.sys.posix.unistd : close;
 			static if (LOG) log("close");
 			int err = close(fd);
-			if (catchError!"closesocket"(err)) 
+			if (catchError!"closesocket"(err))
 				return false;
 		}
 		return true;
 	}
 
-	
-	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true) 
+
+	NetworkAddress getAddressFromIP(in string ipAddr, in ushort port = 0, in bool ipv6 = false, in bool tcp = true)
 	{
 		import libasync.internals.socket_compat : addrinfo, AI_NUMERICHOST, AI_NUMERICSERV;
 		addrinfo hints;
@@ -1481,18 +1485,18 @@ package:
 		return getAddressInfo(ipAddr, port, ipv6, tcp, hints);
 	}
 
-	
+
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true)
-		/*in { 
+		/*in {
 		 debug import libasync.internals.validator : validateHost;
-		 debug assert(validateHost(host), "Trying to connect to an invalid domain"); 
+		 debug assert(validateHost(host), "Trying to connect to an invalid domain");
 		 }
 		body */{
 		import libasync.internals.socket_compat : addrinfo;
 		addrinfo hints;
 		return getAddressInfo(host, port, ipv6, tcp, hints);
 	}
-	
+
 	void setInternalError(string TRACE)(in Status s, in string details = "", in error_t error = EPosix.EACCES)
 	{
 		if (details.length > 0)
@@ -1502,11 +1506,11 @@ package:
 		m_status.code = s;
 		static if(LOG) log(m_status);
 	}
-private:	
+private:
 
 	/// For DirectoryWatcher
 	/// In kqueue/vnode, all we get is the folder in which changes occured.
-	/// We have to figure out what changed exactly and put the results in a container 
+	/// We have to figure out what changed exactly and put the results in a container
 	/// for the readChanges call.
 	static if (!EPOLL) bool compareFolderFiles(DWFolderInfo fi, DWFileEvent events) {
 		import std.file;
@@ -1521,7 +1525,7 @@ private:
 			//import std.stdio : writeln;
 			//writeln("Scanning path: ", path.toNativeString());
 			//writeln("m_dwFiles length: ", m_dwFiles.length);
-			
+
 			// get a list of the folder
 			foreach (de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
 				//writeln(de.name);
@@ -1583,16 +1587,16 @@ private:
 							return 0;
 
 						kevent_t _event;
-						
+
 						EV_SET(&_event, fwd, EVFILT_VNODE, EV_ADD | EV_CLEAR, fi.wi.events, 0, cast(void*) evinfo);
-						
+
 						int err = kevent(m_kqueuefd, &_event, 1, null, 0, null);
 
 						if (catchError!"kevent_timer_add"(err))
 							return 0;
 
 						m_dwFiles[fwd] = DWFileInfo(fi.wi.wd, entryPath, de.timeLastModified, false);
-						
+
 					}
 				}
 
@@ -1600,7 +1604,7 @@ private:
 				currFiles.insert(entryPath);
 			}
 
-			/// Now search for files/folders that were deleted in this directory (no recursivity needed). 
+			/// Now search for files/folders that were deleted in this directory (no recursivity needed).
 			/// Unwatch this directory and generate delete event only for the root dir
 			foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles) {
 				if (file.folder != wd) continue; // skip those files in another folder than the evented one
@@ -1625,20 +1629,20 @@ private:
 						return false;
 					changes.insert(DWChangeInfo(DWFileEvent.DELETED, file.path));
 
-					if (fi.wi.recursive && file.is_dir) 
+					if (fi.wi.recursive && file.is_dir)
 						unwatch(fd, id);
 
 					m_dwFiles.remove(id);
 
 				}
-				
+
 			}
 			if(changes.empty)
 				return false; // unhandled event, skip the callback
 
 			// fixme: how to implement moved_from moved_to for rename?
 		}
-		catch (Exception e) 
+		catch (Exception e)
 		{
 			try setInternalError!"compareFiles"(Status.ERROR, "Fatal error in file comparison: " ~ e.toString()); catch {}
 			return false;
@@ -1658,26 +1662,26 @@ private:
 		}
 		return true;
 	}
-	
+
 	bool onTCPAccept(fd_t fd, TCPAcceptHandler del, int events)
 	{
 		import libasync.internals.socket_compat : AF_INET, AF_INET6, socklen_t, accept4, accept;
 		enum O_NONBLOCK     = 0x800;    // octal    04000
 
-		static if (EPOLL) 
+		static if (EPOLL)
 		{
 			const uint epoll_events = cast(uint) events;
 			const bool incoming = cast(bool) (epoll_events & EPOLLIN);
 			const bool error = cast(bool) (epoll_events & EPOLLERR);
 		}
-		else 
+		else
 		{
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
 			const bool incoming = cast(bool)(kqueue_events & EVFILT_READ);
 			const bool error = cast(bool)(kqueue_flags & EV_ERROR);
 		}
-		
+
 		if (incoming) { // accept incoming connection
 			do {
 				NetworkAddress addr;
@@ -1694,11 +1698,11 @@ private:
 					}
 				} else /* if KQUEUE */ {
 					fd_t csock = accept(fd, addr.sockAddr, &addrlen);
-					
+
 					if (catchError!".accept"(csock)) {
 						return true;
 					}
-					
+
 					// Make non-blocking so subsequent calls to recv/send return immediately
 					if (!setNonBlock(csock)) {
 						continue;
@@ -1764,7 +1768,7 @@ private:
 			} while(true);
 
 		}
-		
+
 		if (error) { // socket failure
 			m_status.text = "listen socket error";
 			int err;
@@ -1785,16 +1789,16 @@ private:
 		return true;
 	}
 
-	bool onUDPTraffic(fd_t fd, UDPHandler del, int events) 
+	bool onUDPTraffic(fd_t fd, UDPHandler del, int events)
 	{
-		static if (EPOLL) 
+		static if (EPOLL)
 		{
 			const uint epoll_events = cast(uint) events;
 			const bool read = cast(bool) (epoll_events & EPOLLIN);
 			const bool write = cast(bool) (epoll_events & EPOLLOUT);
 			const bool error = cast(bool) (epoll_events & EPOLLERR);
 		}
-		else 
+		else
 		{
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
@@ -1813,7 +1817,7 @@ private:
 			}
 		}
 
-		if (write) { 
+		if (write) {
 
 			try {
 				del(UDPEvent.WRITE);
@@ -1825,7 +1829,7 @@ private:
 		}
 
 		if (error) // socket failure
-		{ 
+		{
 
 			import libasync.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			import core.sys.posix.unistd : close;
@@ -1836,40 +1840,67 @@ private:
 			close(fd);
 			return false;
 		}
-		
+
 		return true;
 	}
 
-	bool onEvent(fd_t fd, EventHandler del, int events) 
+	bool onEvent(fd_t fd, EventHandler del, int events)
 	{
-		static if (EPOLL) 
+		bool connect = void, close = void;
+		auto conn = del.ev;
+
+		static if (EPOLL)
 		{
 			const uint epoll_events = cast(uint) events;
 			const bool read = cast(bool) (epoll_events & EPOLLIN);
 			const bool write = cast(bool) (epoll_events & EPOLLOUT);
 			const bool error = cast(bool) (epoll_events & EPOLLERR);
+			if (conn.stateful) {
+				connect = ((cast(bool) (epoll_events & EPOLLIN)) || (cast(bool) (epoll_events & EPOLLOUT))) && !conn.disconnecting && !conn.connected;
+				close = (cast(bool) (epoll_events & EPOLLRDHUP)) || (cast(bool) (events & EPOLLHUP));
+			}
 		}
-		else 
+		else
 		{
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
 			const bool read = cast(bool) (kqueue_events & EVFILT_READ);
 			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
-		}
-		
-		if (read) {
-			try {
-				del(EventCode.READ);
+			if (conn.stateful) {
+				connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !conn.disconnecting && !conn.connected);
+				close = cast(bool) (kqueue_flags & EV_EOF);
 			}
+		}
+
+		if (error) // failure
+		{
+			setInternalError!"EPOLLERR"(Status.ABORT, null);
+			try {
+				del(EventCode.ERROR);
+			}
+			catch (Exception e)
+			{
+				setInternalError!"del@Event.ERROR"(Status.ABORT);
+				// ignore failure...
+			}
+			return false;
+		}
+
+		if (conn.stateful && connect) {
+			static if (LOG) try log("!connect"); catch {}
+			conn.connected = true;
+			try del(EventCode.CONNECT);
 			catch (Exception e) {
-				setInternalError!"del@Event.READ"(Status.ABORT);
+				setInternalError!"del@Event.CONNECT"(Status.ABORT);
 				return false;
 			}
+			return true;
 		}
-		
-		if (write) { 
-			
+
+		if (write && (!conn.stateful || conn.connected && !conn.disconnecting && conn.writeBlocked)) {
+			if (conn.stateful) conn.writeBlocked = false;
+			static if (LOG) try log("!write"); catch {}
 			try {
 				del(EventCode.WRITE);
 			}
@@ -1878,20 +1909,53 @@ private:
 				return false;
 			}
 		}
-		
-		if (error) // failure
-		{ 
-			setInternalError!"EPOLLERR"(Status.ABORT, null);
-			return false;
+
+		if (read && (!conn.stateful || conn.connected && !conn.disconnecting)) {
+			static if (LOG) try log("!read"); catch {}
+			try {
+				del(EventCode.READ);
+			}
+			catch (Exception e) {
+				setInternalError!"del@Event.READ"(Status.ABORT);
+				return false;
+			}
 		}
-		
+
+		if (conn.stateful && close && conn.connected && !conn.disconnecting)
+		{
+			static if (LOG) try log("!close"); catch {}
+			// todo: See if this hack is still necessary
+			if (!conn.connected && conn.disconnecting)
+				return true;
+
+			try del(EventCode.CLOSE);
+			catch (Exception e) {
+				setInternalError!"del@Event.CLOSE"(Status.ABORT);
+				return false;
+			}
+
+			// Careful here, the delegate might have closed the connection already
+			if (conn.connected) {
+				closeSocket(fd, !conn.disconnecting, conn.connected);
+
+				m_status.code = Status.ABORT;
+				conn.disconnecting = true;
+				conn.connected = false;
+				conn.writeBlocked = true;
+				conn.id = 0;
+
+				try ThreadMem.free(conn.evInfo);
+				catch (Exception e){ assert(false, "Error freeing resources"); }
+			}
+		}
+
 		return true;
 	}
-	bool onTCPTraffic(fd_t fd, TCPEventHandler del, int events, AsyncTCPConnection conn) 
+	bool onTCPTraffic(fd_t fd, TCPEventHandler del, int events, AsyncTCPConnection conn)
 	{
 		//log("TCP Traffic at FD#" ~ fd.to!string);
 
-		static if (EPOLL) 
+		static if (EPOLL)
 		{
 			const uint epoll_events = cast(uint) events;
 			const bool connect = ((cast(bool) (epoll_events & EPOLLIN)) || (cast(bool) (epoll_events & EPOLLOUT))) && !conn.disconnecting && !conn.connected;
@@ -1911,7 +1975,7 @@ private:
 			const bool close = cast(bool) (kqueue_flags & EV_EOF);
 		}
 
-		if (error) 
+		if (error)
 		{
 			import libasync.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			int err;
@@ -1919,18 +1983,18 @@ private:
 			socklen_t errlen = err.sizeof;
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen);
 			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t)err);
-			try 
+			try
 				del(TCPEvent.ERROR);
 			catch (Exception e)
-			{ 
+			{
 				setInternalError!"del@TCPEvent.ERROR"(Status.ABORT);
 				// ignore failure...
 			}
 			return false;
 		}
 
-		
-		if (connect) 
+
+		if (connect)
 		{
 			static if (LOG) try log("!connect"); catch {}
 			conn.connected = true;
@@ -1942,8 +2006,8 @@ private:
 			return true;
 		}
 
-		
-		if ((read || write) && conn.connected && !conn.disconnecting && conn.writeBlocked) 
+
+		if ((read || write) && conn.connected && !conn.disconnecting && conn.writeBlocked)
 		{
 			conn.writeBlocked = false;
 			static if (LOG) try log("!write"); catch {}
@@ -1967,13 +2031,13 @@ private:
 			}
 		}
 
-		if (close && conn.connected && !conn.disconnecting) 
+		if (close && conn.connected && !conn.disconnecting)
 		{
 			static if (LOG) try log("!close"); catch {}
 			// todo: See if this hack is still necessary
 			if (!conn.connected && conn.disconnecting)
 				return true;
-			
+
 			try del(TCPEvent.CLOSE);
 			catch (Exception e) {
 				setInternalError!"del@TCPEvent.CLOSE"(Status.ABORT);
@@ -1989,10 +2053,10 @@ private:
 				conn.connected = false;
 				conn.writeBlocked = true;
 				del.conn.socket = 0;
-				
+
 				try ThreadMem.free(del.conn.evInfo);
 				catch (Exception e){ assert(false, "Error freeing resources"); }
-				
+
 				if (del.conn.inbound) {
 					static if (LOG) log("Freeing inbound connection");
 					try ThreadMem.free(del.conn);
@@ -2002,7 +2066,7 @@ private:
 		}
 		return true;
 	}
-	
+
 	bool initUDPSocket(fd_t fd, AsyncUDPSocket ctxt, UDPHandler del)
 	{
 		import libasync.internals.socket_compat : bind;
@@ -2046,7 +2110,7 @@ private:
 			err = kevent(m_kqueuefd, &(_event[0]), 2, null, 0, null);
 			if (catchError!"kevent_add_udp"(err))
 				return closeAll();
-			
+
 			nothrow void deregisterEvent() {
 				EV_SET(&(_event[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
 				EV_SET(&(_event[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
@@ -2064,7 +2128,7 @@ private:
 
 		return true;
 	}
-		
+
 	bool initTCPListener(fd_t fd, AsyncTCPListener ctxt, TCPAcceptHandler del, bool reusing = false)
 	in {
 		assert(ctxt.local !is NetworkAddress.init);
@@ -2138,7 +2202,7 @@ private:
 	}
 
 	bool initTCPConnection(fd_t fd, AsyncTCPConnection ctxt, TCPEventHandler del, bool inbound = false)
-	in { 
+	in {
 		assert(ctxt.peer.port != 0, "Connecting to an invalid port");
 	}
 	body {
@@ -2236,7 +2300,7 @@ private:
 		}
 		return false;
 	}
-	
+
 	pragma(inline, true)
 	bool catchSocketError(string TRACE)(fd_t fd)
 	{
@@ -2283,7 +2347,7 @@ private:
 	 * If the value at val matches the tuple first argument T, get the last error,
 	 * and if the last error matches tuple second argument error_t, set the Status as
 	 * tuple third argument Status.
-	 * 
+	 *
 	 * Repeats for each comparison tuple until a match in which case returns true.
 	 */
 	bool catchErrorsEq(string TRACE, T)(T val, Tuple!(T, error_t, Status)[] cmp ...)
@@ -2318,7 +2382,7 @@ private:
 		}
 
 	}
-	
+
 	void log(StatusInfo val)
 	{
 		static if (LOG) {
@@ -2347,7 +2411,7 @@ private:
 		}
 	}
 
-	NetworkAddress getAddressInfo(addrinfo)(in string host, ushort port, bool ipv6, bool tcp, ref addrinfo hints) 
+	NetworkAddress getAddressInfo(addrinfo)(in string host, ushort port, bool ipv6, bool tcp, ref addrinfo hints)
 	{
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, IPPROTO_TCP, IPPROTO_UDP, freeaddrinfo, getaddrinfo;
@@ -2398,8 +2462,8 @@ private:
 		return addr;
 	}
 
-	
-	
+
+
 }
 
 
@@ -2416,9 +2480,9 @@ static if (!EPOLL)
 		size_t idx;
 		import std.algorithm : max;
 		try {
-			
+
 			size_t getIdx() {
-				
+
 				if (!g_evIdxAvailable.empty) {
 					immutable size_t ret = g_evIdxAvailable.back;
 					g_evIdxAvailable.removeBack();
@@ -2426,7 +2490,7 @@ static if (!EPOLL)
 				}
 				return 0;
 			}
-			
+
 			idx = getIdx();
 			if (idx == 0) {
 				import std.range : iota;
@@ -2434,7 +2498,7 @@ static if (!EPOLL)
 				g_evIdxCapacity = max(32, g_evIdxCapacity * 2);
 				idx = getIdx();
 			}
-			
+
 		} catch (Throwable e) {
 			static if (DEBUG) {
 				import std.stdio : writeln;
@@ -2447,7 +2511,7 @@ static if (!EPOLL)
 
 	nothrow void destroyIndex(AsyncNotifier ctxt) {
 		try {
-			g_evIdxAvailable.insert(ctxt.id);		
+			g_evIdxAvailable.insert(ctxt.id);
 		}
 		catch (Exception e) {
 			assert(false, "Error destroying index: " ~ e.msg);
@@ -2456,7 +2520,7 @@ static if (!EPOLL)
 
 	nothrow void destroyIndex(AsyncTimer ctxt) {
 		try {
-			g_evIdxAvailable.insert(ctxt.id);		
+			g_evIdxAvailable.insert(ctxt.id);
 		}
 		catch (Exception e) {
 			assert(false, "Error destroying index: " ~ e.msg);
@@ -2471,7 +2535,7 @@ static if (!EPOLL)
 	__gshared Array!(Array!AsyncSignal) gs_signalQueue;
 	__gshared Array!(Array!size_t) gs_idxQueue; // signals notified
 
-	
+
 	// loop
 	nothrow bool popSignals(ref AsyncSignal[] sigarr) {
 		bool more;
@@ -2554,7 +2618,7 @@ static if (!EPOLL)
 			/// make sure the signal queue is big enough for this thread ID
 			if (must_resize) {
 				synchronized (gs_queueMutex.writer) {
-					while (gs_signalQueue.length <= *g_threadId) 
+					while (gs_signalQueue.length <= *g_threadId)
 						gs_signalQueue.insertBack(Array!AsyncSignal.init);
 				}
 			}
@@ -2579,21 +2643,21 @@ static if (!EPOLL)
 
 			synchronized (gs_queueMutex.writer) {
 				if (gs_signalQueue.empty || gs_signalQueue.length < *g_threadId + 1) {
-					
+
 					gs_signalQueue.reserve(*g_threadId + 1);
 					foreach (i; gs_signalQueue.length .. gs_signalQueue.capacity) {
 						gs_signalQueue.insertBack(Array!AsyncSignal.init);
 					}
-					
+
 				}
 
 				if (gs_signalQueue[*g_threadId].empty || gs_signalQueue[*g_threadId].length < idx + 1) {
-					
+
 					gs_signalQueue[*g_threadId].reserve(idx + 1);
 					foreach (i; gs_signalQueue[*g_threadId].length .. gs_signalQueue[*g_threadId].capacity) {
 						gs_signalQueue[*g_threadId].insertBack(cast(AsyncSignal)null);
 					}
-					
+
 				}
 
 				gs_signalQueue[*g_threadId][idx] = cast(AsyncSignal) ctxt;
@@ -2617,17 +2681,17 @@ static if (!EPOLL)
 	}
 }
 
-mixin template TCPConnectionMixins() {
-	
+mixin template StatefulFDMixins() {
+
 	private CleanupData m_impl;
-	
+
 	struct CleanupData {
 		EventInfo* evInfo;
 		bool connected;
 		bool disconnecting;
 		bool writeBlocked;
 	}
-	
+
 	@property bool disconnecting() const {
 		return m_impl.disconnecting;
 	}
@@ -2635,7 +2699,7 @@ mixin template TCPConnectionMixins() {
 	@property void disconnecting(bool b) {
 		m_impl.disconnecting = b;
 	}
-	
+
 	@property bool connected() const {
 		return m_impl.connected;
 	}
@@ -2655,17 +2719,17 @@ mixin template TCPConnectionMixins() {
 	@property EventInfo* evInfo() {
 		return m_impl.evInfo;
 	}
-	
+
 	@property void evInfo(EventInfo* info) {
 		m_impl.evInfo = info;
 	}
-	
+
 }
 
 mixin template EvInfoMixinsShared() {
 
 	private CleanupData m_impl;
-	
+
 	shared struct CleanupData {
 		EventInfo* evInfo;
 	}
@@ -2685,7 +2749,7 @@ mixin template EvInfoMixinsShared() {
 		 m_loopId = cast(shared)id;
 		 }
 		 */
-	} 
+	}
 	else /* if KQUEUE */
 	{
 		private shared(size_t)* m_owner_id;
@@ -2697,7 +2761,7 @@ mixin template EvInfoMixinsShared() {
 	@property shared(EventInfo*) evInfo() {
 		return m_impl.evInfo;
 	}
-	
+
 	@property void evInfo(shared(EventInfo*) info) {
 		m_impl.evInfo = info;
 	}
@@ -2705,17 +2769,17 @@ mixin template EvInfoMixinsShared() {
 }
 
 mixin template EvInfoMixins() {
-	
+
 	private CleanupData m_impl;
-	
+
 	struct CleanupData {
 		EventInfo* evInfo;
 	}
-	
+
 	@property EventInfo* evInfo() {
 		return m_impl.evInfo;
 	}
-	
+
 	@property void evInfo(EventInfo* info) {
 		m_impl.evInfo = info;
 	}
@@ -2770,7 +2834,7 @@ public struct NetworkAddress {
 	@property ushort family() const pure nothrow { return addr.sa_family; }
 	/// ditto
 	@property void family(ushort val) pure nothrow { addr.sa_family = cast(ubyte)val; }
-	
+
 	/** The port in host byte order.
 	 */
 	@property ushort port()
@@ -2790,11 +2854,11 @@ public struct NetworkAddress {
 			case AF_INET6: addr_ip6.sin6_port = hton(val); break;
 		}
 	}
-	
+
 	/** A pointer to a sockaddr struct suitable for passing to socket functions.
 	 */
 	@property inout(sockaddr)* sockAddr() inout pure nothrow { return &addr; }
-	
+
 	/** Size of the sockaddr struct that is returned by sockAddr().
 	 */
 	@property uint sockAddrLen()
@@ -2805,15 +2869,15 @@ public struct NetworkAddress {
 			case AF_INET6: return addr_ip6.sizeof;
 		}
 	}
-	
+
 	@property inout(sockaddr_in)* sockAddrInet4() inout pure nothrow
 	in { assert (family == AF_INET); }
 	body { return &addr_ip4; }
-	
+
 	@property inout(sockaddr_in6)* sockAddrInet6() inout pure nothrow
 	in { assert (family == AF_INET6); }
 	body { return &addr_ip6; }
-	
+
 	/** Returns a string representation of the IP address
 	*/
 	string toAddressString()
@@ -2830,7 +2894,7 @@ public struct NetworkAddress {
 		import std.array : appender;
 		import std.format : formattedWrite;
 		ubyte[2] _dummy = void; // Workaround for DMD regression in master
-		
+
 		switch (this.family) {
 			default: assert(false, "toAddressString() called for invalid address family.");
 			case AF_INET:
@@ -2847,7 +2911,7 @@ public struct NetworkAddress {
 				break;
 		}
 	}
-	
+
 	/** Returns a full string representation of the address, including the port number.
 	*/
 	string toString()
@@ -2874,19 +2938,19 @@ public struct NetworkAddress {
 				break;
 		}
 	}
-	
+
 }
 
 private pure nothrow {
 	import std.bitmanip;
-	
+
 	ushort ntoh(ushort val)
 	{
 		version (LittleEndian) return swapEndian(val);
 		else version (BigEndian) return val;
 		else static assert(false, "Unknown endianness.");
 	}
-	
+
 	ushort hton(ushort val)
 	{
 		version (LittleEndian) return swapEndian(val);

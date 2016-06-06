@@ -25,7 +25,7 @@ private:
 	DNSCmdInfo m_cmdInfo;
 	StatusInfo m_status;
 	Thread m_owner;
-	
+
 public:
 	this(EventLoop evl) {
 		m_evLoop = cast(shared) evl;
@@ -34,12 +34,12 @@ public:
 		m_owner = cast(shared)Thread.getThis();
 		try m_cmdInfo.mtx = cast(shared) new Mutex; catch {}
 	}
-	
+
 	synchronized @property StatusInfo status() const
 	{
 		return cast(StatusInfo) m_status;
 	}
-	
+
 	@property string error() const
 	{
 		return status.text;
@@ -64,7 +64,7 @@ public:
 	}
 	body {
 		if (force_async == true) {
-			try synchronized(m_cmdInfo.mtx) { 
+			try synchronized(m_cmdInfo.mtx) {
 				m_cmdInfo.command = DNSCmd.RESOLVEHOST;
 				m_cmdInfo.ipv6 = ipv6;
 				m_cmdInfo.url = cast(shared) url;
@@ -92,24 +92,24 @@ public:
 	}
 
 	// chooses a thread or starts it if necessary
-	private bool sendCommand() 
+	private bool sendCommand()
 	in { assert(!waiting, "File is busy or closed"); }
 	body {
 		waiting = true;
 		m_error = false;
 		status = StatusInfo.init;
-		
+
 		Waiter cmd_handler;
 		try {
-			cmd_handler = popWaiter();		
+			cmd_handler = popWaiter();
 		} catch (Throwable e) {
 			import std.stdio;
 			try {
 				status = StatusInfo(Status.ERROR, e.toString());
 				m_error = true;
 			} catch {}
-			
-			return false;			
+
+			return false;
 		}
 
 		if (cmd_handler is Waiter.init) {
@@ -120,10 +120,10 @@ public:
 		assert(cmd_handler.cond);
 		m_cmdInfo.waiter = cast(shared)cmd_handler;
 		try {
-			synchronized(gs_wlock) 
+			synchronized(gs_wlock)
 				gs_jobs.insert(CommandInfo(CmdInfoType.DNS, cast(void*) this));
 
-			cmd_handler.cond.notifyAll(); 
+			cmd_handler.cond.notifyAll();
 		}
 		catch (Exception e){
 			import std.stdio;
@@ -142,7 +142,7 @@ package:
 		return m_cmdInfo;
 	}
 
-	
+
 	shared(NetworkAddress*) addr() {
 		try synchronized(m_cmdInfo.mtx)
 			return cast(shared)&m_cmdInfo.addr;
@@ -161,7 +161,7 @@ package:
 	synchronized @property void waiting(bool b) {
 		m_busy = cast(shared) b;
 	}
-	
+
 	void callback() {
 
 		try {
@@ -192,7 +192,7 @@ package shared struct DNSCmdInfo
 package shared struct DNSReadyHandler {
 	AsyncDNS ctxt;
 	void delegate(NetworkAddress) del;
-	
+
 	void opCall(NetworkAddress addr) {
 		assert(ctxt !is null);
 		del(addr);

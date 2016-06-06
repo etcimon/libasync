@@ -19,9 +19,9 @@ void main()
 
 	// We can initialize an async object by attaching it to this event loop
 	auto watcher = new AsyncDirectoryWatcher(ev_loop);
-	
+
 	DWChangeInfo[8] change_buf;
-	
+
 	// By `run`ing the async object, we register it in the operating system
 	watcher.run(
 		{ // This scope is executed at each directory event
@@ -38,7 +38,7 @@ void main()
 				}
 			} while (cnt > 0);
 	});
-	
+
 	// This makes our watcher look for file changes in the "temp" sub folder, it must be used after the watcher is registered (aka `run`). It is relative to the current directory which is usually this running executable's folder
 	watcher.watchDir("temp");
 	writeln("Event loop now running. Try saving a file in the temp/ folder!");

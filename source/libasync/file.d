@@ -88,8 +88,8 @@ public:
 	}
 
 	/// Reads the file into the buffer starting at offset byte position.
-	bool read(string file_path, shared ubyte[] buffer, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false) 
-	in { 
+	bool read(string file_path, shared ubyte[] buffer, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false)
+	in {
 		assert(!m_busy, "File is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
@@ -115,15 +115,15 @@ public:
 			else if (truncate_if_exists && (m_file || exists(file_path)))
 				flag = true;
 			if (flag) // touch
-			{	
-				if (file.isOpen) 
+			{
+				if (file.isOpen)
 					file.close();
 				import core.stdc.stdio;
 				import std.string : toStringz;
 				FILE * f = fopen(file_path.toStringz, "w\0".ptr);
 				fclose(f);
 			}
-			
+
 			if (!file.isOpen || m_cmdInfo.command != FileCmd.READ) {
 				auto tmp = File(file_path, "rb");
 				file = tmp;
@@ -149,7 +149,7 @@ public:
 			try m_handler(); catch { }
 			return false;
 		}
-		try synchronized(m_cmdInfo.mtx) { 
+		try synchronized(m_cmdInfo.mtx) {
 			m_cmdInfo.buffer = buffer;
 			m_cmdInfo.command = FileCmd.READ;
 			filePath = Path(file_path);
@@ -160,9 +160,9 @@ public:
 
 	/// Writes the data from the buffer into the file at the specified path starting at the
 	/// given offset byte position.
-	bool write(string file_path, shared const(ubyte)[] buffer, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false) 
-	in { 
-		assert(!m_busy, "File is busy or closed"); 
+	bool write(string file_path, shared const(ubyte)[] buffer, ulong off = -1, bool create_if_not_exists = true, bool truncate_if_exists = false)
+	in {
+		assert(!m_busy, "File is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
 	body {
@@ -188,15 +188,15 @@ public:
 			else if (truncate_if_exists && (m_file || exists(file_path)))
 				flag = true;
 			if (flag) // touch
-			{	
-				if (file.isOpen) 
+			{
+				if (file.isOpen)
 					file.close();
 				import core.stdc.stdio;
 				import std.string : toStringz;
 				FILE * f = fopen(file_path.toStringz, "w\0".ptr);
 				fclose(f);
 			}
-			
+
 			if (!file.isOpen || m_cmdInfo.command != FileCmd.WRITE) {
 				auto tmp = File(file_path, "r+b");
 				file = tmp;
@@ -220,7 +220,7 @@ public:
 			m_status = cast(shared) status;
 			return false;
 		}
-		try synchronized(m_cmdInfo.mtx) { 
+		try synchronized(m_cmdInfo.mtx) {
 			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 			m_cmdInfo.command = FileCmd.WRITE;
 			filePath = Path(file_path);
@@ -258,15 +258,15 @@ public:
 			else if (truncate_if_exists && (m_file || exists(file_path)))
 				flag = true;
 			if (flag) // touch
-			{	
-				if (file.isOpen) 
+			{
+				if (file.isOpen)
 					file.close();
 				import core.stdc.stdio;
 				import std.string : toStringz;
 				FILE * f = fopen(file_path.toStringz, "w\0".ptr);
 				fclose(f);
 			}
-			
+
 			if (!file.isOpen || m_cmdInfo.command != FileCmd.APPEND) {
 				auto tmp = File(file_path, "a+");
 				file = tmp;
@@ -287,7 +287,7 @@ public:
 			m_status = cast(shared) status;
 			return false;
 		}
-		try synchronized(m_cmdInfo.mtx) { 
+		try synchronized(m_cmdInfo.mtx) {
 			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 			m_cmdInfo.command = FileCmd.APPEND;
 			filePath = Path(file_path);
@@ -295,7 +295,7 @@ public:
 		return sendCommand();
 	}
 
-	private bool sendCommand() 
+	private bool sendCommand()
 	in { assert(!waiting, "File is busy or closed"); }
 	body {
 		waiting = true;
@@ -306,19 +306,19 @@ public:
 
 		try {
 			cmd_handler = popWaiter();
-		
+
 		} catch (Throwable e) {
 			import std.stdio;
 			try {
 				status = StatusInfo(Status.ERROR, e.toString());
 				m_error = true;
 			} catch {}
-			
+
 			return false;
 		}
 
 		assert(cmd_handler.cond, "Could not lock a thread for async operations. Note: Async file I/O in static constructors is unsupported.");
-		
+
 		m_cmdInfo.waiter = cast(shared) cmd_handler;
 		try {
 			synchronized(gs_wlock)
@@ -365,11 +365,11 @@ package:
 			}
 		}
 	}
-	
+
 	synchronized @property void status(StatusInfo stat) {
 		m_status = cast(shared) stat;
 	}
-	
+
 	synchronized @property void offset(ulong val) {
 		m_cursorOffset = cast(shared) val;
 	}
@@ -409,7 +409,7 @@ package shared struct FileCmdInfo
 package shared struct FileReadyHandler {
 	AsyncFile ctxt;
 	void delegate() del;
-	
+
 	void opCall() {
 		assert(ctxt !is null);
 		ctxt.waiting = false;

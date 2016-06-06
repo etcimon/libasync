@@ -30,16 +30,16 @@ public:
 		return m_timeout;
 	}
 
-	/// Returns whether the timer is set to rearm itself (oneShot=false) or 
+	/// Returns whether the timer is set to rearm itself (oneShot=false) or
 	/// if it will have to be rearmed (oneShot=true).
 	@property bool oneShot() const {
 		return m_oneshot;
 	}
 
-	/// Sets the timer to become periodic. For a running timer, 
-	/// this setting will take effect after the timer is expired (oneShot) or 
+	/// Sets the timer to become periodic. For a running timer,
+	/// this setting will take effect after the timer is expired (oneShot) or
 	/// after it is killed (periodic).
-	typeof(this) periodic(bool b = true) 
+	typeof(this) periodic(bool b = true)
 	in { assert(m_timerId == 0 || m_oneshot); }
 	body
 	{
@@ -47,8 +47,8 @@ public:
 		return this;
 	}
 
-	/// Sets or changes the duration on the timer. For a running timer, 
-	/// this setting will take effect after the timer is expired (oneShot) or 
+	/// Sets or changes the duration on the timer. For a running timer,
+	/// this setting will take effect after the timer is expired (oneShot) or
 	/// after it is killed (periodic).
 	typeof(this) duration(Duration dur) {
 		m_timeout = dur;
@@ -58,7 +58,7 @@ public:
 	/// Runs a non-periodic, oneshot timer once using the specified Duration as
 	/// a timeout. The handler from the last call to run() will be reused.
 	bool rearm(Duration dur)
-	in { 
+	in {
 		assert(m_timeout > 0.seconds);
 		// assert(m_shooting);
 		assert(m_oneshot, "Cannot rearm a periodic timer, it must fist be killed.");
@@ -76,8 +76,8 @@ public:
 	}
 
 	/// Starts the timer using the delegate as an expiration callback.
-	bool run(void delegate() del) 
-	in { 
+	bool run(void delegate() del)
+	in {
 		assert(m_timeout > 0.seconds);
 		assert(m_oneshot || !m_timerId, "Cannot rearm a periodic timer, it must fist be killed.");
 	}
@@ -113,7 +113,7 @@ public:
 	@property fd_t id() {
 		return m_timerId;
 	}
-	
+
 package:
 	version(Posix) mixin EvInfoMixins;
 

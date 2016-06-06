@@ -26,7 +26,7 @@ version(OSX) {
 	public import core.sys.posix.sys.types; // for ssize_t, size_t
 	public import core.sys.posix.sys.uio;   // for iovec
 
-	
+
 	enum: int
 	{
 		TCP_MAX_SACK = 3,
@@ -43,11 +43,11 @@ version(OSX) {
 		TCP_NOPUSH = 4,
 		TCP_NOOPT = 8,
 		TCP_KEEPALIVE = 16,
-		TCP_QUICKACK = -1, 
-		TCP_KEEPCNT = -1, 
-		TCP_KEEPINTVL = -1, 
-		TCP_KEEPIDLE = -1, 
-		TCP_CONGESTION = -1, 
+		TCP_QUICKACK = -1,
+		TCP_KEEPCNT = -1,
+		TCP_KEEPINTVL = -1,
+		TCP_KEEPIDLE = -1,
+		TCP_CONGESTION = -1,
 		TCP_CORK = -1,
 		TCP_DEFER_ACCEPT = -1
 	}

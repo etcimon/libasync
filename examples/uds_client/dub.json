@@ -1,0 +1,7 @@
+{
+    "name": "uds_client",
+    "description": "A simple unix domain socket client",
+    "dependencies": {
+        "libasync": { "path": "../../" }
+    }
+}

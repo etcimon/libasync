@@ -86,17 +86,17 @@ void freeArray(T, bool MANAGED = true)(Allocator allocator, ref T[] array)
 interface Allocator {
 	enum size_t alignment = 0x10;
 	enum size_t alignmentMask = alignment-1;
-	
+
 	void[] alloc(size_t sz)
 	out { assert((cast(size_t)__result.ptr & alignmentMask) == 0, "alloc() returned misaligned data."); }
-	
+
 	void[] realloc(void[] mem, size_t new_sz)
 	in {
 		assert(mem.ptr !is null, "realloc() called with null array.");
 		assert((cast(size_t)mem.ptr & alignmentMask) == 0, "misaligned pointer passed to realloc().");
 	}
 	out { assert((cast(size_t)__result.ptr & alignmentMask) == 0, "realloc() returned misaligned data."); }
-	
+
 	void free(void[] mem)
 	in {
 		assert(mem.ptr !is null, "free() called with null array.");
@@ -136,17 +136,17 @@ final class DebugAllocator : Allocator {
 		size_t m_bytes;
 		size_t m_maxBytes;
 	}
-	
+
 	this(Allocator base_allocator)
 	{
 		m_baseAlloc = base_allocator;
 		m_blocks = HashMap!(void*, size_t)(manualAllocator());
 	}
-	
+
 	@property size_t allocatedBlockCount() const { return m_blocks.length; }
 	@property size_t bytesAllocated() const { return m_bytes; }
 	@property size_t maxBytesAllocated() const { return m_maxBytes; }
-	
+
 	void[] alloc(size_t sz)
 	{
 		auto ret = m_baseAlloc.alloc(sz);
@@ -160,7 +160,7 @@ final class DebugAllocator : Allocator {
 		}
 		return ret;
 	}
-	
+
 	void[] realloc(void[] mem, size_t new_size)
 	{
 		auto sz = m_blocks.get(mem.ptr, size_t.max);
@@ -194,19 +194,19 @@ final class MallocAllocator : Allocator {
 		if (ptr is null) throw err;
 		return adjustPointerAlignment(ptr)[0 .. sz];
 	}
-	
+
 	void[] realloc(void[] mem, size_t new_size)
 	{
 		size_t csz = min(mem.length, new_size);
 		auto p = extractUnalignedPointer(mem.ptr);
 		size_t oldmisalign = mem.ptr - p;
-		
+
 		auto pn = cast(ubyte*).realloc(p, new_size+Allocator.alignment);
 		if (p == pn) return pn[oldmisalign .. new_size+oldmisalign];
-		
+
 		auto pna = cast(ubyte*)adjustPointerAlignment(pn);
 		auto newmisalign = pna - pn;
-		
+
 		// account for changed alignment after realloc (move memory back to aligned position)
 		if (oldmisalign != newmisalign) {
 			if (newmisalign > oldmisalign) {
@@ -217,10 +217,10 @@ final class MallocAllocator : Allocator {
 					pn[i + newmisalign] = pn[i + oldmisalign];
 			}
 		}
-		
+
 		return pna[0 .. new_size];
 	}
-	
+
 	void free(void[] mem)
 	{
 		.free(extractUnalignedPointer(mem.ptr));
@@ -240,11 +240,11 @@ final class GCAllocator : Allocator {
 	void[] realloc(void[] mem, size_t new_size)
 	{
 		size_t csz = min(mem.length, new_size);
-		
+
 		auto p = extractUnalignedPointer(mem.ptr);
 		size_t misalign = mem.ptr - p;
 		assert(misalign <= Allocator.alignment);
-		
+
 		void[] ret;
 		auto extended = GC.extend(p, new_size - mem.length, new_size - mem.length);
 		if (extended) {
@@ -266,21 +266,21 @@ final class GCAllocator : Allocator {
 
 final class AutoFreeListAllocator : Allocator {
 	import std.typetuple;
-	
+
 	private {
 		enum minExponent = 5;
 		enum freeListCount = 14;
 		FreeListAlloc[freeListCount] m_freeLists;
 		Allocator m_baseAlloc;
 	}
-	
+
 	this(Allocator base_allocator)
 	{
 		m_baseAlloc = base_allocator;
 		foreach (i; iotaTuple!freeListCount)
 			m_freeLists[i] = new FreeListAlloc(nthFreeListSize!(i), m_baseAlloc);
 	}
-	
+
 	void[] alloc(size_t sz)
 	{
 		if (sz > nthFreeListSize!(freeListCount-1)) return m_baseAlloc.alloc(sz);
@@ -290,7 +290,7 @@ final class AutoFreeListAllocator : Allocator {
 		//logTrace("AFL alloc %08X(%d)", ret.ptr, sz);
 		assert(false);
 	}
-	
+
 	void[] realloc(void[] data, size_t sz)
 	{
 		foreach (fl; m_freeLists) {
@@ -298,7 +298,7 @@ final class AutoFreeListAllocator : Allocator {
 				// just grow the slice if it still fits into the free list slot
 				if (sz <= fl.elementSize)
 					return data.ptr[0 .. sz];
-				
+
 				// otherwise re-allocate
 				auto newd = alloc(sz);
 				assert(newd.ptr+sz <= data.ptr || newd.ptr >= data.ptr+data.length, "New block overlaps old one!?");
@@ -311,7 +311,7 @@ final class AutoFreeListAllocator : Allocator {
 		// forward large blocks to the base allocator
 		return m_baseAlloc.realloc(data, sz);
 	}
-	
+
 	void free(void[] data)
 	{
 		//logTrace("AFL free %08X(%s)", data.ptr, data.length);
@@ -327,7 +327,7 @@ final class AutoFreeListAllocator : Allocator {
 		}
 		assert(false);
 	}
-	
+
 	private static pure size_t nthFreeListSize(size_t i)() { return 1 << (i + minExponent); }
 	private template iotaTuple(size_t i) {
 		static if (i > 1) alias iotaTuple = TypeTuple!(iotaTuple!(i-1), i-1);
@@ -345,13 +345,13 @@ final class PoolAllocator : Allocator {
 		Destructor* m_destructors;
 		size_t m_poolSize;
 	}
-	
+
 	this(size_t pool_size, Allocator base)
 	{
 		m_poolSize = pool_size;
 		m_baseAllocator = base;
 	}
-	
+
 	@property size_t totalSize()
 	{
 		size_t amt = 0;
@@ -361,7 +361,7 @@ final class PoolAllocator : Allocator {
 			amt += p.data.length;
 		return amt;
 	}
-	
+
 	@property size_t allocatedSize()
 	{
 		size_t amt = 0;
@@ -371,21 +371,21 @@ final class PoolAllocator : Allocator {
 			amt += p.data.length - p.remaining.length;
 		return amt;
 	}
-	
+
 	void[] alloc(size_t sz)
 	{
 		auto aligned_sz = alignedSize(sz);
-		
+
 		Pool* pprev = null;
 		Pool* p = cast(Pool*)m_freePools;
 		while( p && p.remaining.length < aligned_sz ){
 			pprev = p;
 			p = p.next;
 		}
-		
+
 		if( !p ){
 			auto pmem = m_baseAllocator.alloc(AllocSize!Pool);
-			
+
 			p = emplace!Pool(pmem);
 			p.data = m_baseAllocator.alloc(max(aligned_sz, m_poolSize));
 			p.remaining = p.data;
@@ -393,7 +393,7 @@ final class PoolAllocator : Allocator {
 			m_freePools = p;
 			pprev = null;
 		}
-		
+
 		auto ret = p.remaining[0 .. aligned_sz];
 		p.remaining = p.remaining[aligned_sz .. $];
 		if( !p.remaining.length ){
@@ -405,17 +405,17 @@ final class PoolAllocator : Allocator {
 			p.next = cast(Pool*)m_fullPools;
 			m_fullPools = p;
 		}
-		
+
 		return ret[0 .. sz];
 	}
-	
+
 	void[] realloc(void[] arr, size_t newsize)
 	{
 		auto aligned_sz = alignedSize(arr.length);
 		auto aligned_newsz = alignedSize(newsize);
-		
+
 		if( aligned_newsz <= aligned_sz ) return arr[0 .. newsize]; // TODO: back up remaining
-		
+
 		auto pool = m_freePools;
 		bool last_in_pool = pool && arr.ptr+aligned_sz == pool.remaining.ptr;
 		if( last_in_pool && pool.remaining.length+aligned_sz >= aligned_newsz ){
@@ -430,11 +430,11 @@ final class PoolAllocator : Allocator {
 			return ret;
 		}
 	}
-	
+
 	void free(void[] mem)
 	{
 	}
-	
+
 	void freeAll()
 	{
 		version(VibeManualMemoryManagement){
@@ -442,20 +442,20 @@ final class PoolAllocator : Allocator {
 			for (auto d = m_destructors; d; d = d.next)
 				d.destructor(cast(void*)d.object);
 			m_destructors = null;
-			
+
 			// put all full Pools into the free pools list
 			for (Pool* p = cast(Pool*)m_fullPools, pnext; p; p = pnext) {
 				pnext = p.next;
 				p.next = cast(Pool*)m_freePools;
 				m_freePools = cast(Pool*)p;
 			}
-			
+
 			// free up all pools
 			for (Pool* p = cast(Pool*)m_freePools; p; p = p.next)
 				p.remaining = p.data;
 		}
 	}
-	
+
 	void reset()
 	{
 		version(VibeManualMemoryManagement){
@@ -469,7 +469,7 @@ final class PoolAllocator : Allocator {
 			m_freePools = null;
 		}
 	}
-	
+
 	private static destroy(T)(void* ptr)
 	{
 		static if( is(T == class) ) .destroy(cast(T)ptr);
@@ -487,7 +487,7 @@ final class FreeListAlloc : Allocator
 		size_t m_nalloc = 0;
 		size_t m_nfree = 0;
 	}
-	
+
 	this(size_t elem_size, Allocator base_allocator)
 	{
 		assert(elem_size >= size_t.sizeof);
@@ -495,15 +495,15 @@ final class FreeListAlloc : Allocator
 		m_baseAlloc = base_allocator;
 		//logDebug("Create FreeListAlloc %d", m_elemSize);
 	}
-	
+
 	@property size_t elementSize() const { return m_elemSize; }
-	
+
 	void[] alloc(size_t sz)
 	{
 		assert(sz == m_elemSize, "Invalid allocation size.");
 		return alloc();
 	}
-	
+
 	void[] alloc()
 	{
 		void[] mem;
@@ -521,14 +521,14 @@ final class FreeListAlloc : Allocator
 		//logInfo("Alloc %d bytes: alloc: %d, free: %d", SZ, s_nalloc, s_nfree);
 		return mem;
 	}
-	
+
 	void[] realloc(void[] mem, size_t sz)
 	{
 		assert(mem.length == m_elemSize);
 		assert(sz == m_elemSize);
 		return mem;
 	}
-	
+
 	void free(void[] mem)
 	{
 		assert(mem.length == m_elemSize, "Memory block passed to free has wrong size.");
@@ -543,13 +543,13 @@ final class FreeListAlloc : Allocator
 template FreeListObjectAlloc(T, bool USE_GC = true, bool INIT = true)
 {
 	enum ElemSize = AllocSize!T;
-	
+
 	static if( is(T == class) ){
 		alias T TR;
 	} else {
 		alias T* TR;
 	}
-	
+
 	TR alloc(ARGS...)(ARGS args)
 	{
 		//logInfo("alloc %s/%d", T.stringof, ElemSize);
@@ -558,7 +558,7 @@ template FreeListObjectAlloc(T, bool USE_GC = true, bool INIT = true)
 		static if( INIT ) return emplace!T(mem, args);
 		else return cast(TR)mem.ptr;
 	}
-	
+
 	void free(TR obj)
 	{
 		static if( INIT ){
@@ -585,16 +585,16 @@ template AllocSize(T)
 struct FreeListRef(T, bool INIT = true)
 {
 	enum ElemSize = AllocSize!T;
-	
+
 	static if( is(T == class) ){
 		alias T TR;
 	} else {
 		alias T* TR;
 	}
-	
+
 	private TR m_object;
 	private size_t m_magic = 0x1EE75817; // workaround for compiler bug
-	
+
 	static FreeListRef opCall(ARGS...)(ARGS args)
 	{
 		//logInfo("refalloc %s/%d", T.stringof, ElemSize);
@@ -606,7 +606,7 @@ struct FreeListRef(T, bool INIT = true)
 		ret.refCount = 1;
 		return ret;
 	}
-	
+
 	~this()
 	{
 		//if( m_object ) logInfo("~this!%s(): %d", T.stringof, this.refCount);
@@ -616,7 +616,7 @@ struct FreeListRef(T, bool INIT = true)
 		m_magic = 0;
 		m_object = null;
 	}
-	
+
 	this(this)
 	{
 		checkInvariants();
@@ -625,13 +625,13 @@ struct FreeListRef(T, bool INIT = true)
 			this.refCount++;
 		}
 	}
-	
+
 	void opAssign(FreeListRef other)
 	{
 		import std.algorithm : swap;
 		.swap(m_object, other.m_object);
 	}
-	
+
 	void clear()
 	{
 		checkInvariants();
@@ -648,22 +648,22 @@ struct FreeListRef(T, bool INIT = true)
 				manualAllocator().free((cast(void*)m_object)[0 .. ElemSize+int.sizeof]);
 			}
 		}
-		
+
 		m_object = null;
 		m_magic = 0x1EE75817;
 	}
-	
+
 	@property const(TR) get() const { checkInvariants(); return m_object; }
 	@property TR get() { checkInvariants(); return m_object; }
 	alias get this;
-	
+
 	private @property ref int refCount()
 	const {
 		auto ptr = cast(ubyte*)cast(void*)m_object;
 		ptr += ElemSize;
 		return *cast(int*)ptr;
 	}
-	
+
 	private void checkInvariants()
 	const {
 		assert(m_magic == 0x1EE75817);
