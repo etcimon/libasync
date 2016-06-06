@@ -37,6 +37,8 @@ environment:
 
 matrix:
   allow_failures:
+    # See https://github.com/dlang/dub/issues/618
+    # Should be removed once dub 0.9.26 is available
     - DC: ldc
 
 skip_tags: false
