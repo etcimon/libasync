@@ -1,10 +1,15 @@
 language: d
 
+os:
+  - linux
+  - osx
+
 d:
   - dmd-2.071.0
   - dmd-2.070.0
   - dmd-2.069.2
   - dmd-2.068.2
+  - ldc-1.0.0
   - ldc-0.17.1
   - ldc-0.17.0
 
