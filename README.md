@@ -1,4 +1,5 @@
 ﻿[![Build Status](https://travis-ci.org/etcimon/libasync.png)](https://travis-ci.org/etcimon/libasync)
+﻿[![Build status](https://ci.appveyor.com/api/projects/status/ryvd5tlgjyqmjpsm?svg=true)](https://ci.appveyor.com/project/etcimon/libasync)
 
 About
 -----
