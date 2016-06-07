@@ -849,21 +849,13 @@ package:
 	}
 
 	bool broadcast(in fd_t fd, bool b) {
-		{
-			int val = b?1:0;
-			socklen_t len = val.sizeof;
-			int err = setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &val, len);
-			if (catchSocketError!"setsockopt"(err))
-				return false;
-		}
-		{
-			INT val = 4;
-			socklen_t len = val.sizeof;
-			int err = setsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL, &val, len);
-			if (catchSocketError!"setsockopt"(err)) {
-				return false;
-			}
-		}
+	
+		int val = b?1:0;
+		socklen_t len = val.sizeof;
+		int err = setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &val, len);
+		if (catchSocketError!"setsockopt"(err))
+			return false;
+	
 		return true;
 
 	}
