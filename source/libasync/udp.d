@@ -1,4 +1,5 @@
-﻿module libasync.udp;
+﻿///
+module libasync.udp;
 
 import libasync.types;
 
@@ -15,6 +16,7 @@ private:
 	NetworkAddress m_local;
 
 public:
+	///
 	this(EventLoop evl, fd_t preInitializedSocket = fd_t.init)
 	in { assert(evl !is null); }
 	body {
@@ -135,8 +137,9 @@ package struct UDPHandler {
 	}
 }
 
+///
 enum UDPEvent : char {
-	ERROR = 0,
-	READ,
-	WRITE
+	ERROR = 0, ///
+	READ, ///
+	WRITE ///
 }

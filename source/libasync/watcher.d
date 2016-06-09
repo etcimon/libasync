@@ -1,4 +1,5 @@
-﻿module libasync.watcher;
+﻿///
+module libasync.watcher;
 
 import libasync.types;
 
@@ -21,6 +22,7 @@ private:
 	fd_t m_fd;
 	debug bool m_dataRemaining;
 public:
+	///
 	this(EventLoop evl)
 	in { assert(evl !is null); }
 	body { m_evLoop = evl; }
@@ -135,6 +137,7 @@ public:
 		return m_evLoop.kill(this);
 	}
 
+	///
 	@property fd_t fd() const {
 		return m_fd;
 	}
@@ -155,10 +158,12 @@ struct DWChangeInfo {
 	/// The os-independent address of the file/folder
 	private Path m_path;
 
+	///
 	@property string path() {
 		return m_path.toNativeString();
 	}
 
+	///
 	@property void path(Path p) {
 		m_path = p;
 	}
@@ -168,13 +173,13 @@ struct DWChangeInfo {
 /// List of events that can be watched for. They must be 'Or'ed together
 /// to combined them when calling watch(). OS-triggerd events are exclusive.
 enum DWFileEvent : uint {
-	ERROR = 0,
-	MODIFIED = 0x00000002,
-	MOVED_FROM = 0x00000040,
-	MOVED_TO = 0x00000080,
-	CREATED = 0x00000100,
-	DELETED = 0x00000200,
-	ALL = MODIFIED | MOVED_FROM | MOVED_TO | CREATED | DELETED
+	ERROR = 0, ///
+	MODIFIED = 0x00000002, ///
+	MOVED_FROM = 0x00000040, ///
+	MOVED_TO = 0x00000080, ///
+	CREATED = 0x00000100, ///
+	DELETED = 0x00000200, ///
+	ALL = MODIFIED | MOVED_FROM | MOVED_TO | CREATED | DELETED ///
 }
 
 

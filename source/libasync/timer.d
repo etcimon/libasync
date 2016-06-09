@@ -1,9 +1,11 @@
-﻿module libasync.timer;
+﻿///
+module libasync.timer;
 
 import libasync.types;
 import libasync.events;
 import std.datetime;
 
+///
 final class AsyncTimer
 {
 
@@ -18,6 +20,7 @@ private:
 	bool m_rearmed = false;
 
 public:
+	///
 	this(EventLoop evl)
 	in { assert(evl !is null); }
 	body { m_evLoop = evl; }
@@ -110,6 +113,7 @@ public:
 		return m_evLoop.kill(this);
 	}
 
+	///
 	@property fd_t id() {
 		return m_timerId;
 	}

@@ -1,3 +1,4 @@
+///
 module libasync.bufferedtcp;
 
 import std.algorithm : copy;
@@ -10,9 +11,12 @@ import libasync.events;
 import libasync.tcp    : AsyncTCPConnection, TCPEvent, TCPEventHandler;
 import libasync.types  : StatusInfo;
 
+///
 final class BufferedTCPConnection(size_t size = 4092)
 {
+    ///
     alias OnEvent = void delegate(BufferedTCPConnection!size conn);
+    ///
     alias OnRead  =
         void delegate(BufferedTCPConnection!size conn, in ubyte[] msg);
 
@@ -31,6 +35,7 @@ final class BufferedTCPConnection(size_t size = 4092)
         ubyte[] workBuffer = new ubyte[size];
     }
 
+    ///
     this(
         EventLoop evl,
         fd_t preInitializedSocket = fd_t.init,
@@ -50,6 +55,7 @@ final class BufferedTCPConnection(size_t size = 4092)
         this.onErrorCb   = onErrorCb;
     }
 
+    ///
     this(
         AsyncTCPConnection conn,
         in OnEvent onConnectCb = null,
@@ -68,6 +74,7 @@ final class BufferedTCPConnection(size_t size = 4092)
         this.onErrorCb   = onErrorCb;
     }
 
+    ///
     @property bool hasError() const
     {
         return asyncConn.hasError;
@@ -92,6 +99,7 @@ final class BufferedTCPConnection(size_t size = 4092)
         return asyncConn.error;
     }
 
+    ///
     @property bool isConnected() const nothrow
     {
         return asyncConn.isConnected;
@@ -216,6 +224,7 @@ final class BufferedTCPConnection(size_t size = 4092)
         return ret;
     }
 
+    ///
     void read(in size_t len, in OnRead onReadCb)
     {
         onReadCbs ~= OnReadInfo(len, onReadCb);
@@ -242,6 +251,7 @@ final class BufferedTCPConnection(size_t size = 4092)
                 break;
     }
 
+    ///
     void write(R)(in R msg, in size_t len, in OnEvent cb = null)
     if (isInputRange!R)
     {
@@ -282,6 +292,7 @@ final class BufferedTCPConnection(size_t size = 4092)
             onErrorCb(this);
     }
 
+    ///
     void close()
     {
         kill();
@@ -294,6 +305,7 @@ final class BufferedTCPConnection(size_t size = 4092)
             onCloseCb(this);
     }
 
+    ///
     void handle(TCPEvent ev)
     {
         final switch (ev)

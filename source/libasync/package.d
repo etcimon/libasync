@@ -1,3 +1,4 @@
-﻿module libasync;
+﻿///
+module libasync;
 
 public import libasync.events;
