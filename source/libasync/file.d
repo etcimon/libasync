@@ -1,4 +1,5 @@
-﻿module libasync.file;
+﻿///
+module libasync.file;
 import libasync.types;
 import libasync.events;
 import core.thread : Thread, ThreadGroup;
@@ -28,6 +29,7 @@ private:
 	File* m_file;
 
 public:
+	///
 	this(EventLoop evl) {
 		m_evLoop = cast(shared) evl;
 		m_cmdInfo.ready = new shared AsyncSignal(cast(EventLoop)m_evLoop);
@@ -49,11 +51,13 @@ public:
 		return true;
 	}
 
+	///
 	synchronized @property StatusInfo status() const
 	{
 		return cast(StatusInfo) m_status;
 	}
 
+	///
 	@property string error() const
 	{
 		return status.text;

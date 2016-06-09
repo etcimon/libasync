@@ -1,4 +1,5 @@
-﻿module libasync.event;
+﻿///
+module libasync.event;
 
 import core.thread;
 import libasync.types;
@@ -17,6 +18,7 @@ private:
 	bool m_stateful;
 
 public:
+	///
 	this(EventLoop evl, fd_t ev_id, bool stateful = false)
 	in {
 		assert(evl !is null && ev_id > 0);
@@ -29,6 +31,7 @@ public:
 		m_stateful = stateful;
 	}
 
+	///
 	@property bool hasError() const
 	{
 		return (cast(EventLoop)m_evLoop).status.code != Status.OK;
@@ -62,6 +65,7 @@ public:
 		return cast(Thread) m_owner;
 	}
 
+	///
 	@property fd_t id() const {
 		return m_evId;
 	}
@@ -89,10 +93,16 @@ package struct EventHandler {
 	}
 }
 
+///
 enum EventCode : char {
+	///
 	ERROR = 0,
+	///
 	READ,
+	///
 	WRITE,
+	///
 	CONNECT,
+	///
 	CLOSE
 }
