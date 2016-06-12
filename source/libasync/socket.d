@@ -89,7 +89,7 @@ import std.array;
 import std.container;
 
 private:
-	AsyncEvent m_event = void;
+	AsyncEvent m_event;
 
 	struct RecvRequest
 	{
@@ -217,7 +217,6 @@ private:
 		}
 	}
 
-public:
 	bool run()
 	{
 		if (m_socket is null) return false;
@@ -247,8 +246,10 @@ public:
 		});
 	}
 
+public:
 	bool connect(Address to)
 	{
+		if (m_event is null) run();
 		if (m_socket is null) return false;
 		m_onRead = &receive;
 		m_onWrite = &send;
@@ -262,16 +263,16 @@ public:
 			return false;
 		}
 	}
-import std.stdio;
+
 	bool bind(Address addr)
 	{
+		if (m_event is null) run();
 		if (m_socket is null) return false;
 
 		try {
 			m_socket.bind(addr);
 			return true;
 		} catch (Exception e) {
-			try writeln(e); catch {}
 			m_event.kill();
 			return false;
 		}
@@ -279,6 +280,7 @@ import std.stdio;
 
 	bool listen(int backlog)
 	{
+		if (m_event is null) run();
 		if (m_socket is null) return false;
 		m_onRead = &accept;
 		m_onWrite = &blackhole;
