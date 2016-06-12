@@ -817,7 +817,7 @@ package:
 	}
 
 	pragma(inline, true)
-	uint recv(in fd_t fd, ref ubyte[] data)
+	uint recv(in fd_t fd, void[] data)
 	{
 		m_status = StatusInfo.init;
 		int ret = .recv(fd, cast(void*) data.ptr, cast(INT) data.length, 0);
@@ -833,7 +833,7 @@ package:
 	}
 
 	pragma(inline, true)
-	uint send(in fd_t fd, in ubyte[] data)
+	uint send(in fd_t fd, in void[] data)
 	{
 		m_status = StatusInfo.init;
 		static if (LOG) try log("SEND " ~ data.length.to!string ~ "B FD#" ~ fd.to!string);
@@ -860,7 +860,7 @@ package:
 
 	}
 
-	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
+	uint recvFrom(in fd_t fd, void[] data, ref NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
 
@@ -883,7 +883,7 @@ package:
 		return cast(uint) ret;
 	}
 
-	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
+	uint sendTo(in fd_t fd, in void[] data, in NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
 		static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B " ~ addr.toString()); catch{}

@@ -95,15 +95,15 @@ package:
 		return m_evLoop.error;
 	}
 
-	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr) {
+	uint recvFrom(in fd_t fd, void[] data, ref NetworkAddress addr) {
 		return m_evLoop.recvFrom(fd, data, addr);
 	}
 
-	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr) {
+	uint sendTo(in fd_t fd, in void[] data, in NetworkAddress addr) {
 		return m_evLoop.sendTo(fd, data, addr);
 	}
 
-	uint recv(in fd_t fd, ref ubyte[] data)
+	uint recv(in fd_t fd, void[] data)
 	{
 		return m_evLoop.recv(fd, data);
 	}
@@ -114,7 +114,7 @@ package:
 	}*/
 
 	pragma(inline, true)
-	uint send(in fd_t fd, in ubyte[] data)
+	uint send(in fd_t fd, in void[] data)
 	{
 		return m_evLoop.send(fd, data);
 	}

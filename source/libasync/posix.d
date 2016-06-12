@@ -804,7 +804,7 @@ package:
 	}
 
 	pragma(inline, true)
-	uint recv(in fd_t fd, ref ubyte[] data)
+	uint recv(in fd_t fd, void[] data)
 	{
 		static if (LOG) try log("Recv from FD: " ~ fd.to!string); catch {}
 		m_status = StatusInfo.init;
@@ -836,7 +836,7 @@ package:
 	}
 
 	pragma(inline, true)
-	uint send(in fd_t fd, in ubyte[] data)
+	uint send(in fd_t fd, in void[] data)
 	{
 		static if (LOG) try log("Send to FD: " ~ fd.to!string); catch {}
 		m_status = StatusInfo.init;
@@ -867,7 +867,7 @@ package:
 		return cast(uint) ret;
 	}
 
-	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
+	uint recvFrom(in fd_t fd, void[] data, ref NetworkAddress addr)
 	{
 		import libasync.internals.socket_compat : recvfrom, AF_INET6, AF_INET, socklen_t;
 
@@ -905,7 +905,7 @@ package:
 		return cast(uint) ret;
 	}
 
-	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
+	uint sendTo(in fd_t fd, in void[] data, in NetworkAddress addr)
 	{
 		import libasync.internals.socket_compat : sendto;
 
@@ -913,7 +913,7 @@ package:
 
 		static if (LOG) try log(".sendTo " ~ data.length.to!string ~ "bytes"); catch{}
 		retry:
-			auto ret = sendto(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, addr.sockAddrLen);
+			auto ret = sendto(fd, data.ptr, data.length, 0, addr.sockAddr, addr.sockAddrLen);
 
 		if (catchError!".sendTo"(ret)) {
 			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
