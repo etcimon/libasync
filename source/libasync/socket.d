@@ -15,7 +15,12 @@ private:
 	OnCloseCb m_onClose;
 	OnErrorCb m_onError;
 
+	OnAcceptCb m_onAccept;
+
 	bool m_connectionBased;
+
+	alias OnReadCb = void delegate();
+	alias OnWriteCb = void delegate();
 
 package:
 	EventLoop m_evLoop = void;
@@ -23,11 +28,20 @@ package:
 public:
 	alias OnConnectCb = void delegate();
 	alias OnCloseCb = void delegate();
+
 	alias OnReceiveCb = void delegate(void[] data);
 	alias OnSendCb = void delegate();
+	alias OnAcceptCb = bool delegate(AsyncSocket client);
 	alias OnErrorCb = void delegate();
 
 nothrow:
+
+private:
+	this(EventLoop eventLoop, Socket socket)
+	{
+		m_evLoop = eventLoop;
+		m_socket = socket;
+	}
 
 public:
 	this(EventLoop eventLoop, AddressFamily af, SocketType type, ProtocolType protocol)
@@ -36,6 +50,16 @@ public:
 		try {
 			m_socket = new Socket(af, type, protocol);
 			m_socket.blocking = false;
+
+			final switch (type) with (SocketType) {
+				case STREAM: m_connectionBased = true; break;
+				case SEQPACKET: m_connectionBased = true; break;
+
+				case DGRAM: m_connectionBased = false; break;
+				case RDM: m_connectionBased = false; break;
+
+				case RAW: m_connectionBased = false; break;
+			}
 		}
 		catch (Exception) {}
 	}
@@ -53,6 +77,9 @@ public:
 
 	@property void onError(OnErrorCb onError)
 	{ m_onError = onError; }
+
+	@property void onAccept(OnAcceptCb onAccept)
+	{ m_onAccept = onAccept; }
 
 	mixin DefStatus;
 
@@ -75,6 +102,9 @@ private:
 		void[] buf;
 		OnSendCb cb;
 	}
+
+	OnReadCb m_onRead;
+	OnWriteCb m_onWrite;
 
 	bool m_receiveReady;
 
@@ -117,7 +147,9 @@ private:
 		return buf[0 .. $ - recvBuf.length];
 	}
 
-	void onRead()
+	void blackhole() {}
+
+	void receive()
 	{
 		m_receiveReady = true;
 		if (m_onReceive is null) while (!m_recvRequests.empty && m_receiveReady) {
@@ -137,7 +169,7 @@ private:
 		}
 	}
 
-	void onWrite()
+	void send()
 	{
 		while (!m_sendRequests.empty) {
 			auto sendRequest = m_sendRequests.front;
@@ -153,7 +185,7 @@ private:
 			} while (!buf.empty && !m_event.writeBlocked);
 			if (buf.empty) {
 				m_sendRequests.removeFront();
-				try sendRequest.cb(); catch {
+				if (sendRequest.cb !is null) try sendRequest.cb(); catch {
 					// TODO: Log this
 				}
 			}
@@ -164,35 +196,95 @@ private:
 		}
 	}
 
+	void accept()
+	{
+		try while (true) {
+			auto client = new AsyncSocket(m_evLoop, m_socket.accept());
+
+			client.m_connectionBased = m_connectionBased;
+			client.m_onRead = &receive;
+			client.m_onWrite = &send;
+			//if (client.m_connectionBased) client.m_event.stateful = true;
+
+			if (m_onAccept(client)) {
+				client.run();
+				if (client.m_connectionBased) client.m_event.stateful = true;
+			}
+		} catch (SocketAcceptException) {
+			// No more clients to accept
+		} catch {
+			// TODO: Handle this
+		}
+	}
+
 public:
-	bool connect(Address to)
+	bool run()
 	{
 		if (m_socket is null) return false;
 
-		m_event = new AsyncEvent(m_evLoop, m_socket.handle, true);
-		if (!m_event.run((code) {
+		m_event = new AsyncEvent(m_evLoop, m_socket.handle);
+		return m_event.run((code) {
 			final switch (code) with (EventCode) {
 				case CONNECT:
 					if (m_onConnect !is null) m_onConnect();
 					break;
 				case CLOSE:
-					// If the remote peer closes the connection on the socket,
-					// just dispatch the close event and kill the driving
-					// AsyncEvent (which also closes the socket)
 					if (m_onClose !is null) m_onClose();
 					break;
-				case READ: onRead(); break;
-				case WRITE: onWrite(); break;
+				case READ:
+					assert(m_onRead !is null);
+					m_onRead();
+					break;
+				case WRITE:
+					assert(m_onWrite !is null);
+					m_onWrite();
+					break;
 				case ERROR:
 					if (m_onError !is null) m_onError();
 					else kill();
 					break;
 			}
-		})) { return false; }
+		});
+	}
+
+	bool connect(Address to)
+	{
+		if (m_socket is null) return false;
+		m_onRead = &receive;
+		m_onWrite = &send;
+		if (m_connectionBased) m_event.stateful = true;
 
 		try {
 			m_socket.connect(to);
-			m_connectionBased = true;
+			return true;
+		} catch {
+			m_event.kill();
+			return false;
+		}
+	}
+import std.stdio;
+	bool bind(Address addr)
+	{
+		if (m_socket is null) return false;
+
+		try {
+			m_socket.bind(addr);
+			return true;
+		} catch (Exception e) {
+			try writeln(e); catch {}
+			m_event.kill();
+			return false;
+		}
+	}
+
+	bool listen(int backlog)
+	{
+		if (m_socket is null) return false;
+		m_onRead = &accept;
+		m_onWrite = &blackhole;
+
+		try {
+			m_socket.listen(backlog);
 			return true;
 		} catch {
 			m_event.kill();
@@ -227,7 +319,7 @@ public:
 		return true;
 	}
 
-	void send(const(void)[] buf, OnSendCb onSent)
+	void send(const(void)[] buf, OnSendCb onSent = null)
 	{
 		if (!m_sendRequests.empty) {
 			m_sendRequests ~= SendRequest(buf.dup, onSent);
@@ -246,7 +338,7 @@ public:
 		if (!buf.empty) {
 			m_sendRequests ~= SendRequest(buf.dup, onSent);
 		} else {
-			try onSent(); catch {
+			if (onSent !is null) try onSent(); catch {
 				// TODO: Log this
 			}
 		}
@@ -258,7 +350,7 @@ public:
 		if (m_onReceive !is null && m_onReceive != onRecv) { return false; }
 		m_recvBuf = buf;
 		m_onReceive = onRecv;
-		if (m_receiveReady) { onRead(); }
+		if (m_receiveReady) { receive(); }
 		return true;
 	}
 
