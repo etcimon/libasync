@@ -1923,31 +1923,6 @@ private:
 			}
 		}
 
-		if (error) // failure
-		{
-			setInternalError!"EPOLLERR"(Status.ABORT, null);
-			try {
-				del(EventCode.ERROR);
-			}
-			catch (Exception e)
-			{
-				setInternalError!"del@Event.ERROR"(Status.ABORT);
-				// ignore failure...
-			}
-			return false;
-		}
-
-		if (conn.stateful && connect) {
-			static if (LOG) try log("!connect"); catch {}
-			conn.connected = true;
-			try del(EventCode.CONNECT);
-			catch (Exception e) {
-				setInternalError!"del@Event.CONNECT"(Status.ABORT);
-				return false;
-			}
-			return true;
-		}
-
 		if (write && (!conn.stateful || conn.connected && !conn.disconnecting && conn.writeBlocked)) {
 			if (conn.stateful) conn.writeBlocked = false;
 			static if (LOG) try log("!write"); catch {}
@@ -1997,6 +1972,32 @@ private:
 				try ThreadMem.free(conn.evInfo);
 				catch (Exception e){ assert(false, "Error freeing resources"); }
 			}
+			return true;
+		}
+
+		if (error) // failure
+		{
+			setInternalError!"EPOLLERR"(Status.ABORT, null);
+			try {
+				del(EventCode.ERROR);
+			}
+			catch (Exception e)
+			{
+				setInternalError!"del@Event.ERROR"(Status.ABORT);
+				// ignore failure...
+			}
+			return false;
+		}
+
+		if (conn.stateful && connect) {
+			static if (LOG) try log("!connect"); catch {}
+			conn.connected = true;
+			try del(EventCode.CONNECT);
+			catch (Exception e) {
+				setInternalError!"del@Event.CONNECT"(Status.ABORT);
+				return false;
+			}
+			return true;
 		}
 
 		return true;
