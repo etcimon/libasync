@@ -81,6 +81,10 @@ package:
 		return m_stateful;
 	}
 
+	@property void stateful(bool stateful) {
+		m_stateful = stateful;
+	}
+
 	@property void id(fd_t id) {
 		m_evId = id;
 	}
