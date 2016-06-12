@@ -1547,7 +1547,7 @@ package:
 		return getAddressInfo(host, port, ipv6, tcp, hints);
 	}
 
-	void setInternalError(string TRACE)(in Status s, in string details = "", in error_t error = EPosix.EACCES)
+	void setInternalError(string TRACE)(in Status s, string details = "", error_t error = cast(EPosix) errno())
 	{
 		if (details.length > 0)
 			m_status.text = TRACE ~ ": " ~ details;
