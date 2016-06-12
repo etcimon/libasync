@@ -1497,11 +1497,13 @@ package:
 			EV_SET(&(events[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
 			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
 			kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
-
 		}
 
-		if (catchError!"shutdown"(err))
+		if (err == SOCKET_ERROR && errno == ENOTCONN) {
+			// The socket has already been shut down, we can recover from that
+		} else  if (catchError!"shutdown"(err)) {
 			return false;
+		}
 
 		return true;
 	}
