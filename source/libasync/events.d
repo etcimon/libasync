@@ -21,6 +21,7 @@ public import libasync.watcher;
 public import libasync.file;
 public import libasync.threads;
 public import libasync.event;
+public import libasync.socket;
 
 version(Windows) {
 	public import libasync.windows;
