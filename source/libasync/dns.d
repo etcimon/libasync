@@ -85,7 +85,7 @@ public:
 			return true;
 		}
 
-		return sendCommand();
+		return doOffThread({ process(this); });
 	}
 
 	/// Returns an OS-specific NetworkAddress structure from the specified IP.
@@ -98,47 +98,6 @@ public:
 		return (cast(EventLoop)m_evLoop).resolveIP(url, 0, ipv6?isIPv6.yes:isIPv6.no);
 	}
 
-	// chooses a thread or starts it if necessary
-	private bool sendCommand()
-	in { assert(!waiting, "File is busy or closed"); }
-	body {
-		waiting = true;
-		m_error = false;
-		status = StatusInfo.init;
-
-		Waiter cmd_handler;
-		try {
-			cmd_handler = popWaiter();
-		} catch (Throwable e) {
-			import std.stdio;
-			try {
-				status = StatusInfo(Status.ERROR, e.toString());
-				m_error = true;
-			} catch {}
-
-			return false;
-		}
-
-		if (cmd_handler is Waiter.init) {
-			m_cmdInfo.addr = cast(shared)((cast()m_evLoop).resolveHost(cmdInfo.url, 0, cmdInfo.ipv6?isIPv6.yes:isIPv6.no));
-			callback();
-			return true;
-		}
-		assert(cmd_handler.cond);
-		m_cmdInfo.waiter = cast(shared)cmd_handler;
-		try {
-			synchronized(gs_wlock)
-				gs_jobs.insert(CommandInfo(CmdInfoType.DNS, cast(void*) this));
-
-			cmd_handler.cond.notifyAll();
-		}
-		catch (Exception e){
-			import std.stdio;
-			try writeln("Exception occured notifying foreign thread: ", e); catch {}
-		}
-		return true;
-	}
-
 	/// Cleans up underlying resources. Used as a placeholder for possible future purposes.
 	bool kill() {
 		return true;
@@ -148,7 +107,6 @@ package:
 	synchronized @property DNSCmdInfo cmdInfo() {
 		return m_cmdInfo;
 	}
-
 
 	shared(NetworkAddress*) addr() {
 		try synchronized(m_cmdInfo.mtx)
@@ -190,7 +148,6 @@ package shared struct DNSCmdInfo
 	bool ipv6;
 	string url;
 	NetworkAddress addr;
-	Waiter waiter;
 	AsyncSignal ready;
 	AsyncDNS dns;
 	Mutex mtx; // for NetworkAddress writing
@@ -204,5 +161,41 @@ package shared struct DNSReadyHandler {
 		assert(ctxt !is null);
 		del(addr);
 		return;
+	}
+}
+
+private void process(shared AsyncDNS ctxt) {
+	auto evLoop = getThreadEventLoop();
+
+	DNSCmdInfo cmdInfo = ctxt.cmdInfo();
+	auto mutex = cmdInfo.mtx;
+	DNSCmd cmd;
+	string url;
+	cmd = cmdInfo.command;
+	url = cmdInfo.url;
+
+	try final switch (cmd)
+	{
+		case DNSCmd.RESOLVEHOST:
+			*ctxt.addr = cast(shared) evLoop.resolveHost(url, 0, cmdInfo.ipv6 ? isIPv6.yes : isIPv6.no);
+			break;
+
+		case DNSCmd.RESOLVEIP:
+			*ctxt.addr = cast(shared) evLoop.resolveIP(url, 0, cmdInfo.ipv6 ? isIPv6.yes : isIPv6.no);
+			break;
+
+	} catch (Throwable e) {
+		auto status = StatusInfo.init;
+		status.code = Status.ERROR;
+		try status.text = e.toString(); catch {}
+		ctxt.status = status;
+	}
+
+	try cmdInfo.ready.trigger(evLoop);
+	catch (Throwable e) {
+		auto status = StatusInfo.init;
+		status.code = Status.ERROR;
+		try status.text = e.toString(); catch {}
+		ctxt.status = status;
 	}
 }
