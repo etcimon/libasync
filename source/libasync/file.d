@@ -10,7 +10,9 @@ import core.atomic;
 import libasync.internals.path;
 import libasync.threads;
 import std.file;
+import std.conv : to;
 import libasync.internals.memory;
+import libasync.internals.logging;
 
 /// Runs all blocking file I/O commands in a thread pool and calls the handler
 /// upon completion.
@@ -159,7 +161,8 @@ public:
 			filePath = Path(file_path);
 		} catch {}
 		offset = off;
-		return sendCommand();
+
+		return doOffThread({ process(this); });
 	}
 
 	/// Writes the data from the buffer into the file at the specified path starting at the
@@ -230,8 +233,8 @@ public:
 			filePath = Path(file_path);
 		} catch {}
 		offset = off;
-		return sendCommand();
 
+		return doOffThread({ process(this); });
 	}
 
 	/// Appends the data from the buffer into a file at the specified path.
@@ -296,47 +299,10 @@ public:
 			m_cmdInfo.command = FileCmd.APPEND;
 			filePath = Path(file_path);
 		} catch {}
-		return sendCommand();
+
+		return doOffThread({ process(this); });
 	}
 
-	private bool sendCommand()
-	in { assert(!waiting, "File is busy or closed"); }
-	body {
-		waiting = true;
-		m_error = false;
-		status = StatusInfo.init;
-
-		Waiter cmd_handler;
-
-		try {
-			cmd_handler = popWaiter();
-
-		} catch (Throwable e) {
-			import std.stdio;
-			try {
-				status = StatusInfo(Status.ERROR, e.toString());
-				m_error = true;
-			} catch {}
-
-			return false;
-		}
-
-		assert(cmd_handler.cond, "Could not lock a thread for async operations. Note: Async file I/O in static constructors is unsupported.");
-
-		m_cmdInfo.waiter = cast(shared) cmd_handler;
-		try {
-			synchronized(gs_wlock)
-				gs_jobs.insert(CommandInfo(CmdInfoType.FILE, cast(void*) this));
-			cmd_handler.cond.notifyAll();
-		}
-		catch (Exception e){
-			static if (DEBUG) {
-				import std.stdio;
-				try writeln("Exception occured notifying foreign thread: ", e); catch {}
-			}
-		}
-		return true;
-	}
 package:
 
 	synchronized @property FileCmdInfo cmdInfo() {
@@ -363,10 +329,7 @@ package:
 	synchronized @property void file(ref File f) {
 		try (cast()*m_file).opAssign(f);
 		catch (Exception e) {
-			static if (DEBUG) {
-				import std.stdio : writeln;
-				try writeln(e.msg); catch {}
-			}
+			trace(e.msg);
 		}
 	}
 
@@ -385,10 +348,7 @@ package:
 	void handler() {
 		try m_handler();
 		catch (Throwable e) {
-			static if (DEBUG) {
-				import std.stdio : writeln;
-				try writeln("Failed to send command. ", e.toString()); catch {}
-			}
+			trace("Failed to send command. ", e.toString());
 		}
 	}
 }
@@ -404,7 +364,6 @@ package shared struct FileCmdInfo
 	FileCmd command;
 	Path filePath;
 	ubyte[] buffer;
-	Waiter waiter;
 	AsyncSignal ready;
 	AsyncFile file;
 	Mutex mtx; // for buffer writing
@@ -419,5 +378,57 @@ package shared struct FileReadyHandler {
 		ctxt.waiting = false;
 		del();
 		return;
+	}
+}
+
+private void process(shared AsyncFile ctxt) {
+	auto cmdInfo = ctxt.cmdInfo;
+	auto mutex = cmdInfo.mtx;
+	FileCmd cmd;
+	cmd = cmdInfo.command;
+
+	try final switch (cmd)
+	{
+		case FileCmd.READ:
+			File file = ctxt.file;
+			if (ctxt.offset != -1)
+				file.seek(cast(long) ctxt.offset);
+			ubyte[] res;
+			synchronized(mutex) res = file.rawRead(cast(ubyte[])ctxt.buffer);
+			if (res)
+				ctxt.offset = cast(ulong) (ctxt.offset + res.length);
+
+			break;
+
+		case FileCmd.WRITE:
+
+			File file = cast(File) ctxt.file;
+			if (ctxt.offset != -1)
+				file.seek(cast(long) ctxt.offset);
+			synchronized(mutex) file.rawWrite(cast(ubyte[]) ctxt.buffer);
+			file.flush();
+			ctxt.offset = cast(ulong) (ctxt.offset + ctxt.buffer.length);
+			break;
+
+		case FileCmd.APPEND:
+			File file = cast(File) ctxt.file;
+			synchronized(mutex) file.rawWrite(cast(ubyte[]) ctxt.buffer);
+			ctxt.offset = cast(ulong) file.size();
+			file.flush();
+			break;
+	} catch (Throwable e) {
+		auto status = StatusInfo.init;
+		status.code = Status.ERROR;
+		try status.text = "Error in " ~  cmd.to!string ~ ", " ~ e.toString(); catch {}
+		ctxt.status = status;
+	}
+
+	try cmdInfo.ready.trigger(getThreadEventLoop());
+	catch (Throwable e) {
+		trace("AsyncFile Thread Error: ", e.toString());
+		auto status = StatusInfo.init;
+		status.code = Status.ERROR;
+		try status.text = e.toString(); catch {}
+		ctxt.status = status;
 	}
 }
