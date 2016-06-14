@@ -78,7 +78,7 @@ public:
 			return true;
 		}
 
-		return doAsync({ process(this); });
+		return doOffThread({ process(this); });
 	}
 
 	/// Returns an OS-specific NetworkAddress structure from the specified IP.

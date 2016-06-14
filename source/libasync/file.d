@@ -158,7 +158,7 @@ public:
 		} catch {}
 		offset = off;
 
-		return doAsync({ process(this); });
+		return doOffThread({ process(this); });
 	}
 
 	/// Writes the data from the buffer into the file at the specified path starting at the
@@ -230,7 +230,7 @@ public:
 		} catch {}
 		offset = off;
 
-		return doAsync({ process(this); });
+		return doOffThread({ process(this); });
 	}
 
 	/// Appends the data from the buffer into a file at the specified path.
@@ -296,7 +296,7 @@ public:
 			filePath = Path(file_path);
 		} catch {}
 
-		return doAsync({ process(this); });
+		return doOffThread({ process(this); });
 	}
 
 package:
