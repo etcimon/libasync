@@ -5,7 +5,8 @@ import std.parallelism;
 
 import libasync.internals.logging;
 
-version (Posix):
+version (Posix) {
+public:
 
 	bool spawnAsyncThreads(uint threadCount = totalCPUs) nothrow
 	in {
@@ -20,8 +21,13 @@ version (Posix):
 	}
 
 	nothrow
-	void doAsync(void delegate() work)  {
-		task(work);
+	bool doAsync(void delegate() work)  {
+		try taskPool.put(task(work));
+		catch (Exception e) {
+			critical("Failed to dispatch task to thread pool: ", e.toString());
+			return false;
+		}
+		return true;
 	}
 
 	nothrow

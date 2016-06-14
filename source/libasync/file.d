@@ -9,6 +9,7 @@ import core.atomic;
 import libasync.internals.path;
 import libasync.threads;
 import std.file;
+import std.conv : to;
 import libasync.internals.memory;
 import libasync.internals.logging;
 
@@ -157,8 +158,7 @@ public:
 		} catch {}
 		offset = off;
 
-		doAsync({ process(this); });
-		return true;
+		return doAsync({ process(this); });
 	}
 
 	/// Writes the data from the buffer into the file at the specified path starting at the
@@ -230,8 +230,7 @@ public:
 		} catch {}
 		offset = off;
 
-		doAsync({ process(this); });
-		return true;
+		return doAsync({ process(this); });
 	}
 
 	/// Appends the data from the buffer into a file at the specified path.
@@ -297,8 +296,7 @@ public:
 			filePath = Path(file_path);
 		} catch {}
 
-		doAsync({ process(this); });
-		return true;
+		return doAsync({ process(this); });
 	}
 
 package:
