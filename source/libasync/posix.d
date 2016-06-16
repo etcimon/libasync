@@ -322,7 +322,7 @@ package:
 			}
 		}
 
-		auto errors = [	tuple(EINTR, Status.EVLOOP_TIMEOUT) ];
+		static Tuple!(int, Status)[] errors = [	tuple(EINTR, Status.EVLOOP_TIMEOUT) ];
 
 		if (catchEvLoopErrors!"event_poll'ing"(num, errors))
 			return false;
