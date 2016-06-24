@@ -1,0 +1,10 @@
+{
+    "name": "netcat",
+    "description": "A rudimentary netcat clone",
+    "dependencies": {
+        "libasync": { "path": "../../" },
+        "docopt": "~>0.6.1-b.5"
+    },
+
+    "targetName": "ncat",
+}
