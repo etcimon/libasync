@@ -9,17 +9,18 @@ import std.datetime : Duration, msecs, seconds, SysTime;
 import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
 import std.container : Array;
+import std.exception;
 
 import core.stdc.errno;
 import libasync.events;
 import libasync.internals.path;
 import core.sys.posix.signal;
 import libasync.posix2;
+import libasync.internals.logging;
 import core.sync.mutex;
 import memutils.utils;
 import memutils.hashmap;
 
-enum SOCKET_ERROR = -1;
 alias fd_t = int;
 
 
@@ -365,6 +366,63 @@ package:
 						close(info.fd);
 						try ThreadMem.free(info);
 						catch (Exception e){ assert(false, "Error freeing resources"); }
+					}
+					break;
+				case EventType.Socket:
+
+					import core.sys.posix.unistd : close;
+
+					auto socket = info.evObj.socket;
+
+					if (socket.passive) {
+						success = onCOPSocketEvent(socket, event_flags);
+					} else if (socket.connectionOriented) {
+						void abortCBSocket(bool graceful) nothrow {
+							void cleanup() nothrow {
+								trace("!cleanup");
+
+								if (socket.connected) {
+									closeSocket(info.fd, true, true);
+								}
+							}
+
+							/// Close the connection after an unexpected socket error
+							if (graceful) {
+								if (socket.connected) try socket.handleClose();
+								catch (Exception e) { .error("Could not dispatch socket close: ", e.toString()); }
+								cleanup();
+							}
+							/// Kill the connection after an internal error
+							else {
+								try socket.handleError();
+								catch (Exception e) { .error("Could not dispatch socket error: ", e.toString()); }
+								cleanup();
+							}
+
+							try ThreadMem.free(info);
+							catch (Exception) { assert(false); }
+						}
+
+						success = onCOASocketEvent(socket, event_flags);
+						if (!success && m_status.code == Status.ABORT) {
+							abortCBSocket(true);
+						}
+						else if (!success && m_status.code == Status.ERROR) {
+							abortCBSocket(false);
+						}
+					} else {
+						nothrow void abortCLSocket() {
+							close(info.fd);
+							try socket.handleError();
+							catch (Exception) { }
+							try ThreadMem.free(info);
+							catch (Exception) { assert(false); }
+						}
+
+						success = onCLSocketEvent(socket, event_flags);
+						if (!success && m_status.code == Status.ABORT || m_status.code == Status.ERROR) {
+							abortCLSocket();
+						}
 					}
 					break;
 				case EventType.TCPAccept:
@@ -2004,6 +2062,259 @@ private:
 
 		return true;
 	}
+
+	/// Handle the event for a connectionless socket
+	bool onCLSocketEvent(AsyncSocket socket, int events)
+	{
+		static if (EPOLL)
+		{
+			const uint epoll_events = cast(uint) events;
+			const bool read = cast(bool) (epoll_events & EPOLLIN);
+			const bool write = cast(bool) (epoll_events & EPOLLOUT);
+			const bool error = cast(bool) (epoll_events & EPOLLERR);
+		}
+		else
+		{
+			const short kqueue_events = cast(short) (events >> 16);
+			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
+			const bool read = cast(bool) (kqueue_events & EVFILT_READ);
+			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
+			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
+		}
+
+		if (read) {
+			info("!read");
+
+			socket.readBlocked = false;
+			try socket.processReceiveRequests();
+			catch (Exception e) {
+				.error(e.msg);
+				setInternalError!"del@Socket.READ"(Status.ABORT);
+				return false;
+			}
+		}
+
+		if (write) {
+			info("!write");
+
+			socket.writeBlocked = false;
+			try socket.processSendRequests();
+			catch (Exception e) {
+				.error(e.msg);
+				setInternalError!"del@Socket.WRITE"(Status.ABORT);
+				return false;
+			}
+		}
+
+		if (error) {
+			info("!error");
+
+			import libasync.internals.socket_compat : SOL_SOCKET, SO_ERROR;
+			int err;
+			assumeWontThrow(socket.getOption(SOL_SOCKET, SO_ERROR, err));
+			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t) err);
+
+			try socket.handleError();
+			catch (Exception e) {
+				.error(e.msg);
+				setInternalError!"del@Socket.ERROR"(Status.ABORT);
+				// ignore failure...
+			}
+			return false;
+		}
+
+		return true;
+	}
+
+	/// Handle the event for a connection-oriented, active socket
+	bool onCOASocketEvent(AsyncSocket socket, int events)
+	{
+		static if (EPOLL) {
+			const uint epoll_events = cast(uint) events;
+			const bool read = cast(bool) (epoll_events & EPOLLIN);
+			const bool write = cast(bool) (epoll_events & EPOLLOUT);
+			const bool error = cast(bool) (epoll_events & EPOLLERR);
+			const bool connect = ((cast(bool) (epoll_events & EPOLLIN)) || (cast(bool) (epoll_events & EPOLLOUT))) && !socket.disconnecting && !socket.connected;
+			const bool close = (cast(bool) (epoll_events & EPOLLRDHUP)) || (cast(bool) (events & EPOLLHUP));
+		} else {
+			const short kqueue_events = cast(short) (events >> 16);
+			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
+			const bool read = cast(bool) (kqueue_events & EVFILT_READ);
+			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
+			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
+			const bool connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !socket.disconnecting && !socket.connected);
+			const bool close = cast(bool) (kqueue_flags & EV_EOF);
+		}
+
+		tracef("Socket events: (read: %s, write: %s, error: %s, connect: %s, close: %s)", read, write, error, connect, close);
+
+		if (error) {
+			info("!error");
+
+			import libasync.internals.socket_compat : SOL_SOCKET, SO_ERROR;
+			int err;
+			assumeWontThrow(socket.getOption(SOL_SOCKET, SO_ERROR, err));
+			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t) err);
+
+			try socket.handleError();
+			catch (Exception) {
+				setInternalError!"del@TCPEvent.ERROR"(Status.ABORT);
+				// ignore failure...
+			}
+			return false;
+		}
+
+		if (connect) {
+			info("!connect");
+
+			socket.connected = true;
+			try socket.handleConnect();
+			catch (Exception e) {
+				.error(e.msg);
+				setInternalError!"del@Event.CONNECT"(Status.ABORT);
+				return false;
+			}
+			return true;
+		}
+
+		if (write && socket.connected && !socket.disconnecting && socket.writeBlocked) {
+			info("!write");
+
+			socket.writeBlocked = false;
+			try socket.processSendRequests();
+			catch (Exception e) {
+				.error(e.msg);
+				setInternalError!"del@Socket.READ"(Status.ABORT);
+				return false;
+			}
+		}
+
+		if (read && socket.connected && !socket.disconnecting && socket.readBlocked) {
+			info("!read");
+
+			socket.readBlocked = false;
+			try socket.processReceiveRequests();
+			catch (Exception e) {
+				.error(e.msg);
+				setInternalError!"del@Socket.READ"(Status.ABORT);
+				return false;
+			}
+		}
+
+		if (close && socket.connected && !socket.disconnecting)
+		{
+			info("!close");
+
+			try socket.handleClose();
+			catch (Exception e) {
+				.error(e.msg);
+				setInternalError!"del@Event.CLOSE"(Status.ABORT);
+				return false;
+			}
+
+			// Careful here, the delegate might have closed the connection already
+			if (socket.connected) {
+				closeSocket(socket.handle, !socket.disconnecting, socket.connected);
+
+				m_status.code = Status.ABORT;
+				socket.disconnecting = true;
+				socket.connected = false;
+				socket.writeBlocked = true;
+				socket.readBlocked = true;
+
+				try ThreadMem.free(socket.evInfo);
+				catch (Exception) { assert(false); }
+			}
+			return true;
+		}
+
+		return true;
+	}
+
+	/// Handle the event for a connection-oriented, passive socket
+	bool onCOPSocketEvent(AsyncSocket socket, int events)
+	{
+		import core.sys.posix.fcntl : O_NONBLOCK;
+		import libasync.internals.socket_compat : accept, accept4, sockaddr, socklen_t;
+
+		static if (EPOLL) {
+			const uint epoll_events = cast(uint) events;
+			const bool incoming = cast(bool) (epoll_events & EPOLLIN);
+			const bool error = cast(bool) (epoll_events & EPOLLERR);
+		} else {
+			const short kqueue_events = cast(short) (events >> 16);
+			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
+			const bool incoming = cast(bool) (kqueue_events & EVFILT_READ);
+			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
+		}
+
+		tracef("Socket events: (incoming: %s, error: %s)", incoming, error);
+
+		if (incoming) {
+			info("!incoming");
+
+			while (true) {
+				fd_t peerSocket = void;
+				sockaddr peerAddress = void;
+				socklen_t peerAddressLength = void;
+
+				version (linux) {
+					peerAddressLength = peerAddress.sizeof;
+					peerSocket = accept4(socket.handle, &peerAddress, &peerAddressLength, O_NONBLOCK);
+
+					if (catchError!"accept"(peerSocket)) {
+						if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+							m_status.code = Status.OK;
+							return true;
+						}
+						return false;
+					}
+				} else {
+					peerAddressLength = peerAddress.sizeof;
+					peerSocket = accept(socket.handle, &peerAddress, &peerAddressLength);
+
+					if (catchError!"accept"(peerSocket)) {
+						if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+							m_status.code = Status.OK;
+							return true;
+						}
+						return false;
+					}
+
+					if (!setNonBlock(peerSocket)) {
+						continue;
+					}
+				}
+
+				auto peer = new AsyncSocket(m_evLoop, peerAddress.sa_family, socket.params.type, socket.params.protocol, peerSocket);
+
+				socket.handleAccept(peer);
+				peer.run();
+			}
+		}
+
+		if (error)
+		{
+			info("!error");
+
+			import libasync.internals.socket_compat : SOL_SOCKET, SO_ERROR;
+			int err;
+			assumeWontThrow(socket.getOption(SOL_SOCKET, SO_ERROR, err));
+			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t) err);
+
+			try socket.handleError();
+			catch (Exception e)
+			{
+				.error(e.msg);
+				setInternalError!"del@Event.ERROR"(Status.ABORT);
+				// ignore failure...
+			}
+			return false;
+		}
+
+		return true;
+	}
+
 	bool onTCPTraffic(fd_t fd, TCPEventHandler del, int events, AsyncTCPConnection conn)
 	{
 		//log("TCP Traffic at FD#" ~ fd.to!string);
@@ -2743,6 +3054,7 @@ mixin template COSocketMixins() {
 		bool connected;
 		bool disconnecting;
 		bool writeBlocked;
+		bool readBlocked;
 	}
 
 	@property bool disconnecting() const {
@@ -2767,6 +3079,14 @@ mixin template COSocketMixins() {
 
 	@property void writeBlocked(bool b) {
 		m_impl.writeBlocked = b;
+	}
+
+	@property bool readBlocked() const {
+		return m_impl.readBlocked;
+	}
+
+	@property void readBlocked(bool b) {
+		m_impl.readBlocked = b;
 	}
 
 	@property EventInfo* evInfo() {
@@ -2841,18 +3161,19 @@ mixin template EvInfoMixins() {
 union EventObject {
 	TCPAcceptHandler tcpAcceptHandler;
 	TCPEventHandler tcpEvHandler;
+	AsyncSocket socket;
 	TimerHandler timerHandler;
 	DWHandler dwHandler;
 	UDPHandler udpHandler;
 	NotifierHandler notifierHandler;
 	EventHandler eventHandler;
-
 }
 
 enum EventType : char {
 	TCPAccept,
 	TCPTraffic,
 	UDPSocket,
+	Socket,
 	Notifier,
 	Signal,
 	Timer,
@@ -2865,149 +3186,4 @@ struct EventInfo {
 	EventType evType;
 	EventObject evObj;
 	ushort owner;
-}
-
-
-
-/**
- Represents a network/socket address. (taken from vibe.core.net)
- */
-public struct NetworkAddress {
-	import libasync.internals.socket_compat : sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6;
-	private union {
-		sockaddr addr;
-		sockaddr_in addr_ip4;
-		sockaddr_in6 addr_ip6;
-	}
-
-	@property bool ipv6() const pure nothrow { return this.family == AF_INET6; }
-
-	/** Family (AF_) of the socket address.
-	 */
-	@property ushort family() const pure nothrow { return addr.sa_family; }
-	/// ditto
-	@property void family(ushort val) pure nothrow { addr.sa_family = cast(ubyte)val; }
-
-	/** The port in host byte order.
-	 */
-	@property ushort port()
-	const pure nothrow {
-		switch (this.family) {
-			default: assert(false, "port() called for invalid address family.");
-			case AF_INET: return ntoh(addr_ip4.sin_port);
-			case AF_INET6: return ntoh(addr_ip6.sin6_port);
-		}
-	}
-	/// ditto
-	@property void port(ushort val)
-	pure nothrow {
-		switch (this.family) {
-			default: assert(false, "port() called for invalid address family.");
-			case AF_INET: addr_ip4.sin_port = hton(val); break;
-			case AF_INET6: addr_ip6.sin6_port = hton(val); break;
-		}
-	}
-
-	/** A pointer to a sockaddr struct suitable for passing to socket functions.
-	 */
-	@property inout(sockaddr)* sockAddr() inout pure nothrow { return &addr; }
-
-	/** Size of the sockaddr struct that is returned by sockAddr().
-	 */
-	@property uint sockAddrLen()
-	const pure nothrow {
-		switch (this.family) {
-			default: assert(false, "sockAddrLen() called for invalid address family.");
-			case AF_INET: return addr_ip4.sizeof;
-			case AF_INET6: return addr_ip6.sizeof;
-		}
-	}
-
-	@property inout(sockaddr_in)* sockAddrInet4() inout pure nothrow
-	in { assert (family == AF_INET); }
-	body { return &addr_ip4; }
-
-	@property inout(sockaddr_in6)* sockAddrInet6() inout pure nothrow
-	in { assert (family == AF_INET6); }
-	body { return &addr_ip6; }
-
-	/** Returns a string representation of the IP address
-	*/
-	string toAddressString()
-	const {
-		import std.array : appender;
-		auto ret = appender!string();
-		ret.reserve(40);
-		toAddressString(str => ret.put(str));
-		return ret.data;
-	}
-	/// ditto
-	void toAddressString(scope void delegate(const(char)[]) @safe sink)
-	const {
-		import std.array : appender;
-		import std.format : formattedWrite;
-		ubyte[2] _dummy = void; // Workaround for DMD regression in master
-
-		switch (this.family) {
-			default: assert(false, "toAddressString() called for invalid address family.");
-			case AF_INET:
-				ubyte[4] ip = () @trusted { return (cast(ubyte*)&addr_ip4.sin_addr.s_addr)[0 .. 4]; } ();
-				sink.formattedWrite("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-				break;
-			case AF_INET6:
-				ubyte[16] ip = addr_ip6.sin6_addr.s6_addr;
-				foreach (i; 0 .. 8) {
-					if (i > 0) sink(":");
-					_dummy[] = ip[i*2 .. i*2+2];
-					sink.formattedWrite("%x", bigEndianToNative!ushort(_dummy));
-				}
-				break;
-		}
-	}
-
-	/** Returns a full string representation of the address, including the port number.
-	*/
-	string toString()
-	const {
-		import std.array : appender;
-		auto ret = appender!string();
-		toString(str => ret.put(str));
-		return ret.data;
-	}
-	/// ditto
-	void toString(scope void delegate(const(char)[]) @safe sink)
-	const {
-		import std.format : formattedWrite;
-		switch (this.family) {
-			default: assert(false, "toString() called for invalid address family.");
-			case AF_INET:
-				toAddressString(sink);
-				sink.formattedWrite(":%s", port);
-				break;
-			case AF_INET6:
-				sink("[");
-				toAddressString(sink);
-				sink.formattedWrite("]:%s", port);
-				break;
-		}
-	}
-
-}
-
-private pure nothrow {
-	import std.bitmanip;
-
-	ushort ntoh(ushort val)
-	{
-		version (LittleEndian) return swapEndian(val);
-		else version (BigEndian) return val;
-		else static assert(false, "Unknown endianness.");
-	}
-
-	ushort hton(ushort val)
-	{
-		version (LittleEndian) return swapEndian(val);
-		else version (BigEndian) return val;
-		else static assert(false, "Unknown endianness.");
-	}
 }

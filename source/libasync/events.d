@@ -194,6 +194,26 @@ package:
 		return m_evLoop.run(ctxt);
 	}
 
+	fd_t run(AsyncSocket ctxt) {
+		return m_evLoop.run(ctxt);
+	}
+
+	import libasync.internals.socket_compat : sockaddr, socklen_t;
+	bool bind(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
+	{
+		return m_evLoop.bind(ctxt, addr, addrlen);
+	}
+
+	bool connect(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
+	{
+		return m_evLoop.connect(ctxt, addr, addrlen);
+	}
+
+	bool listen(AsyncSocket ctxt, int backlog)
+	{
+		return m_evLoop.listen(ctxt, backlog);
+	}
+
 	fd_t run(shared AsyncSignal ctxt) {
 		return m_evLoop.run(ctxt);
 	}
@@ -225,6 +245,10 @@ package:
 
 	bool kill(AsyncDirectoryWatcher obj) {
 		return m_evLoop.kill(obj);
+	}
+
+	bool kill(AsyncSocket obj, bool forced = false) {
+		return m_evLoop.kill(obj, forced);
 	}
 
 	bool kill(AsyncTCPConnection obj, bool forced = false) {

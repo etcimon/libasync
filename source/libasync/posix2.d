@@ -138,6 +138,153 @@ mixin template RunKill()
 		return fd;
 	}
 
+	fd_t run(AsyncSocket ctxt) {
+		import core.sys.posix.unistd : close;
+		import libasync.internals.socket_compat : socket;
+
+		m_status = StatusInfo.init;
+
+		auto fd = ctxt.preInitializedHandle;
+
+		if (fd == INVALID_SOCKET) {
+			fd = socket(ctxt.params.expand);
+		}
+
+		if (catchError!"socket"(fd)) {
+			m_status.text = m_error.formatSocketError;
+			.error("Failed to create socket: ", m_status.text);
+			return INVALID_SOCKET;
+		}
+
+		if (!setNonBlock(fd)) {
+			.error("Failed to set socket non-blocking");
+			close(fd);
+			return INVALID_SOCKET;
+		}
+
+		import core.sys.posix.unistd;
+
+		EventObject eventObject;
+		eventObject.socket = ctxt;
+		EventInfo* eventInfo = assumeWontThrow(ThreadMem.alloc!EventInfo(fd, EventType.Socket, eventObject, m_instanceId));
+
+		ctxt.evInfo = eventInfo;
+		nothrow auto cleanup() {
+			assumeWontThrow(ThreadMem.free(eventInfo));
+			ctxt.evInfo = null;
+			// socket must be closed by the caller
+			return INVALID_SOCKET;
+		}
+
+		fd_t err;
+		static if (EPOLL)
+		{
+			epoll_event osEvent;
+			osEvent.data.ptr = eventInfo;
+			osEvent.events = EPOLLET | EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP;
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &osEvent);
+			if (catchError!"epoll_ctl"(err)) {
+				return cleanup();
+			}
+		}
+		else /* if KQUEUE */
+		{
+			kevent_t[2] osEvent;
+			EV_SET(&(osEvent[0]), fd, EVFILT_READ, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, eventInfo);
+			EV_SET(&(osEvent[1]), fd, EVFILT_WRITE, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, eventInfo);
+			err = kevent(m_kqueuefd, &(osEvent[0]), 2, null, 0, null);
+			if (catchError!"kevent_add_udp"(err)) {
+				return cleanup();
+			}
+		}
+
+		return fd;
+	}
+
+	import libasync.internals.socket_compat : sockaddr, socklen_t;
+	bool bind(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
+	{
+		import libasync.internals.socket_compat : bind;
+
+		auto err = bind(ctxt.handle, addr, addrlen);
+		if (catchError!"bind"(err)) {
+			m_status.text = m_error.formatSocketError;
+			assumeWontThrow(ThreadMem.free(ctxt.evInfo));
+			ctxt.evInfo = null;
+			return false;
+		}
+
+		return true;
+	}
+
+	bool connect(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
+	{
+		import libasync.internals.socket_compat : connect;
+
+		auto err = connect(ctxt.handle, addr, addrlen);
+		if (catchErrorsEq!"connect"(err, [ tuple(cast(fd_t) SOCKET_ERROR, EPosix.EINPROGRESS, Status.ASYNC) ])) {
+			return true;
+		} else if (catchError!"connect"(err)) {
+			m_status.text = m_error.formatSocketError;
+			assumeWontThrow(ThreadMem.free(ctxt.evInfo));
+			ctxt.evInfo = null;
+			return false;
+		}
+
+		return true;
+	}
+
+	bool listen(AsyncSocket ctxt, int backlog)
+	{
+		import libasync.internals.socket_compat : listen;
+
+		auto err = listen(ctxt.handle, backlog);
+		if (catchError!"bind"(err)) {
+			m_status.text = m_error.formatSocketError;
+			assumeWontThrow(ThreadMem.free(ctxt.evInfo));
+			ctxt.evInfo = null;
+			return false;
+		}
+
+		return true;
+	}
+
+	bool kill(AsyncSocket ctxt, bool forced = false) {
+		m_status = StatusInfo.init;
+
+		import core.sys.posix.unistd : close;
+
+		auto fd = ctxt.handle;
+
+		if (ctxt.connectionOriented && !ctxt.passive) {
+			bool has_socket = fd != INVALID_SOCKET;
+			ctxt.disconnecting = true;
+
+			if (forced) {
+				ctxt.connected = false;
+				ctxt.disconnecting = false;
+				if (ctxt.evInfo) {
+					assumeWontThrow(ThreadMem.free(ctxt.evInfo));
+					ctxt.evInfo = null;
+				}
+			}
+
+			return has_socket ? closeSocket(fd, true, forced) : true;
+		}
+
+		fd_t err = close(fd);
+		if (catchError!"socket close"(err)) {
+			return false;
+		}
+
+		if (ctxt.evInfo) {
+			assumeWontThrow(ThreadMem.free(ctxt.evInfo));
+			ctxt.evInfo = null;
+		}
+
+		return true;
+	}
+
 	bool run(AsyncEvent ctxt, EventHandler del)
 	{
 		fd_t fd = ctxt.id;
