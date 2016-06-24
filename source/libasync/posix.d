@@ -2734,7 +2734,7 @@ static if (!EPOLL)
 	}
 }
 
-mixin template StatefulFDMixins() {
+mixin template COSocketMixins() {
 
 	private CleanupData m_impl;
 

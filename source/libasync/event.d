@@ -75,7 +75,7 @@ public:
 	}
 
 package:
-	mixin StatefulFDMixins;
+	mixin COSocketMixins;
 
 	@property bool stateful() const {
 		return m_stateful;

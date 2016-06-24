@@ -1645,7 +1645,7 @@ private:
 
 }
 
-mixin template StatefulFDMixins() {
+mixin template COSocketMixins() {
 
 	private CleanupData m_impl;
 
