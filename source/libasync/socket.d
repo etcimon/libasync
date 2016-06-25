@@ -84,14 +84,14 @@ private:
 	///
 	struct RecvRequest
 	{
-		void[] buf;
+		ubyte[] buf;
 		OnReceive cb;
 	}
 
 	///
 	struct SendRequest
 	{
-		const(void)[] buf;
+		const(ubyte)[] buf;
 		OnEvent cb;
 	}
 
@@ -163,13 +163,13 @@ public:
 	/// Generic callback type to handle events without additional parameters
 	alias OnEvent = void delegate();
 	/// Callback type to handle the completion of data reception
-	alias OnReceive = void delegate(void[] data);
+	alias OnReceive = void delegate(ubyte[] data);
 	/// Callback type to handle the successful acceptance of a peer on a
 	/// socket on which `listen` succeeded
 	alias OnAccept = nothrow void delegate(typeof(this) peer);
 
 	///
-	void receive(void[] buf, OnReceive onRecv)
+	void receive(ubyte[] buf, OnReceive onRecv)
 	in { assert(!m_continuousReceiving, "Cannot receive manually while receiving continuously"); }
 	body {
 		if (readBlocked) {
@@ -184,7 +184,7 @@ public:
 	}
 
 	///
-	void send(const(void)[] buf, OnEvent onSend = null)
+	void send(const(ubyte)[] buf, OnEvent onSend = null)
 	in {
 		assert(!m_passive, "Active socket required");
 		if (m_connectionOriented) {
@@ -209,7 +209,7 @@ public:
 	}
 
 	///
-	void startReceiving(void[] buf, OnReceive onRecv)
+	void startReceiving(ubyte[] buf, OnReceive onRecv)
 	{
 		if (m_continuousReceiving) return;
 		m_recvRequests ~= RecvRequest(buf, onRecv);
@@ -318,7 +318,7 @@ private:
 	 +	as the provided buffer had available space, then the returned slice
 	 +	will have the same length as the provided buffer.
 	 +/
-	void[] receiveAllAvailable(void[] buf)
+	ubyte[] receiveAllAvailable(ubyte[] buf)
 	{
 		if (readBlocked) { return []; }
 
@@ -342,7 +342,7 @@ private:
 	 +  in the OS receive buffer - if any - and return an appropriate slice.
 	 +  Used only for sockets that are message-based.
 	 +/
-	void[] receiveOneDatagram(void[] buf)
+	ubyte[] receiveOneDatagram(ubyte[] buf)
 	{
 		if (readBlocked) { return []; }
 
@@ -354,7 +354,7 @@ private:
 		return buf[0 .. recvCount];
 	}
 
-	void[] delegate(void[]) doReceive = void;
+	ubyte[] delegate(ubyte[]) doReceive = void;
 
 	/++
 	 +  Fill the OS send buffer with bytes from the provided
@@ -363,7 +363,7 @@ private:
 	 +  NOTE: If all bytes were be copied into the OS send buffer,
 	 +		then the returned slice is of length zero.
 	 +/
-	const(void)[] sendAll(const(void)[] buf)
+	const(ubyte)[] sendAll(const(ubyte)[] buf)
 	{
 		uint sentCount = void;
 		do {
