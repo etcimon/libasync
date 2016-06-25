@@ -1,8 +1,9 @@
 module libasync.socket;
 
 import std.array;
-import std.container;
 import std.exception;
+
+import memutils.vector;
 
 import libasync.events;
 import libasync.internals.logging;
@@ -98,9 +99,9 @@ private:
 	bool m_continuousReceiving;
 
 	///
-	DList!RecvRequest m_recvRequests;
+	Vector!RecvRequest m_recvRequests;
 	///
-	DList!SendRequest m_sendRequests;
+	Vector!SendRequest m_sendRequests;
 
 package:
 	///
@@ -409,6 +410,11 @@ public:
 
 		if (m_datagramOriented) doReceive = &receiveOneDatagram;
 		else doReceive = &receiveAllAvailable;
+
+		assumeWontThrow(() @trusted {
+			m_recvRequests.reserve(32);
+			m_sendRequests.reserve(32);
+		} ());
 	}
 
 	/// The underlying OS socket descriptor
@@ -496,7 +502,7 @@ public:
 	void stopReceiving()
 	{
 		if (!m_continuousReceiving) return;
-		m_recvRequests.removeFront;
+		assumeWontThrow(m_recvRequests.removeFront);
 		m_continuousReceiving = false;
 	}
 
