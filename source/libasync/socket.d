@@ -173,6 +173,7 @@ public:
 	body {
 		if (readBlocked) {
 			m_recvRequests ~= RecvRequest(buf, onRecv);
+			return;
 		}
 
 		auto received = doReceive(buf);
