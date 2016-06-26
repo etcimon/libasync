@@ -101,7 +101,8 @@ private:
 	///
 	struct SendRequest
 	{
-		const(ubyte)[] buf;
+		IOParams io;
+
 		OnEvent onComplete;
 	}
 
@@ -167,14 +168,12 @@ package:
 	{
 		while (!writeBlocked && !m_sendRequests.empty) {
 			auto request = &m_sendRequests.front();
-			auto remaining = sendAll(request.buf);
-			if (remaining.empty) {
+			auto sentCount = sendAll(request.io.buf[$ - request.io.count .. $]);
+
+			request.io.count += sentCount;
+			if (request.io.count  == request.io.buf.length) {
 				m_sendRequests.removeFront();
-				if (request.onComplete !is null) request.onComplete();
-			}
-			else {
-				request.buf = remaining;
-				break;
+				request.onComplete();
 			}
 		}
 	}
@@ -199,6 +198,7 @@ public:
 		}
 		assert(!m_continuousReceiving, "Cannot receive manually while receiving continuously");
 		assert(!m_datagramOriented || !exact, "Datagram sockets must receive one datagram at a time");
+		assert(onRecv !is null, "Callback to use once reception has been completed required");
 	}
 	body {
 		if (readBlocked) {
@@ -219,7 +219,9 @@ public:
 	}
 
 	///
-	void send(const(ubyte)[] buf, OnEvent onSend = null)
+
+	///
+	void send(const(ubyte)[] buf, OnEvent onSend)
 	in {
 		assert(!m_passive, "Active socket required");
 		if (m_connectionOriented) {
@@ -227,19 +229,20 @@ public:
 		} else {
 			assertNotThrown(remoteAddress, "Remote address required");
 		}
+		assert(onSend !is null, "Callback to use once transmission has been completed required");
 	}
 	body
 	{
 		if (writeBlocked) {
-			m_sendRequests ~= SendRequest(buf.dup, onSend);
+			m_sendRequests ~= SendRequest(IOParams(cast(ubyte[]) buf), onSend);
 			return;
 		}
 
-		auto remaining = sendAll(buf);
-		if (remaining.empty) {
-			if (onSend !is null) onSend();
+		auto sentCount = sendAll(buf);
+		if (sentCount == buf.length) {
+			onSend();
 		} else {
-			m_sendRequests ~= SendRequest(remaining.dup, onSend);
+			m_sendRequests ~= SendRequest(IOParams(cast(ubyte[]) buf[sentCount .. $]), onSend);
 		}
 	}
 
@@ -269,6 +272,11 @@ public:
 	{
 		scope (exit) if (m_connectionOriented && !m_passive && m_onClose !is null) m_onClose();
 		return kill();
+	}
+
+	///
+	@property bool alive() {
+		return m_socket.isSocket();
 	}
 
 	///
@@ -343,7 +351,7 @@ private:
 
 	/++
 	 +  Fill the provided buffer with bytes currently available in
-	 +  the OS receive buffer and return an appropriate slice.
+	 +  the OS receive buffer and return a slice to the received bytes.
 	 +  If the provided buffer is large enough and there are no
 	 +  recv/recvfrom/recvmsg system calls on this socket concurrent to this one,
 	 +  then the returned slice contains all bytes that were available
@@ -384,7 +392,7 @@ private:
 
 	/++
 	 +  Fill the provided buffer with bytes of the datagram currently pending
-	 +  in the OS receive buffer - if any - and return an appropriate slice.
+	 +  in the OS receive buffer - if any - and return a slice to the received bytes.
 	 +  Used only for sockets that are message-based.
 	 +/
 	ubyte[] receiveOneDatagram(ubyte[] buf)
@@ -403,23 +411,22 @@ private:
 
 	/++
 	 +  Fill the OS send buffer with bytes from the provided
-	 +  socket until it becomes full, returning a slice to the
-	 +  bytes that did not fit into it.
-	 +  NOTE: If all bytes were be copied into the OS send buffer,
-	 +		then the returned slice is of length zero.
+	 +  socket until it becomes full, returning the number of bytes
+	 +  transferred successfully.
 	 +/
-	const(ubyte)[] sendAll(const(ubyte)[] buf)
+	uint sendAll(const(ubyte)[] buf)
 	{
-		uint sentCount = void;
-		do {
-			sentCount = m_evLoop.send(m_socket, buf);
+		uint sentCount;
+
+		while (sentCount < buf.length) {
+			sentCount += m_evLoop.send(m_socket, buf[sentCount .. $]);
 			if (m_evLoop.status.code == Status.ASYNC) {
 				writeBlocked = true;
+				break;
 			}
-			buf = buf[sentCount .. $];
-		} while (!buf.empty && !writeBlocked);
+		}
 
-		return buf;
+		return sentCount;
 	}
 
 package:
