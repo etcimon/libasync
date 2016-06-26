@@ -249,10 +249,10 @@ public:
 		assert(!m_passive, "Active socket required");
 		if (m_connectionOriented) {
 			assert(connected, "Established connection required");
-		} else {
-			assertNotThrown(remoteAddress, "Remote address required");
+		} else if (m_datagramOriented) {
+			assertNotThrown(localAddress, "Local address required");
+			assert(!exact, "Datagram sockets must receive one datagram at a time");
 		}
-		assert(!m_datagramOriented || !exact, "Datagram sockets must receive one datagram at a time");
 	}
 	body
 	{
