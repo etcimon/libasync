@@ -863,7 +863,6 @@ package:
 
 	}
 
-	pragma(inline, true)
 	uint recv(in fd_t fd, ubyte[] data)
 	{
 		static if (LOG) try log("Recv from FD: " ~ fd.to!string); catch {}
@@ -895,7 +894,6 @@ package:
 		return cast(uint) ret;
 	}
 
-	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		static if (LOG) try log("Send to FD: " ~ fd.to!string); catch {}
