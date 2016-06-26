@@ -15,6 +15,8 @@
 module libasync.internals.socket_compat;
 version(Posix):
 
+public import core.sys.posix.sys.un;
+
 version(OSX) {
 	public import core.sys.posix.arpa.inet;
 	public import core.sys.posix.netdb;

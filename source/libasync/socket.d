@@ -579,12 +579,15 @@ struct NetworkAddress
 		sockaddr, sockaddr_storage,
 		sockaddr_in, AF_INET,
 		sockaddr_in6, AF_INET6;
+	version (Posix) import libasync.internals.socket_compat :
+		sockaddr_un, AF_UNIX;
 
 	package union {
 		sockaddr addr;
 		sockaddr_storage addr_storage;
 		sockaddr_in addr_ip4;
 		sockaddr_in6 addr_ip6;
+		version (Posix) sockaddr_un addr_un;
 	}
 
 	this(Address address) @trusted pure nothrow @nogc
@@ -637,9 +640,10 @@ struct NetworkAddress
 	@property uint sockAddrLen()
 	const pure nothrow {
 		switch (this.family) {
-			default: return addr_storage.sizeof;
+			default: assert(false, "Unsupported address family");
 			case AF_INET: return addr_ip4.sizeof;
 			case AF_INET6: return addr_ip6.sizeof;
+			version (Posix) case AF_UNIX: return addr_un.sizeof;
 		}
 	}
 
@@ -672,6 +676,8 @@ struct NetworkAddress
 	const {
 		import std.array : appender;
 		import std.format : formattedWrite;
+		import std.string : fromStringz;
+
 		ubyte[2] _dummy = void; // Workaround for DMD regression in master
 
 		switch (this.family) {
@@ -687,6 +693,9 @@ struct NetworkAddress
 					_dummy[] = ip[i*2 .. i*2+2];
 					sink.formattedWrite("%x", bigEndianToNative!ushort(_dummy));
 				}
+				break;
+			version (Posix) case AF_UNIX:
+				sink.formattedWrite("%s", fromStringz(cast(char*) addr_un.sun_path));
 				break;
 		}
 	}
@@ -714,6 +723,9 @@ struct NetworkAddress
 				sink("[");
 				toAddressString(sink);
 				sink.formattedWrite("]:%s", port);
+				break;
+			version (Posix) case AF_UNIX:
+				toAddressString(sink);
 				break;
 		}
 	}
