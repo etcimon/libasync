@@ -143,7 +143,7 @@ package:
 	{
 		while (!readBlocked && !m_recvRequests.empty) {
 			auto request = &m_recvRequests.front();
-			auto received = doReceive(request.io.buf[request.io.count .. $]);
+			auto received = doReceive(request.io);
 
 			if (request.exact) with (request.io) {
 				count += received.length;
@@ -168,7 +168,7 @@ package:
 	{
 		while (!writeBlocked && !m_sendRequests.empty) {
 			auto request = &m_sendRequests.front();
-			auto sentCount = sendAll(request.io.buf[$ - request.io.count .. $]);
+			auto sentCount = sendAll(request.io);
 
 			request.io.count += sentCount;
 			if (request.io.count  == request.io.buf.length) {
@@ -206,11 +206,10 @@ public:
 			return;
 		}
 
-		auto received = doReceive(buf);
-
+		auto received = doReceive(IOParams(buf));
 		// For connection-oriented sockets, zero data means connection was closed, so do not trigger callback.
 		// For connectionless datagram sockets, zero data means an empty datagram arrived, so trigger callback.
-		if (  !exact && (received.length > 0 || !m_connectionOriented && m_datagramOriented)
+		if (  !exact && (received.length > 0 || !m_connectionOriented /+ && m_datagramOriented +/)
 		    || exact && received.length == buf.length) {
 			onRecv(received);
 		} else {
@@ -238,7 +237,7 @@ public:
 			return;
 		}
 
-		auto sentCount = sendAll(buf);
+		auto sentCount = sendAll(IOParams(cast(ubyte[]) buf));
 		if (sentCount == buf.length) {
 			onSend();
 		} else {
@@ -256,9 +255,7 @@ public:
 			assertNotThrown(localAddress, "Local address required");
 			assert(!exact, "Datagram sockets must receive one datagram at a time");
 		}
-	}
-	body
-	{
+	} body {
 		if (m_continuousReceiving) return;
 		m_recvRequests ~= RecvRequest(IOParams(buf), onRecv, exact);
 		m_continuousReceiving = true;
@@ -371,11 +368,11 @@ private:
 	 +	as the provided buffer had available space, then the returned slice
 	 +	will have the same length as the provided buffer.
 	 +/
-	ubyte[] receiveAllAvailable(ubyte[] buf)
+	ubyte[] receiveAllAvailable(IOParams io)
 	{
 		if (readBlocked) { return []; }
 
-		auto recvBuf = buf;
+		auto recvBuf = io.buf[io.count .. $];
 		uint recvCount = void;
 
 		do {
@@ -387,7 +384,7 @@ private:
 			readBlocked = true;
 		}
 
-		return buf[0 .. $ - recvBuf.length];
+		return io.buf[0 .. $ - recvBuf.length];
 	}
 
 	/++
@@ -395,36 +392,41 @@ private:
 	 +  in the OS receive buffer - if any - and return a slice to the received bytes.
 	 +  Used only for sockets that are message-based.
 	 +/
-	ubyte[] receiveOneDatagram(ubyte[] buf)
+	ubyte[] receiveOneDatagram(IOParams io)
 	{
 		if (readBlocked) { return []; }
 
-		auto recvCount = m_evLoop.recv(m_socket, buf);
+		uint recvCount = void;
+		if (io.addr is null) recvCount = m_evLoop.recv(m_socket, io.buf);
+		else recvCount = m_evLoop.recvFrom(m_socket, io.buf, *io.addr);
+
 		if (m_evLoop.status.code == Status.ASYNC) {
 			readBlocked = true;
 		}
 
-		return buf[0 .. recvCount];
+		return io.buf[0 .. recvCount];
 	}
 
-	ubyte[] delegate(ubyte[]) doReceive = void;
+	ubyte[] delegate(IOParams) doReceive = void;
 
 	/++
 	 +  Fill the OS send buffer with bytes from the provided
 	 +  socket until it becomes full, returning the number of bytes
 	 +  transferred successfully.
 	 +/
-	uint sendAll(const(ubyte)[] buf)
+	uint sendAll(IOParams io)
 	{
-		uint sentCount;
+		auto sendBuf = io.buf[io.count .. $];
+		uint sentCount = void;
 
-		while (sentCount < buf.length) {
-			sentCount += m_evLoop.send(m_socket, buf[sentCount .. $]);
+		do {
+			sentCount = m_evLoop.send(m_socket, sendBuf);
+			sendBuf = sendBuf[sentCount .. $];
 			if (m_evLoop.status.code == Status.ASYNC) {
 				writeBlocked = true;
 				break;
 			}
-		}
+		} while (sentCount > 0 && !sendBuf.empty);
 
 		return sentCount;
 	}
