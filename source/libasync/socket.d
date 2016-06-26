@@ -131,7 +131,7 @@ package:
 	void processReceiveRequests()
 	{
 		while (!readBlocked && !m_recvRequests.empty) {
-			auto request = m_recvRequests.front;
+			auto request = &m_recvRequests.front();
 			auto received = doReceive(request.buf);
 			if (received.length > 0) {
 				if (!m_continuousReceiving) m_recvRequests.removeFront();
@@ -146,7 +146,7 @@ package:
 	void processSendRequests()
 	{
 		while (!writeBlocked && !m_sendRequests.empty) {
-			auto request = m_sendRequests.front;
+			auto request = &m_sendRequests.front();
 			auto remaining = sendAll(request.buf);
 			if (remaining.empty) {
 				m_sendRequests.removeFront();
