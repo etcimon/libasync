@@ -108,23 +108,10 @@ package:
 		return m_evLoop.sendTo(fd, data, addr);
 	}
 
-	/+uint recvFrom(Socket socket, ubyte[] data, ref Address from) {
-		return m_evLoop.recvFrom(socket, data, from);
-	}
-
-	uint sendTo(Socket socket, in ubyte[] data, Address to) {
-		return m_evLoop.sendTo(socket, data, to);
-	}+/
-
 	uint recv(in fd_t fd, ubyte[] data)
 	{
 		return m_evLoop.recv(fd, data);
 	}
-
-	/*uint recv(out ubyte[] data, in fd_t fd, in NetworkAddress dst)
-	{
-		return m_evLoop.recv(data, fd, dst);
-	}*/
 
 	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
