@@ -151,7 +151,9 @@ package:
 					else count = 0;
 					request.onComplete(buf);
 				} else break;
-			} else if (received.length > 0) {
+			} else if (received.length > 0
+			           // These sockets allow zero-sized datagrams (e.g. UDP)
+			           || !m_connectionOriented && m_datagramOriented) {
 				if (!m_continuousReceiving) m_recvRequests.removeFront();
 				request.onComplete(received);
 			} else break;
@@ -205,9 +207,11 @@ public:
 		}
 
 		auto received = doReceive(buf);
-		if (!exact && received.length > 0) {
-			onRecv(received);
-		} else if (exact && received.length == buf.length) {
+
+		// For connection-oriented sockets, zero data means connection was closed, so do not trigger callback.
+		// For connectionless datagram sockets, zero data means an empty datagram arrived, so trigger callback.
+		if (  !exact && (received.length > 0 || !m_connectionOriented && m_datagramOriented)
+		    || exact && received.length == buf.length) {
 			onRecv(received);
 		} else {
 			m_recvRequests ~= RecvRequest(IOParams(buf, cast(uint) received.length), onRecv, exact);
