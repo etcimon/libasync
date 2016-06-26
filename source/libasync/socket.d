@@ -281,7 +281,7 @@ public:
 		import libasync.internals.socket_compat : getsockname;
 
 		NetworkAddress addr;
-		auto addrLen = addr.sockAddrLen;
+		auto addrLen = NetworkAddress.sockAddrMaxLen();
 		if (SOCKET_ERROR == getsockname(m_socket, addr.sockAddr, &addrLen)) {
 			throw new SocketOSException("Unable to obtain local socket address");
 		}
@@ -298,7 +298,7 @@ public:
 		import libasync.internals.socket_compat : getpeername;
 
 		NetworkAddress addr;
-		auto addrLen = addr.sockAddrLen;
+		auto addrLen = NetworkAddress.sockAddrMaxLen();
 		if (SOCKET_ERROR == getpeername(m_socket, addr.sockAddr, &addrLen)) {
 			throw new SocketOSException("Unable to obtain local socket address");
 		}
@@ -639,6 +639,12 @@ struct NetworkAddress
 			case AF_INET6: return addr_ip6.sizeof;
 		}
 	}
+
+	/++
+	 + Maximum size of any sockaddr struct, regardless of address family.
+	 +/
+	static @property uint sockAddrMaxLen()
+	pure nothrow { return sockaddr_storage.sizeof; }
 
 	@property inout(sockaddr_in)* sockAddrInet4() inout pure nothrow
 	in { assert (family == AF_INET); }
