@@ -744,6 +744,7 @@ string formatSocketError(int err) @trusted nothrow
 	version(Posix)
 	{
 		import core.stdc.string : strerror_r, strlen;
+		import std.conv : to;
 
 		char[80] buf;
 		const(char)* cs;
