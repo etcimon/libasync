@@ -933,14 +933,9 @@ package:
 
 		m_status = StatusInfo.init;
 
-		addr.family = AF_INET6;
-		socklen_t addrLen = addr.sockAddrLen;
 		retry:
+			auto addrLen = NetworkAddress.sockAddrMaxLen();
 			auto ret = recvfrom(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, &addrLen);
-
-		if (addrLen < addr.sockAddrLen) {
-			addr.family = AF_INET;
-		}
 
 		static if (LOG) log(".recvFrom " ~ ret.to!string ~ " bytes @ " ~ fd.to!string);
 		if (catchError!".recvFrom"(ret)) {
