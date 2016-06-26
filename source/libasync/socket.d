@@ -86,6 +86,25 @@ private:
 	{
 		ubyte[] buf;
 		OnReceive cb;
+		bool exact;
+
+		ubyte[] data;
+
+		this(ubyte[] buf, OnReceive cb, bool exact)
+		{
+			this.buf = buf;
+			this.cb = cb;
+			this.exact = exact;
+			this.data = buf;
+		}
+
+		this(ubyte[] buf, OnReceive cb, bool exact, ubyte[] data)
+		{
+			this.buf = buf;
+			this.cb = cb;
+			this.exact = exact;
+			this.data = data;
+		}
 	}
 
 	///
@@ -133,7 +152,14 @@ package:
 		while (!readBlocked && !m_recvRequests.empty) {
 			auto request = &m_recvRequests.front();
 			auto received = doReceive(request.buf);
-			if (received.length > 0) {
+			if (request.exact) {
+				request.buf = request.buf[received.length .. $];
+				if (request.buf.length == 0) {
+					if (!m_continuousReceiving) m_recvRequests.removeFront();
+					else request.buf = request.data;
+					request.cb(request.data);
+				} else break;
+			} else if (received.length > 0) {
 				if (!m_continuousReceiving) m_recvRequests.removeFront();
 				request.cb(received);
 			} else break;
@@ -169,17 +195,30 @@ public:
 	alias OnAccept = nothrow void delegate(typeof(this) peer);
 
 	///
-	void receive(ubyte[] buf, OnReceive onRecv)
-	in { assert(!m_continuousReceiving, "Cannot receive manually while receiving continuously"); }
+	void receive(ubyte[] buf, OnReceive onRecv, bool exact = false)
+	in {
+		assert(!m_passive, "Active socket required");
+		if (m_connectionOriented) {
+			assert(connected, "Established connection required");
+		} else {
+			assertNotThrown(remoteAddress, "Remote address required");
+		}
+		assert(!m_continuousReceiving, "Cannot receive manually while receiving continuously");
+		assert(!m_datagramOriented || !exact, "Datagram sockets must receive one datagram at a time");
+	}
 	body {
 		if (readBlocked) {
-			m_recvRequests ~= RecvRequest(buf, onRecv);
+			m_recvRequests ~= RecvRequest(buf, onRecv, exact);
 			return;
 		}
 
 		auto received = doReceive(buf);
-		if (received.length > 0) {
+		if (!exact && received.length > 0) {
 			onRecv(received);
+		} else if (exact && received.length == buf.length) {
+			onRecv(received);
+		} else {
+			m_recvRequests ~= RecvRequest(buf[0 .. received.length], onRecv, exact, buf);
 		}
 	}
 
@@ -209,10 +248,20 @@ public:
 	}
 
 	///
-	void startReceiving(ubyte[] buf, OnReceive onRecv)
+	void startReceiving(ubyte[] buf, OnReceive onRecv, bool exact = false)
+	in {
+		assert(!m_passive, "Active socket required");
+		if (m_connectionOriented) {
+			assert(connected, "Established connection required");
+		} else {
+			assertNotThrown(remoteAddress, "Remote address required");
+		}
+		assert(!m_datagramOriented || !exact, "Datagram sockets must receive one datagram at a time");
+	}
+	body
 	{
 		if (m_continuousReceiving) return;
-		m_recvRequests ~= RecvRequest(buf, onRecv);
+		m_recvRequests ~= RecvRequest(buf, onRecv, exact);
 		m_continuousReceiving = true;
 		if (!readBlocked) processReceiveRequests();
 	}
