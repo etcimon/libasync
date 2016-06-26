@@ -1,3 +1,4 @@
+///
 module libasync.signal;
 import std.traits;
 
@@ -18,6 +19,7 @@ private:
 
 public:
 
+	///
 	this(EventLoop evl)
 	in {
 		assert(evl !is null);
@@ -37,6 +39,7 @@ public:
 		}
 	}
 
+	///
 	@property bool hasError() const
 	{
 		return (cast(EventLoop)m_evLoop).status.code != Status.OK;
@@ -92,6 +95,7 @@ public:
 		return cast(Thread) m_owner;
 	}
 
+	///
 	@property fd_t id() const {
 		return m_evId;
 	}

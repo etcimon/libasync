@@ -5,7 +5,7 @@ import std.parallelism;
 
 import libasync.internals.logging;
 
-bool spawnAsyncThreads(uint threadCount = totalCPUs - 1) nothrow
+bool spawnAsyncThreads(uint threadCount = totalCPUs > 1 ? totalCPUs - 1 : 1) nothrow
 in {
 	assert(threadCount >= 1, "Need at least one worker thread");
 } body {

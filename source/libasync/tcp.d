@@ -1,3 +1,4 @@
+///
 module libasync.tcp;
 import std.traits : isPointer;
 import libasync.types;
@@ -21,6 +22,7 @@ nothrow:
 	bool m_noDelay;
 	bool m_inbound;
 public:
+	///
 	this(EventLoop evl, fd_t preInitializedSocket = fd_t.init)
 	in { assert(evl !is null); }
 	body {
@@ -113,6 +115,7 @@ public:
 		return run(handler);
 	}
 
+	///
 	bool run(TCPEventHandler del)
 	in { assert(!isConnected); }
 	body {
@@ -198,6 +201,7 @@ nothrow:
 
 public:
 
+	///
 	this(EventLoop evl, fd_t sock = fd_t.init) { m_evLoop = evl; m_socket = sock; }
 
 	mixin DefStatus;
@@ -315,30 +319,32 @@ package struct TCPAcceptHandler {
 	}
 }
 
+///
 enum TCPEvent : char {
-	ERROR = 0, // The connection will be forcefully closed, this is debugging information
-	CONNECT, // indicates write will not block, although recv may or may not have data
-	READ, // called once when new bytes are in the buffer
-	WRITE, // only called when send returned Status.ASYNC
-	CLOSE // The connection is being shutdown
+	ERROR = 0, /// The connection will be forcefully closed, this is debugging information
+	CONNECT, /// indicates write will not block, although recv may or may not have data
+	READ, /// called once when new bytes are in the buffer
+	WRITE, /// only called when send returned Status.ASYNC
+	CLOSE /// The connection is being shutdown
 }
 
+///
 enum TCPOption : char {
-	NODELAY = 0,		// Don't delay send to coalesce packets
-	REUSEADDR = 1,
-	REUSEPORT,
-	CORK,
-	LINGER,
-	BUFFER_RECV,
-	BUFFER_SEND,
-	TIMEOUT_RECV,
-	TIMEOUT_SEND,
-	TIMEOUT_HALFOPEN,
-	KEEPALIVE_ENABLE,
-	KEEPALIVE_DEFER,	// Start keeplives after this period
-	KEEPALIVE_COUNT,	// Number of keepalives before death
-	KEEPALIVE_INTERVAL,	// Interval between keepalives
-	DEFER_ACCEPT,
-	QUICK_ACK,			// Bock/reenable quick ACKs.
-	CONGESTION
+	NODELAY = 0,		/// Don't delay send to coalesce packets
+	REUSEADDR = 1, ///
+	REUSEPORT, ///
+	CORK, ///
+	LINGER, ///
+	BUFFER_RECV, ///
+	BUFFER_SEND, ///
+	TIMEOUT_RECV, ///
+	TIMEOUT_SEND, ///
+	TIMEOUT_HALFOPEN, ///
+	KEEPALIVE_ENABLE, ///
+	KEEPALIVE_DEFER,	/// Start keeplives after this period
+	KEEPALIVE_COUNT,	/// Number of keepalives before death
+	KEEPALIVE_INTERVAL,	/// Interval between keepalives
+	DEFER_ACCEPT, ///
+	QUICK_ACK,			/// Bock/reenable quick ACKs.
+	CONGESTION ///
 }

@@ -1,3 +1,4 @@
+///
 module libasync.uds;
 
 version (Posix):
@@ -10,6 +11,7 @@ import libasync.event;
 
 import core.sys.posix.sys.socket;
 
+///
 final class AsyncUDSConnection
 {
 package:
@@ -37,6 +39,7 @@ package:
 	}
 
 public:
+	///
 	this(EventLoop evl, fd_t preInitializedSocket = fd_t.init)
 	in { assert(evl !is null); }
 	body {
@@ -56,11 +59,13 @@ public:
 		return m_inbound;
 	}
 
+	///
 	@property UnixAddress peer() const
 	{
 		return cast(UnixAddress) m_peer;
 	}
 
+	///
 	@property void peer(UnixAddress addr)
 	in {
 		assert(!isConnected, "Cannot change remote address on a connected socket");
@@ -70,6 +75,7 @@ public:
 		m_peer = addr;
 	}
 
+	///
 	bool run(void delegate(EventCode) del)
 	in { assert(!isConnected); }
 	body {
@@ -108,6 +114,7 @@ public:
 	}
 }
 
+///
 final class AsyncUDSListener
 {
 package:
@@ -148,6 +155,7 @@ package:
 	}
 
 public:
+	///
 	this(EventLoop evl, bool unlinkFirst = true)
 	in { assert(evl !is null); }
 	body {

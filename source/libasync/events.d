@@ -1,3 +1,4 @@
+///
 module libasync.events;
 
 import std.stdio;
@@ -31,6 +32,7 @@ version(Posix) {
 	public import libasync.posix;
 }
 
+///
 EventLoop getThreadEventLoop() nothrow {
 	static EventLoop evLoop;
 	if (!evLoop)  {
@@ -51,6 +53,7 @@ package:
 
 nothrow:
 public:
+	///
 	this() {
 		if (m_evLoop.started || !m_evLoop.init(this))
 			assert(false, "Event loop initialization failure");
@@ -63,6 +66,7 @@ public:
 		m_evLoop.exit();
 	}
 
+	///
 	NetworkAddress resolveIP(in string ip, ushort port = 0, isIPv6 ipv6 = isIPv6.no, isTCP tcp = isTCP.yes, isForced force = isForced.yes)
 	{
 		if (!force)
@@ -73,7 +77,7 @@ public:
 		return addr;
 	}
 
-	/* Blocks until the hostname is resolved, unless it's invalid. */
+	/** Blocks until the hostname is resolved, unless it's invalid. */
 	NetworkAddress resolveHost(in string host, ushort port = 0, isIPv6 ipv6 = isIPv6.no, isTCP tcp = isTCP.yes, isForced force = isForced.yes)
 	{
 		if (!force)

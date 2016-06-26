@@ -1,4 +1,5 @@
-﻿module libasync.dns;
+﻿///
+module libasync.dns;
 
 import libasync.types;
 import libasync.events;
@@ -8,8 +9,11 @@ import core.sync.condition;
 import core.atomic;
 import libasync.threads;
 
+///
 enum DNSCmd {
+	///
 	RESOLVEHOST,
+	///
 	RESOLVEIP
 }
 
@@ -27,6 +31,7 @@ private:
 	Thread m_owner;
 
 public:
+	///
 	this(EventLoop evl) {
 		m_evLoop = cast(shared) evl;
 		try m_cmdInfo.ready = new shared AsyncSignal(cast(EventLoop)m_evLoop); catch { assert(false, "Failed to start DNS Signaling"); }
@@ -35,11 +40,13 @@ public:
 		try m_cmdInfo.mtx = cast(shared) new Mutex; catch {}
 	}
 
+	///
 	synchronized @property StatusInfo status() const
 	{
 		return cast(StatusInfo) m_status;
 	}
 
+	///
 	@property string error() const
 	{
 		return status.text;

@@ -61,8 +61,7 @@ template defaultLogFunctionf(LogLevel ll)
     void defaultLogFunctionf(int line = __LINE__, string file = __FILE__,
         string funcName = __FUNCTION__,
         string prettyFuncName = __PRETTY_FUNCTION__,
-        string moduleName = __MODULE__, A...)(lazy bool condition,
-            lazy string msg, lazy A args) @trusted
+        string moduleName = __MODULE__, A...)(lazy bool condition, lazy string msg, lazy A args) @trusted
     {
         static if (isLoggingActiveAt!ll && ll >= moduleLogLevel!moduleName)
         {

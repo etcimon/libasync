@@ -296,6 +296,8 @@ package:
 			int timeout_ms;
 			if (timeout == 0.seconds) // return immediately
 				timeout_ms = 0;
+			else if (timeout == -1.seconds) // wait indefinitely
+				timeout_ms = -1;
 			else timeout_ms = cast(int)timeout.total!"msecs";
 			/// Retrieve pending events
 			num = epoll_wait(m_epollfd, cast(epoll_event*)&events[0], 128, timeout_ms);
@@ -323,7 +325,7 @@ package:
 			}
 		}
 
-		auto errors = [	tuple(EINTR, Status.EVLOOP_TIMEOUT) ];
+		static Tuple!(int, Status)[] errors = [	tuple(EINTR, Status.EVLOOP_TIMEOUT) ];
 
 		if (catchEvLoopErrors!"event_poll'ing"(num, errors))
 			return false;

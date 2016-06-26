@@ -1,4 +1,5 @@
-﻿module libasync.notifier;
+﻿///
+module libasync.notifier;
 
 import libasync.types;
 import libasync.events;
@@ -7,6 +8,7 @@ import libasync.events;
 /// callback in a new call stack originating from the event loop.
 final class AsyncNotifier
 {
+	///
 	void delegate() m_evh;
 nothrow:
 private:
@@ -15,6 +17,7 @@ private:
 	version(Posix) static if (EPOLL) shared ushort m_owner;
 
 public:
+	///
 	this(EventLoop evl)
 	in {
 		assert(evl !is null);
@@ -47,6 +50,7 @@ public:
 		return m_evLoop.notify(m_evId, this);
 	}
 
+	///
 	@property fd_t id() const {
 		return m_evId;
 	}
