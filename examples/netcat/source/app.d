@@ -112,10 +112,17 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 				stdout.flush();
 			});
 
-			auto inputReader = spawnInputReader(stdinReadBuf, (input) {
-				if (input.length > 0) client.send(input);
-				else client.close();
-			});
+			void delegate() readAndSend = void;
+			readAndSend = {
+				auto input = stdin.rawRead(stdinReadBuf);
+
+				if (input.length > 0) {
+					client.send(input, { if (client.alive) doOffThread(readAndSend); });
+				} else {
+					client.close();
+				}
+			};
+			doOffThread(readAndSend);
 		};
 
 		client.onClose = { running = false; };
@@ -149,10 +156,17 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 			stdout.flush();
 		});
 
-		auto inputReader = spawnInputReader(stdinReadBuf, (input) {
-			if (input.length > 0) client.send(input);
-			else close.trigger();
-		});
+		void delegate() readAndSend = void;
+			readAndSend = {
+				auto input = stdin.rawRead(stdinReadBuf);
+
+				if (input.length > 0) {
+					client.send(input, { if (client.alive) doOffThread(readAndSend); });
+				} else {
+					close.trigger();
+				}
+			};
+			doOffThread(readAndSend);
 	}
 
 	while (running) eventLoop.loop(-1.seconds);
@@ -161,7 +175,7 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 
 int listenMode(Address local, AddressFamily af, SocketType type)
 {
-	import libasync.internals.socket_compat : setsockopt, SO_REUSEPORT;
+	import libasync.internals.socket_compat : setsockopt, SO_REUSEADDR, SO_REUSEPORT;
 	auto running = true;
 
 	auto eventLoop = getThreadEventLoop();
@@ -180,10 +194,17 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 				stdout.flush();
 			});
 
-			auto inputReader = spawnInputReader(stdinReadBuf, (input) {
-				if (input.length > 0) client.send(input);
-				else client.close();
-			});
+			void delegate() readAndSend = void;
+			readAndSend = {
+				auto input = stdin.rawRead(stdinReadBuf);
+
+				if (input.length > 0) {
+					client.send(input, { if (client.alive) doOffThread(readAndSend); });
+				} else {
+					client.close();
+				}
+			};
+			doOffThread(readAndSend);
 		};
 
 		client.onClose = { running = false; };
@@ -198,10 +219,11 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 	}
 
 	if (af != AddressFamily.UNIX) {
-		int reusePort = 1;
+		int yes = 1;
 		// None of the errors described for setsockopt (EBADF,EFAULT,EINVAL,ENOPROTOOPT,ENOTSOCK)
 		// can happen here unless there is a bug somewhere else.
-		assert(setsockopt(listener.handle, SocketOptionLevel.SOCKET, SO_REUSEPORT, &reusePort, reusePort.sizeof) == 0);
+		assert(setsockopt(listener.handle, SocketOptionLevel.SOCKET, SO_REUSEADDR, &yes, yes.sizeof) == 0);
+		assert(setsockopt(listener.handle, SocketOptionLevel.SOCKET, SO_REUSEPORT, &yes, yes.sizeof) == 0);
 	} else {
 		auto path = (cast(UnixAddress) local).path;
 		if (path.exists && !path.isDir) try path.remove;
@@ -228,22 +250,16 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 	return 0;
 }
 
-auto spawnInputReader(ubyte[] readBuf, void delegate(ubyte[]) onRead)
+void doOffThread(void delegate() dg)
 {
-	auto inputReader = new Thread({
-		ubyte[] input = void;
-		do {
-			input = stdin.rawRead(readBuf);
-			onRead(input);
-		} while (input.length > 0);
-	});
-	inputReader.isDaemon = true;
-	inputReader.start();
-	return inputReader;
+	auto worker = new Thread({ dg(); });
+	worker.isDaemon = true;
+	worker.start();
 }
 
 import core.time;
 import core.thread;
+import core.atomic;
 
 import std.stdio;
 import std.socket;
