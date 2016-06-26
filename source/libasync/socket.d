@@ -82,36 +82,27 @@ private:
 	OnAccept m_onAccept;
 
 	///
-	struct RecvRequest
+	struct IOParams
 	{
 		ubyte[] buf;
-		OnReceive cb;
+		uint count;
+		NetworkAddress* addr;
+	}
+
+	///
+	struct RecvRequest
+	{
+		IOParams io;
+
+		OnReceive onComplete;
 		bool exact;
-
-		ubyte[] data;
-
-		this(ubyte[] buf, OnReceive cb, bool exact)
-		{
-			this.buf = buf;
-			this.cb = cb;
-			this.exact = exact;
-			this.data = buf;
-		}
-
-		this(ubyte[] buf, OnReceive cb, bool exact, ubyte[] data)
-		{
-			this.buf = buf;
-			this.cb = cb;
-			this.exact = exact;
-			this.data = data;
-		}
 	}
 
 	///
 	struct SendRequest
 	{
 		const(ubyte)[] buf;
-		OnEvent cb;
+		OnEvent onComplete;
 	}
 
 	///
@@ -151,17 +142,18 @@ package:
 	{
 		while (!readBlocked && !m_recvRequests.empty) {
 			auto request = &m_recvRequests.front();
-			auto received = doReceive(request.buf);
-			if (request.exact) {
-				request.buf = request.buf[received.length .. $];
-				if (request.buf.length == 0) {
+			auto received = doReceive(request.io.buf[request.io.count .. $]);
+
+			if (request.exact) with (request.io) {
+				count += received.length;
+				if (count == buf.length) {
 					if (!m_continuousReceiving) m_recvRequests.removeFront();
-					else request.buf = request.data;
-					request.cb(request.data);
+					else count = 0;
+					request.onComplete(buf);
 				} else break;
 			} else if (received.length > 0) {
 				if (!m_continuousReceiving) m_recvRequests.removeFront();
-				request.cb(received);
+				request.onComplete(received);
 			} else break;
 		}
 	}
@@ -176,7 +168,7 @@ package:
 			auto remaining = sendAll(request.buf);
 			if (remaining.empty) {
 				m_sendRequests.removeFront();
-				if (request.cb !is null) request.cb();
+				if (request.onComplete !is null) request.onComplete();
 			}
 			else {
 				request.buf = remaining;
@@ -208,7 +200,7 @@ public:
 	}
 	body {
 		if (readBlocked) {
-			m_recvRequests ~= RecvRequest(buf, onRecv, exact);
+			m_recvRequests ~= RecvRequest(IOParams(buf), onRecv, exact);
 			return;
 		}
 
@@ -218,7 +210,7 @@ public:
 		} else if (exact && received.length == buf.length) {
 			onRecv(received);
 		} else {
-			m_recvRequests ~= RecvRequest(buf[0 .. received.length], onRecv, exact, buf);
+			m_recvRequests ~= RecvRequest(IOParams(buf, cast(uint) received.length), onRecv, exact);
 		}
 	}
 
@@ -261,7 +253,7 @@ public:
 	body
 	{
 		if (m_continuousReceiving) return;
-		m_recvRequests ~= RecvRequest(buf, onRecv, exact);
+		m_recvRequests ~= RecvRequest(IOParams(buf), onRecv, exact);
 		m_continuousReceiving = true;
 		if (!readBlocked) processReceiveRequests();
 	}
