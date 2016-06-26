@@ -218,6 +218,20 @@ public:
 	}
 
 	///
+	void receiveFrom(ubyte[] buf, OnReceive onRecv, ref NetworkAddress addr)
+	in {
+		assert (!m_connectionOriented, "Connectionless socket required");
+		assert(!m_continuousReceiving, "Cannot receive manually while receiving continuously");
+		assert(onRecv !is null, "Callback to use once reception has been completed required");
+	} body {
+		if (readBlocked) {
+			m_recvRequests ~= RecvRequest(IOParams(buf, 0, &addr), onRecv);
+			return;
+		}
+
+		auto received = doReceive(IOParams(buf, 0, &addr));
+		onRecv(received);
+	}
 
 	///
 	void send(const(ubyte)[] buf, OnEvent onSend)
@@ -260,6 +274,21 @@ public:
 		m_recvRequests ~= RecvRequest(IOParams(buf), onRecv, exact);
 		m_continuousReceiving = true;
 		if (!readBlocked) processReceiveRequests();
+	}
+
+	///
+	void startReceivingFrom(ubyte[] buf, OnReceive onRecv, ref NetworkAddress addr)
+	in {
+		assert (!m_connectionOriented, "Connectionless socket required");
+		if (m_datagramOriented) {
+			assertNotThrown(localAddress, "Local address required");
+		}
+		assert(onRecv !is null, "Callback to use once reception has been completed required");
+	} body {
+		if (m_continuousReceiving) return;
+		m_recvRequests ~= RecvRequest(IOParams(buf, 0, &addr), onRecv);
+		m_continuousReceiving = true;
+		if (!readBlocked) processSendRequests();
 	}
 
 	/// Same as `kill` on connection-less sockets; on connection-oriented sockets,
