@@ -138,9 +138,27 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 		return 1;
 	}
 
-	if (!client.connect(remote.name, remote.nameLen)) {
+	if (client.connectionOriented && !client.connect(remote.name, remote.nameLen)) {
 		stderr.writeln("ncat: ", client.status.text);
 		return 1;
+	} else if (af == AddressFamily.UNIX) {
+		import std.path: buildPath;
+		import std.file: tempDir;
+		import std.conv : to;
+		import std.random: randomCover;
+		import std.range: take;
+		import std.ascii: hexDigits;
+		import std.array: array;
+
+		auto localName = buildPath(tempDir, "ncat." ~ hexDigits.array.randomCover.take(8).array.to!string);
+
+		NetworkAddress local;
+		local.sockAddr.sa_family = AddressFamily.UNIX;
+		(cast(sockaddr_un*) local.sockAddr).sun_path[0 .. localName.length] = cast(byte[]) localName[];
+		if (!client.bind(local)) {
+			stderr.writeln("ncat: ", client.status.text);
+			return 1;
+		}
 	}
 
 	if (!client.connectionOriented) {
