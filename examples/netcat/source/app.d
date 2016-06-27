@@ -179,7 +179,7 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 				auto input = stdin.rawRead(stdinReadBuf);
 
 				if (input.length > 0) {
-					client.send(input, { if (client.alive) doOffThread(readAndSend); });
+					client.sendTo(input, NetworkAddress(remote), { if (client.alive) doOffThread(readAndSend); });
 				} else {
 					close.trigger();
 				}
@@ -254,10 +254,11 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 	}
 
 	if (!listener.connectionOriented) {
-		listener.startReceiving(socketRecvBuf, (data) {
+		NetworkAddress remoteAddr;
+		listener.startReceivingFrom(socketRecvBuf, (data) {
 			stdout.rawWrite(data);
 			stdout.flush();
-		});
+		}, remoteAddr);
 	}
 	else if (!listener.listen(128)) {
 		stderr.writeln("ncat: ", listener.status.text);
