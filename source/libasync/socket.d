@@ -259,6 +259,23 @@ public:
 		}
 	}
 
+	void sendTo(const(ubyte)[] buf, NetworkAddress to, OnEvent onSend)
+	in {
+		assert (!m_connectionOriented, "Connectionless socket required");
+		assert(onSend !is null, "Callback to use once transmission has been completed required");
+	} body {
+		if (writeBlocked) {
+			m_sendRequests ~= SendRequest(IOParams(cast(ubyte[]) buf, 0, &to));
+		}
+
+		auto sentCount = sendAll(IOParams(cast(ubyte[]) buf, 0, &to));
+		if (sentCount == buf.length) {
+			onSend();
+		} else {
+			m_sendRequests ~= SendRequest(IOParams(cast(ubyte[]) buf[sentCount .. $], 0, &to), onSend);
+		}
+	}
+
 	///
 	void startReceiving(ubyte[] buf, OnReceive onRecv, bool exact = false)
 	in {
@@ -449,7 +466,9 @@ private:
 		uint sentCount = void;
 
 		do {
-			sentCount = m_evLoop.send(m_socket, sendBuf);
+			if (io.addr is null) sentCount = m_evLoop.send(m_socket, sendBuf);
+			else sentCount = m_evLoop.sendTo(m_socket, sendBuf, *io.addr);
+
 			sendBuf = sendBuf[sentCount .. $];
 			if (m_evLoop.status.code == Status.ASYNC) {
 				writeBlocked = true;
