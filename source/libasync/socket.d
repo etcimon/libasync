@@ -82,7 +82,7 @@ private:
 	OnAccept m_onAccept;
 
 	///
-	struct IOParams
+	struct Message
 	{
 		ubyte[] buf;
 		uint count;
@@ -92,7 +92,7 @@ private:
 	///
 	struct RecvRequest
 	{
-		IOParams io;
+		Message msg;
 
 		OnReceive onComplete;
 		bool exact;
@@ -101,7 +101,7 @@ private:
 	///
 	struct SendRequest
 	{
-		IOParams io;
+		Message msg;
 
 		OnEvent onComplete;
 	}
@@ -143,9 +143,9 @@ package:
 	{
 		while (!readBlocked && !m_recvRequests.empty) {
 			auto request = &m_recvRequests.front();
-			auto received = doReceive(request.io);
+			auto received = doReceive(request.msg);
 
-			if (request.exact) with (request.io) {
+			if (request.exact) with (request.msg) {
 				count += received.length;
 				if (count == buf.length) {
 					if (!m_continuousReceiving) m_recvRequests.removeFront();
@@ -168,10 +168,10 @@ package:
 	{
 		while (!writeBlocked && !m_sendRequests.empty) {
 			auto request = &m_sendRequests.front();
-			auto sentCount = sendAll(request.io);
+			auto sentCount = sendAll(request.msg);
 
-			request.io.count += sentCount;
-			if (request.io.count  == request.io.buf.length) {
+			request.msg.count += sentCount;
+			if (request.msg.count  == request.msg.buf.length) {
 				m_sendRequests.removeFront();
 				request.onComplete();
 			}
@@ -201,40 +201,23 @@ public:
 		assert(onRecv !is null, "Callback to use once reception has been completed required");
 	}
 	body {
-		if (readBlocked) {
-			m_recvRequests ~= RecvRequest(IOParams(buf), onRecv, exact);
-			return;
-		}
-
-		auto received = doReceive(IOParams(buf));
-		// For connection-oriented sockets, zero data means connection was closed, so do not trigger callback.
-		// For connectionless datagram sockets, zero data means an empty datagram arrived, so trigger callback.
-		if (  !exact && (received.length > 0 || !m_connectionOriented /+ && m_datagramOriented +/)
-		    || exact && received.length == buf.length) {
-			onRecv(received);
-		} else {
-			m_recvRequests ~= RecvRequest(IOParams(buf, cast(uint) received.length), onRecv, exact);
-		}
+		m_recvRequests ~= RecvRequest(Message(buf), onRecv, exact);
+		processReceiveRequests();
 	}
 
 	///
-	void receiveFrom(ubyte[] buf, OnReceive onRecv, ref NetworkAddress addr)
+	void receiveFrom(ubyte[] buf, ref NetworkAddress from, OnReceive onRecv)
 	in {
-		assert (!m_connectionOriented, "Connectionless socket required");
+		assert(!m_connectionOriented, "Connectionless socket required");
 		assert(!m_continuousReceiving, "Cannot receive manually while receiving continuously");
 		assert(onRecv !is null, "Callback to use once reception has been completed required");
 	} body {
-		if (readBlocked) {
-			m_recvRequests ~= RecvRequest(IOParams(buf, 0, &addr), onRecv);
-			return;
-		}
-
-		auto received = doReceive(IOParams(buf, 0, &addr));
-		onRecv(received);
+		m_recvRequests ~= RecvRequest(Message(buf, 0, &from), onRecv);
+		processReceiveRequests();
 	}
 
 	///
-	void send(const(ubyte)[] buf, OnEvent onSend)
+	void send(ubyte[] buf, OnEvent onSend)
 	in {
 		assert(!m_passive, "Active socket required");
 		if (m_connectionOriented) {
@@ -246,34 +229,17 @@ public:
 	}
 	body
 	{
-		if (writeBlocked) {
-			m_sendRequests ~= SendRequest(IOParams(cast(ubyte[]) buf), onSend);
-			return;
-		}
-
-		auto sentCount = sendAll(IOParams(cast(ubyte[]) buf));
-		if (sentCount == buf.length) {
-			onSend();
-		} else {
-			m_sendRequests ~= SendRequest(IOParams(cast(ubyte[]) buf[sentCount .. $]), onSend);
-		}
+		m_sendRequests ~= SendRequest(Message(buf), onSend);
+		processSendRequests();
 	}
 
-	void sendTo(const(ubyte)[] buf, NetworkAddress to, OnEvent onSend)
+	void sendTo(ubyte[] buf, NetworkAddress to, OnEvent onSend)
 	in {
 		assert (!m_connectionOriented, "Connectionless socket required");
 		assert(onSend !is null, "Callback to use once transmission has been completed required");
 	} body {
-		if (writeBlocked) {
-			m_sendRequests ~= SendRequest(IOParams(cast(ubyte[]) buf, 0, &to));
-		}
-
-		auto sentCount = sendAll(IOParams(cast(ubyte[]) buf, 0, &to));
-		if (sentCount == buf.length) {
-			onSend();
-		} else {
-			m_sendRequests ~= SendRequest(IOParams(cast(ubyte[]) buf[sentCount .. $], 0, &to), onSend);
-		}
+		m_sendRequests ~= SendRequest(Message(buf, 0, &to), onSend);
+		processSendRequests();
 	}
 
 	///
@@ -288,7 +254,7 @@ public:
 		}
 	} body {
 		if (m_continuousReceiving) return;
-		m_recvRequests ~= RecvRequest(IOParams(buf), onRecv, exact);
+		m_recvRequests ~= RecvRequest(Message(buf), onRecv, exact);
 		m_continuousReceiving = true;
 		if (!readBlocked) processReceiveRequests();
 	}
@@ -303,7 +269,7 @@ public:
 		assert(onRecv !is null, "Callback to use once reception has been completed required");
 	} body {
 		if (m_continuousReceiving) return;
-		m_recvRequests ~= RecvRequest(IOParams(buf, 0, &addr), onRecv);
+		m_recvRequests ~= RecvRequest(Message(buf, 0, &addr), onRecv);
 		m_continuousReceiving = true;
 		if (!readBlocked) processSendRequests();
 	}
@@ -334,8 +300,7 @@ public:
 		}
 		assert(addrLen <= addr.sockAddrLen,
 			   "POSIX.1-2013 requires sockaddr_storage be able to store any socket address");
-		assert(addr.family == params.af,
-			   "Inconsistent address family");
+		assert(addr.family == params.af, "Inconsistent address family");
 		return addr;
 	}
 
@@ -351,8 +316,7 @@ public:
 		}
 		assert(addrLen <= addr.sockAddrLen,
 			   "POSIX.1-2013 requires sockaddr_storage be able to store any socket address");
-		assert(addr.family == params.af,
-			   "Inconsistent address family");
+		assert(addr.family == params.af, "Inconsistent address family");
 		return addr;
 	}
 
@@ -414,11 +378,11 @@ private:
 	 +	as the provided buffer had available space, then the returned slice
 	 +	will have the same length as the provided buffer.
 	 +/
-	ubyte[] receiveAllAvailable(IOParams io)
+	ubyte[] receiveAllAvailable(Message msg)
 	{
 		if (readBlocked) { return []; }
 
-		auto recvBuf = io.buf[io.count .. $];
+		auto recvBuf = msg.buf[msg.count .. $];
 		uint recvCount = void;
 
 		do {
@@ -430,7 +394,7 @@ private:
 			readBlocked = true;
 		}
 
-		return io.buf[0 .. $ - recvBuf.length];
+		return msg.buf[0 .. $ - recvBuf.length];
 	}
 
 	/++
@@ -438,36 +402,36 @@ private:
 	 +  in the OS receive buffer - if any - and return a slice to the received bytes.
 	 +  Used only for sockets that are message-based.
 	 +/
-	ubyte[] receiveOneDatagram(IOParams io)
+	ubyte[] receiveOneDatagram(Message msg)
 	{
 		if (readBlocked) { return []; }
 
 		uint recvCount = void;
-		if (io.addr is null) recvCount = m_evLoop.recv(m_socket, io.buf);
-		else recvCount = m_evLoop.recvFrom(m_socket, io.buf, *io.addr);
+		if (msg.addr is null) recvCount = m_evLoop.recv(m_socket, msg.buf);
+		else recvCount = m_evLoop.recvFrom(m_socket, msg.buf, *msg.addr);
 
 		if (m_evLoop.status.code == Status.ASYNC) {
 			readBlocked = true;
 		}
 
-		return io.buf[0 .. recvCount];
+		return msg.buf[0 .. recvCount];
 	}
 
-	ubyte[] delegate(IOParams) doReceive = void;
+	ubyte[] delegate(Message) doReceive = void;
 
 	/++
 	 +  Fill the OS send buffer with bytes from the provided
 	 +  socket until it becomes full, returning the number of bytes
 	 +  transferred successfully.
 	 +/
-	uint sendAll(IOParams io)
+	uint sendAll(Message msg)
 	{
-		auto sendBuf = io.buf[io.count .. $];
+		auto sendBuf = msg.buf[msg.count .. $];
 		uint sentCount = void;
 
 		do {
-			if (io.addr is null) sentCount = m_evLoop.send(m_socket, sendBuf);
-			else sentCount = m_evLoop.sendTo(m_socket, sendBuf, *io.addr);
+			if (msg.addr is null) sentCount = m_evLoop.send(m_socket, sendBuf);
+			else sentCount = m_evLoop.sendTo(m_socket, sendBuf, *msg.addr);
 
 			sendBuf = sendBuf[sentCount .. $];
 			if (m_evLoop.status.code == Status.ASYNC) {
