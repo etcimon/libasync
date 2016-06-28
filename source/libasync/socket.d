@@ -168,7 +168,7 @@ package:
 	{
 		while (!writeBlocked && !m_sendRequests.empty) {
 			auto request = &m_sendRequests.front();
-			auto sentCount = sendAll(request.msg);
+			auto sentCount = sendMessage(request.msg);
 
 			request.msg.count += sentCount;
 			if (request.msg.count  == request.msg.buf.length) {
@@ -424,7 +424,7 @@ private:
 	 +  socket until it becomes full, returning the number of bytes
 	 +  transferred successfully.
 	 +/
-	uint sendAll(Message msg)
+	uint sendMessage(Message msg)
 	{
 		auto sendBuf = msg.buf[msg.count .. $];
 		uint sentCount = void;
