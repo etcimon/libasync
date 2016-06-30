@@ -233,7 +233,6 @@ package:
 			}
 
 			if (request.exact) with (request.msg) {
-				count += received.length;
 				if (count == buf.length) {
 					if (!m_continuousReceiving) m_recvRequests.removeFront();
 					else count = 0;
@@ -243,6 +242,7 @@ package:
 			           // These sockets allow zero-sized datagrams (e.g. UDP)
 			           || !m_connectionOriented && m_datagramOriented) {
 				if (!m_continuousReceiving) m_recvRequests.removeFront();
+				else request.msg.count = 0;
 				request.onComplete(received);
 			} else break;
 		}
@@ -468,21 +468,22 @@ private:
 	 +/
 	ubyte[] receiveAllAvailable(ref NetworkMessage msg)
 	{
-		if (readBlocked) { return []; }
-
-		auto recvBuf = msg.buf[msg.count .. $];
-		uint recvCount = void;
+		size_t recvCount = void;
 
 		do {
-			recvCount = m_evLoop.recv(m_socket, recvBuf);
-			recvBuf = recvBuf[recvCount .. $];
-		} while (recvCount > 0 && !recvBuf.empty);
+			recvCount = m_evLoop.recvMsg(m_socket, msg);
+			msg.count += recvCount;
+		} while (recvCount > 0 && msg.count < msg.buf.length);
 
+		// More bytes may become available in the OS receive buffer
 		if (m_evLoop.status.code == Status.ASYNC) {
+			readBlocked = true;
+		// Connection was shutdown by the remote peer
+		} else if (m_evLoop.status.code == Status.OK && !recvCount) {
 			readBlocked = true;
 		}
 
-		return msg.buf[0 .. $ - recvBuf.length];
+		return msg.buf[0 .. msg.count];
 	}
 
 	/++
@@ -492,9 +493,9 @@ private:
 	 +/
 	ubyte[] receiveOneDatagram(ref NetworkMessage msg)
 	{
-		if (readBlocked) { return []; }
-
 		auto recvCount = m_evLoop.recvMsg(m_socket, msg);
+		msg.count += recvCount;
+
 		if (m_evLoop.status.code == Status.ASYNC) {
 			readBlocked = true;
 		}
@@ -508,8 +509,10 @@ private:
 	 +  Transfers as much of the given message's untransferred bytes
 	 +  into the OS send buffer as the OS allows for, advancing
 	 +  the message's count of transferred bytes in the process.
-	 +  Returns: $(D_INLINECODE true) if and only if all of
-	 +           the message's bytes have been transferred.
+	 +  Sets $(DDOC_MEMBERS writeBlocked) if the OS indicated there
+	 +  was not enough space available in the OS send buffer.
+	 +  Returns: $(D_INLINECODE true) if all of the message's bytes
+	 +           have been transferred.
 	 +/
 	bool sendMessage(ref NetworkMessage msg)
 	in {
@@ -521,12 +524,11 @@ private:
 		do {
 			sentCount = m_evLoop.sendMsg(m_socket, msg);
 			msg.count += sentCount;
-
-			if (m_evLoop.status.code == Status.ASYNC) {
-				writeBlocked = true;
-				break;
-			}
 		} while (sentCount > 0 && msg.count < msg.buf.length);
+
+		if (m_evLoop.status.code == Status.ASYNC) {
+			writeBlocked = true;
+		}
 
 		assert(msg.count <= msg.buf.length, "Count of transferred bytes must not exceed the message's content length");
 		return msg.count == msg.buf.length;
