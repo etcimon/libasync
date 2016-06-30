@@ -925,6 +925,86 @@ package:
 		return cast(uint) ret;
 	}
 
+	size_t recvMsg(in fd_t fd, ref NetworkMessage msg)
+	{
+		import libasync.internals.socket_compat : recvmsg, msghdr, iovec, sockaddr_storage;
+
+		while (true) {
+			auto err = recvmsg(fd, msg.header, 0);
+
+			.tracef("recvmsg syscall on FD %d returned %d", fd, err);
+			if (err == SOCKET_ERROR) {
+				m_error = lastError();
+
+				if (m_error == EPosix.EINTR) {
+					.tracef("recvmsg syscall on FD %d was interrupted before any transfer occured", fd);
+					continue;
+				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+					.tracef("recvmsg syscall on FD %d would have blocked", fd);
+					m_status.code = Status.ASYNC;
+					return 0;
+				} else if (m_error == EBADF ||
+				           m_error == EFAULT ||
+				           m_error == EINVAL ||
+				           m_error == ENOTCONN ||
+				           m_error == ENOTSOCK) {
+					assert(false, "recvmsg syscall message on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ m_error.formatSocketError());
+				} else if (catchError!"Receive message"(err)) {
+					.errorf("recvmsg syscall on FD %d encountered socket error: %s", fd, m_error.formatSocketError());
+					return 0;
+				}
+			} else {
+				.infof("Received %d bytes on FD %d", err, fd);
+				m_status.code = Status.OK;
+				return err;
+			}
+		}
+	}
+
+	size_t sendMsg(in fd_t fd, in NetworkMessage msg) {
+		import libasync.internals.socket_compat : sendmsg;
+
+		.tracef("Send message on FD %d", fd);
+		m_status = StatusInfo.init;
+
+		while (true) {
+			auto err = sendmsg(fd, msg.header, 0);
+
+			.tracef("sendmsg syscall on FD %d returned %d", fd, err);
+			if (err == SOCKET_ERROR) {
+				m_error = lastError();
+
+				if (m_error == EPosix.EINTR) {
+					.tracef("sendmsg syscall on FD %d was interrupted before any transfer occured", fd);
+					continue;
+				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+					.tracef("sendmsg syscall on FD %d would have blocked", fd);
+					m_status.code = Status.ASYNC;
+					return 0;
+				} else if (m_error == EBADF ||
+				           m_error == ECONNRESET ||
+				           m_error == EDESTADDRREQ ||
+				           m_error == EFAULT ||
+				           m_error == EINVAL ||
+				           m_error == EISCONN ||
+				           m_error == EMSGSIZE ||
+				           m_error == ENOTCONN ||
+				           m_error == ENOTSOCK ||
+				           m_error == EOPNOTSUPP ||
+				           m_error == EPIPE) {
+					assert(false, "sendmsg syscall on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ m_error.formatSocketError());
+				} else if (catchError!"Send message"(err)) {
+					.errorf("sendmsg syscall on FD %d encountered socket error: %s", fd, m_error.formatSocketError());
+					return 0;
+				}
+			} else {
+				.infof("Sent %d bytes on FD %d", err, fd);
+				m_status.code = Status.OK;
+				return err;
+			}
+		}
+	}
+
 	uint recvFrom(in fd_t fd, ubyte[] data, ref NetworkAddress addr)
 	{
 		import libasync.internals.socket_compat : recvfrom, AF_INET6, AF_INET, socklen_t;

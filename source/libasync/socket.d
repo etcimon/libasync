@@ -47,6 +47,83 @@ bool isDatagramOriented(SocketType type) @safe pure nothrow @nogc
 	}
 }
 
+struct NetworkMessage
+{
+	version (Posix) {
+		/+
+		struct iovec {                    /* Scatter/gather array items */
+			void  *iov_base;              /* Starting address */
+			size_t iov_len;               /* Number of bytes to transfer */
+		}
+
+		struct msghdr {
+			void         *msg_name;       /* optional address */
+			socklen_t     msg_namelen;    /* size of address */
+			struct iovec *msg_iov;        /* scatter/gather array */
+			size_t        msg_iovlen;     /* # elements in msg_iov */
+			void         *msg_control;    /* ancillary data, see below */
+			size_t        msg_controllen; /* ancillary data buffer len */
+			int           msg_flags;      /* flags on received message */
+		}
+		+/
+		import core.sys.posix.sys.socket : msghdr, iovec, AF_UNSPEC;
+
+		private:
+			msghdr m_header;
+			iovec m_content;
+
+		package:
+			msghdr* header() @trusted pure @nogc nothrow const @property
+			{ return cast(msghdr*) &m_header; }
+
+		public:
+			uint count;
+
+			this(ubyte[] buf, NetworkAddress* addr = null)
+			{
+				if (addr is null) {
+					m_header.msg_name = null;
+					m_header.msg_namelen = 0;
+				} else {
+					m_header.msg_name = addr.sockAddr;
+					m_header.msg_namelen = addr.sockAddrLen;
+				}
+
+				m_header.msg_iov = &m_content;
+				m_header.msg_iovlen = 1;
+
+				m_header.msg_control = null;
+				m_header.msg_controllen = 0;
+
+				m_header.msg_flags = 0;
+
+				m_content.iov_base = buf.ptr;
+				m_content.iov_len = buf.length;
+
+				count = 0;
+			}
+
+			this(this) nothrow
+			{
+				m_header.msg_iov = &m_content;
+			}
+
+			ubyte[] buf() @trusted pure @nogc nothrow @property
+			{ return cast(ubyte[]) m_content.iov_base[0 .. m_content.iov_len]; }
+	} else version (Windows) {
+		/+
+		struct WSAMSG {
+			LPSOCKADDR name;
+			INT        namelen;
+			LPWSABUF   lpBuffers;
+			DWORD      dwBufferCount;
+			WSABUF     Control;
+			DWORD      dwFlags;
+		}
+		+/
+	}
+}
+
 /++
  + 
  +/
@@ -82,17 +159,9 @@ private:
 	OnAccept m_onAccept;
 
 	///
-	struct Message
-	{
-		ubyte[] buf;
-		uint count;
-		NetworkAddress* addr;
-	}
-
-	///
 	struct RecvRequest
 	{
-		Message msg;
+		NetworkMessage msg;
 
 		OnReceive onComplete;
 		bool exact;
@@ -101,7 +170,7 @@ private:
 	///
 	struct SendRequest
 	{
-		Message msg;
+		NetworkMessage msg;
 
 		OnEvent onComplete;
 	}
@@ -201,7 +270,7 @@ public:
 		assert(onRecv !is null, "Callback to use once reception has been completed required");
 	}
 	body {
-		m_recvRequests ~= RecvRequest(Message(buf), onRecv, exact);
+		m_recvRequests ~= RecvRequest(NetworkMessage(buf), onRecv, exact);
 		processReceiveRequests();
 	}
 
@@ -212,7 +281,7 @@ public:
 		assert(!m_continuousReceiving, "Cannot receive manually while receiving continuously");
 		assert(onRecv !is null, "Callback to use once reception has been completed required");
 	} body {
-		m_recvRequests ~= RecvRequest(Message(buf, 0, &from), onRecv);
+		m_recvRequests ~= RecvRequest(NetworkMessage(buf, &from), onRecv);
 		processReceiveRequests();
 	}
 
@@ -229,7 +298,7 @@ public:
 	}
 	body
 	{
-		m_sendRequests ~= SendRequest(Message(buf), onSend);
+		m_sendRequests ~= SendRequest(NetworkMessage(buf), onSend);
 		processSendRequests();
 	}
 
@@ -238,7 +307,7 @@ public:
 		assert (!m_connectionOriented, "Connectionless socket required");
 		assert(onSend !is null, "Callback to use once transmission has been completed required");
 	} body {
-		m_sendRequests ~= SendRequest(Message(buf, 0, &to), onSend);
+		m_sendRequests ~= SendRequest(NetworkMessage(buf, &to), onSend);
 		processSendRequests();
 	}
 
@@ -254,13 +323,13 @@ public:
 		}
 	} body {
 		if (m_continuousReceiving) return;
-		m_recvRequests ~= RecvRequest(Message(buf), onRecv, exact);
+		m_recvRequests ~= RecvRequest(NetworkMessage(buf), onRecv, exact);
 		m_continuousReceiving = true;
 		if (!readBlocked) processReceiveRequests();
 	}
 
 	///
-	void startReceivingFrom(ubyte[] buf, OnReceive onRecv, ref NetworkAddress addr)
+	void startReceivingFrom(ubyte[] buf, OnReceive onRecv, ref NetworkAddress from)
 	in {
 		assert (!m_connectionOriented, "Connectionless socket required");
 		if (m_datagramOriented) {
@@ -269,7 +338,7 @@ public:
 		assert(onRecv !is null, "Callback to use once reception has been completed required");
 	} body {
 		if (m_continuousReceiving) return;
-		m_recvRequests ~= RecvRequest(Message(buf, 0, &addr), onRecv);
+		m_recvRequests ~= RecvRequest(NetworkMessage(buf, &from), onRecv);
 		m_continuousReceiving = true;
 		if (!readBlocked) processSendRequests();
 	}
@@ -378,7 +447,7 @@ private:
 	 +	as the provided buffer had available space, then the returned slice
 	 +	will have the same length as the provided buffer.
 	 +/
-	ubyte[] receiveAllAvailable(Message msg)
+	ubyte[] receiveAllAvailable(ref NetworkMessage msg)
 	{
 		if (readBlocked) { return []; }
 
@@ -402,14 +471,11 @@ private:
 	 +  in the OS receive buffer - if any - and return a slice to the received bytes.
 	 +  Used only for sockets that are message-based.
 	 +/
-	ubyte[] receiveOneDatagram(Message msg)
+	ubyte[] receiveOneDatagram(ref NetworkMessage msg)
 	{
 		if (readBlocked) { return []; }
 
-		uint recvCount = void;
-		if (msg.addr is null) recvCount = m_evLoop.recv(m_socket, msg.buf);
-		else recvCount = m_evLoop.recvFrom(m_socket, msg.buf, *msg.addr);
-
+		auto recvCount = m_evLoop.recvMsg(m_socket, msg);
 		if (m_evLoop.status.code == Status.ASYNC) {
 			readBlocked = true;
 		}
@@ -417,21 +483,20 @@ private:
 		return msg.buf[0 .. recvCount];
 	}
 
-	ubyte[] delegate(Message) doReceive = void;
+	ubyte[] delegate(ref NetworkMessage) doReceive = void;
 
 	/++
 	 +  Fill the OS send buffer with bytes from the provided
 	 +  socket until it becomes full, returning the number of bytes
 	 +  transferred successfully.
 	 +/
-	uint sendMessage(Message msg)
+	size_t sendMessage(ref NetworkMessage msg)
 	{
 		auto sendBuf = msg.buf[msg.count .. $];
-		uint sentCount = void;
+		size_t sentCount = void;
 
 		do {
-			if (msg.addr is null) sentCount = m_evLoop.send(m_socket, sendBuf);
-			else sentCount = m_evLoop.sendTo(m_socket, sendBuf, *msg.addr);
+			sentCount = m_evLoop.sendMsg(m_socket, msg);
 
 			sendBuf = sendBuf[sentCount .. $];
 			if (m_evLoop.status.code == Status.ASYNC) {
