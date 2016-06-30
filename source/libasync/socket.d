@@ -505,9 +505,11 @@ private:
 	ubyte[] delegate(ref NetworkMessage) doReceive = void;
 
 	/++
-	 +  Fill the OS send buffer with bytes from the provided
-	 +  socket until it becomes full, returning the number of bytes
-	 +  transferred successfully.
+	 +  Transfers as much of the given message's untransferred bytes
+	 +  into the OS send buffer as the OS allows for, advancing
+	 +  the message's count of transferred bytes in the process.
+	 +  Returns: $(D_INLINECODE true) if and only if all of
+	 +           the message's bytes have been transferred.
 	 +/
 	bool sendMessage(ref NetworkMessage msg)
 	in {
