@@ -513,7 +513,8 @@ private:
 	 +/
 	bool sendMessage(ref NetworkMessage msg)
 	in {
-		assert(msg.count < msg.buf.length, "Message already sent");
+		assert(msg.count != msg.buf.length, "Message already sent");
+		assert(msg.count <= msg.buf.length, "Count of transferred bytes must not exceed the message's content length");
 	} body {
 		size_t sentCount = void;
 
@@ -527,7 +528,7 @@ private:
 			}
 		} while (sentCount > 0 && msg.count < msg.buf.length);
 
-		assert(msg.count <= msg.buf.length);
+		assert(msg.count <= msg.buf.length, "Count of transferred bytes must not exceed the message's content length");
 		return msg.count == msg.buf.length;
 	}
 
