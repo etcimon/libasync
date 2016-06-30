@@ -715,7 +715,7 @@ struct NetworkAddress
 	{ return addr.sa_family; }
 	/// ditto
 	@property void family(ushort val) pure @safe nothrow @nogc
-	{ addr.sa_family = cast(ubyte)val; }
+	{ addr.sa_family = cast(ubyte) val; }
 
 	/** The port in host byte order.
 	 */
