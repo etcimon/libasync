@@ -197,8 +197,12 @@ package:
 	///
 	EventLoop m_evLoop;
 
-	void handleError()
-	{ if (m_onError !is null) m_onError(); }
+	bool handleError()
+	{
+		if (m_onError is null) return false;
+		m_onError();
+		return true;
+	}
 
 	void handleConnect()
 	{ if (m_onConnect !is null) m_onConnect(); }
@@ -223,6 +227,10 @@ package:
 		while (!readBlocked && !m_recvRequests.empty) {
 			auto request = &m_recvRequests.front();
 			auto received = doReceive(request.msg);
+			if (!received.length && !readBlocked) {
+				if (!handleError()) kill();
+				return;
+			}
 
 			if (request.exact) with (request.msg) {
 				count += received.length;
@@ -248,6 +256,10 @@ package:
 		while (!writeBlocked && !m_sendRequests.empty) {
 			auto request = &m_sendRequests.front();
 			auto sentCount = sendMessage(request.msg);
+			if (!sentCount && !writeBlocked) {
+				if (!handleError) kill();
+				return;
+			}
 
 			request.msg.count += sentCount;
 			if (request.msg.count  == request.msg.buf.length) {
@@ -350,7 +362,7 @@ public:
 		if (m_continuousReceiving) return;
 		m_recvRequests ~= RecvRequest(NetworkMessage(buf, &from), onRecv);
 		m_continuousReceiving = true;
-		if (!readBlocked) processSendRequests();
+		if (!readBlocked) processReceiveRequests();
 	}
 
 	/// Same as `kill` on connection-less sockets; on connection-oriented sockets,
@@ -556,6 +568,9 @@ public:
 			m_recvRequests.reserve(32);
 			m_sendRequests.reserve(32);
 		} ());
+
+		readBlocked = true;
+		writeBlocked = true;
 	}
 
 	/// The underlying OS socket descriptor

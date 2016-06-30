@@ -2243,6 +2243,7 @@ private:
 			info("!connect");
 
 			socket.connected = true;
+			socket.writeBlocked = false;
 			try socket.handleConnect();
 			catch (Exception e) {
 				.error(e.msg);
