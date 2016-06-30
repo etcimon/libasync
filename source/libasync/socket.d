@@ -129,6 +129,16 @@ struct NetworkMessage
  +/
 final class AsyncSocket
 {
+	invariant
+	{
+		// There are
+		//  - connection-oriented, datagram-oriented sockets,
+		//  - connection-oriented, not datagram-oriented (stream) sockets,
+		//  - connectionless, datagram-oriented sockets
+		// There are no connectionless, not datagram-oriented sockets
+		assert(m_connectionOriented || m_datagramOriented);
+	}
+
 private:
 	/// The socket used internally
 	fd_t m_socket = INVALID_SOCKET;
