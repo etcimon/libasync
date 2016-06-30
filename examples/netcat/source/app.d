@@ -103,7 +103,32 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 	auto client = new AsyncSocket(eventLoop, af, type);
 
 	auto socketRecvBuf = new ubyte[4096];
-	auto stdinReadBuf = new ubyte[4096];
+	auto stdinReadBuf = new shared ubyte[4096];
+	shared ubyte[] input;
+
+	shared AsyncSignal handleSTDIN = new shared AsyncSignal(eventLoop);
+	void delegate() readAndSend = void;
+
+	void delegate(ubyte[] data) send = void;
+	if (client.connectionOriented) {
+		send = (data) => client.send(data, { if (client.alive) doOffThread(readAndSend); });
+	} else {
+		send = (data) => client.sendTo(cast(ubyte[]) input, NetworkAddress(remote), { if (client.alive) doOffThread(readAndSend); });
+	}
+
+
+	handleSTDIN.run({
+		if (input.length > 0) {
+			send(cast(ubyte[]) input);
+		} else {
+			running = false;
+		}
+	});
+
+	readAndSend = {
+		input = cast(shared ubyte[]) stdin.rawRead(cast(ubyte[]) stdinReadBuf);
+		handleSTDIN.trigger();
+	};
 
 	if (client.connectionOriented) {
 		client.onConnect = {
@@ -112,16 +137,6 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 				stdout.flush();
 			});
 
-			void delegate() readAndSend = void;
-			readAndSend = {
-				auto input = stdin.rawRead(stdinReadBuf);
-
-				if (input.length > 0) {
-					client.send(input, { if (client.alive) doOffThread(readAndSend); });
-				} else {
-					client.close();
-				}
-			};
 			doOffThread(readAndSend);
 		};
 
@@ -129,12 +144,12 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 	}
 
 	client.onError = {
-		stderr.writeln(client.error);
+		stderr.writeln("ncat: ", client.error);
 		running = false;
 	};
 
 	if(!client.run()) {
-		stderr.writeln(client.error);
+		stderr.writeln("ncat: ", client.error);
 		return 1;
 	}
 
@@ -162,29 +177,12 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 	}
 
 	if (!client.connectionOriented) {
-
-		auto close = new AsyncNotifier(eventLoop);
-		close.run({
-			client.close();
-			running = false;
-		});
-
 		client.startReceiving(socketRecvBuf, (data) {
 			stdout.rawWrite(data);
 			stdout.flush();
 		});
 
-		void delegate() readAndSend = void;
-			readAndSend = {
-				auto input = stdin.rawRead(stdinReadBuf);
-
-				if (input.length > 0) {
-					client.sendTo(input, NetworkAddress(remote), { if (client.alive) doOffThread(readAndSend); });
-				} else {
-					close.trigger();
-				}
-			};
-			doOffThread(readAndSend);
+		doOffThread(readAndSend);
 	}
 
 	while (running) eventLoop.loop(-1.seconds);
@@ -201,7 +199,8 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 	auto listener = new AsyncSocket(eventLoop, af, type);
 
 	auto socketRecvBuf = new ubyte[4096];
-	auto stdinReadBuf = new ubyte[4096];
+	auto stdinReadBuf = new shared ubyte[4096];
+	shared ubyte[] input;
 
 	if (listener.connectionOriented) listener.onAccept = (client) {
 		listener.kill();
@@ -212,27 +211,33 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 				stdout.flush();
 			});
 
+			shared AsyncSignal handleSTDIN = new shared AsyncSignal(eventLoop);
 			void delegate() readAndSend = void;
-			readAndSend = {
-				auto input = stdin.rawRead(stdinReadBuf);
 
+			handleSTDIN.run({
 				if (input.length > 0) {
-					client.send(input, { if (client.alive) doOffThread(readAndSend); });
+					client.send(cast(ubyte[]) input, { if (client.alive) doOffThread(readAndSend); });
 				} else {
-					client.close();
+					running = false;
 				}
+			});
+
+			readAndSend = {
+				input = cast(shared ubyte[]) stdin.rawRead(cast(ubyte[]) stdinReadBuf);
+				handleSTDIN.trigger();
 			};
+
 			doOffThread(readAndSend);
 		};
 
 		client.onClose = { running = false; };
-		client.onError = { stderr.writeln(client.error); };
+		client.onError = { stderr.writeln("ncat: ", client.error); };
 	};
 
-	listener.onError = { stderr.writeln(listener.error); };
+	listener.onError = { stderr.writeln("ncat: ", listener.error); };
 
 	if(!listener.run()) {
-		stderr.writeln(listener.error);
+		stderr.writeln("ncat: ", listener.error);
 		return 1;
 	}
 
