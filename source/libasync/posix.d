@@ -3132,43 +3132,43 @@ mixin template COSocketMixins() {
 		bool readBlocked;
 	}
 
-	@property bool disconnecting() const {
+	@property bool disconnecting() const @safe pure @nogc {
 		return m_impl.disconnecting;
 	}
 
-	@property void disconnecting(bool b) {
+	@property void disconnecting(bool b) @safe pure @nogc {
 		m_impl.disconnecting = b;
 	}
 
-	@property bool connected() const {
+	@property bool connected() const @safe pure @nogc {
 		return m_impl.connected;
 	}
 
-	@property void connected(bool b) {
+	@property void connected(bool b) @safe pure @nogc {
 		m_impl.connected = b;
 	}
 
-	@property bool writeBlocked() const {
+	@property bool writeBlocked() const @safe pure @nogc {
 		return m_impl.writeBlocked;
 	}
 
-	@property void writeBlocked(bool b) {
+	@property void writeBlocked(bool b) @safe pure @nogc {
 		m_impl.writeBlocked = b;
 	}
 
-	@property bool readBlocked() const {
+	@property bool readBlocked() const @safe pure @nogc {
 		return m_impl.readBlocked;
 	}
 
-	@property void readBlocked(bool b) {
+	@property void readBlocked(bool b) @safe pure @nogc {
 		m_impl.readBlocked = b;
 	}
 
-	@property EventInfo* evInfo() {
+	@property EventInfo* evInfo() @safe pure @nogc {
 		return m_impl.evInfo;
 	}
 
-	@property void evInfo(EventInfo* info) {
+	@property void evInfo(EventInfo* info) @safe pure @nogc {
 		m_impl.evInfo = info;
 	}
 
