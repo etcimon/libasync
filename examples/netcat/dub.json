@@ -7,4 +7,11 @@
     },
 
     "targetName": "ncat",
+    "buildTypes": {
+        "release": {
+            "versions": ["StdLoggerDisableTrace",
+                         "StdLoggerDisableInfo",
+                         "StdLoggerDisableWarning"]
+        }
+    }
 }
