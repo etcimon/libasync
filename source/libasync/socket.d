@@ -689,11 +689,11 @@ struct NetworkAddress
 		sockaddr_un, AF_UNIX;
 
 	package union {
-		sockaddr addr;
-		sockaddr_storage addr_storage;
-		sockaddr_in addr_ip4;
-		sockaddr_in6 addr_ip6;
-		version (Posix) sockaddr_un addr_un;
+		sockaddr addr = { AF_UNSPEC };
+		sockaddr_storage addr_storage = void;
+		sockaddr_in addr_ip4 = void;
+		sockaddr_in6 addr_ip6 = void;
+		version (Posix) sockaddr_un addr_un = void;
 	}
 
 	this(Address address) @trusted pure nothrow @nogc
@@ -747,6 +747,7 @@ struct NetworkAddress
 	const pure nothrow {
 		switch (this.family) {
 			default: assert(false, "Unsupported address family");
+			case AF_UNSPEC: return addr_storage.sizeof;
 			case AF_INET: return addr_ip4.sizeof;
 			case AF_INET6: return addr_ip6.sizeof;
 			version (Posix) case AF_UNIX: return addr_un.sizeof;
