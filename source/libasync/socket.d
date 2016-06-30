@@ -589,6 +589,8 @@ public:
  +/
 struct NetworkAddress
 {
+	import std.bitmanip: nativeToBigEndian, bigEndianToNative;
+
 	import libasync.internals.socket_compat :
 		sockaddr, sockaddr_storage,
 		sockaddr_in, AF_INET,
@@ -631,8 +633,8 @@ struct NetworkAddress
 	const pure nothrow {
 		switch (this.family) {
 			default: assert(false, "port() called for invalid address family.");
-			case AF_INET: return ntoh(addr_ip4.sin_port);
-			case AF_INET6: return ntoh(addr_ip6.sin6_port);
+			case AF_INET: return bigEndianToNative!ushort((cast(ubyte*) &addr_ip4.sin_port)[0..2]);
+			case AF_INET6: return bigEndianToNative!ushort((cast(ubyte*) &addr_ip6.sin6_port)[0..2]);
 		}
 	}
 	/// ditto
@@ -640,8 +642,8 @@ struct NetworkAddress
 	pure nothrow {
 		switch (this.family) {
 			default: assert(false, "port() called for invalid address family.");
-			case AF_INET: addr_ip4.sin_port = hton(val); break;
-			case AF_INET6: addr_ip6.sin6_port = hton(val); break;
+			case AF_INET: addr_ip4.sin_port =  *cast(ushort*) nativeToBigEndian(val).ptr; break;
+			case AF_INET6: addr_ip6.sin6_port = *cast(ushort*) nativeToBigEndian(val).ptr; break;
 		}
 	}
 
@@ -742,24 +744,6 @@ struct NetworkAddress
 				toAddressString(sink);
 				break;
 		}
-	}
-}
-
-private pure nothrow {
-	import std.bitmanip;
-
-	ushort ntoh(ushort val)
-	{
-		version (LittleEndian) return swapEndian(val);
-		else version (BigEndian) return val;
-		else static assert(false, "Unknown endianness.");
-	}
-
-	ushort hton(ushort val)
-	{
-		version (LittleEndian) return swapEndian(val);
-		else version (BigEndian) return val;
-		else static assert(false, "Unknown endianness.");
 	}
 }
 
