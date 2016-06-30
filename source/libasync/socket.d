@@ -255,16 +255,13 @@ package:
 	{
 		while (!writeBlocked && !m_sendRequests.empty) {
 			auto request = &m_sendRequests.front();
-			auto sentCount = sendMessage(request.msg);
-			if (!sentCount && !writeBlocked) {
-				if (!handleError) kill();
-				return;
-			}
 
-			request.msg.count += sentCount;
-			if (request.msg.count  == request.msg.buf.length) {
+			if (sendMessage(request.msg)) {
 				m_sendRequests.removeFront();
 				request.onComplete();
+			} else if (!writeBlocked) {
+				if (!handleError()) kill();
+				return;
 			}
 		}
 	}
@@ -512,22 +509,24 @@ private:
 	 +  socket until it becomes full, returning the number of bytes
 	 +  transferred successfully.
 	 +/
-	size_t sendMessage(ref NetworkMessage msg)
-	{
-		auto sendBuf = msg.buf[msg.count .. $];
+	bool sendMessage(ref NetworkMessage msg)
+	in {
+		assert(msg.count < msg.buf.length, "Message already sent");
+	} body {
 		size_t sentCount = void;
 
 		do {
 			sentCount = m_evLoop.sendMsg(m_socket, msg);
+			msg.count += sentCount;
 
-			sendBuf = sendBuf[sentCount .. $];
 			if (m_evLoop.status.code == Status.ASYNC) {
 				writeBlocked = true;
 				break;
 			}
-		} while (sentCount > 0 && !sendBuf.empty);
+		} while (sentCount > 0 && msg.count < msg.buf.length);
 
-		return sentCount;
+		assert(msg.count <= msg.buf.length);
+		return msg.count == msg.buf.length;
 	}
 
 package:
