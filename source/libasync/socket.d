@@ -724,7 +724,7 @@ struct NetworkAddress
 	/** The port in host byte order.
 	 */
 	@property ushort port()
-	const pure nothrow {
+	const @trusted @nogc pure nothrow {
 		switch (this.family) {
 			default: assert(false, "port() called for invalid address family.");
 			case AF_INET: return bigEndianToNative!ushort((cast(ubyte*) &addr_ip4.sin_port)[0..2]);
@@ -733,7 +733,7 @@ struct NetworkAddress
 	}
 	/// ditto
 	@property void port(ushort val)
-	pure nothrow {
+	@trusted @nogc pure nothrow {
 		switch (this.family) {
 			default: assert(false, "port() called for invalid address family.");
 			case AF_INET: addr_ip4.sin_port =  *cast(ushort*) nativeToBigEndian(val).ptr; break;
@@ -743,12 +743,12 @@ struct NetworkAddress
 
 	/** A pointer to a sockaddr struct suitable for passing to socket functions.
 	 */
-	@property inout(sockaddr)* sockAddr() inout pure nothrow { return &addr; }
+	@property inout(sockaddr)* sockAddr() inout pure @safe @nogc nothrow { return &addr; }
 
 	/** Size of the sockaddr struct that is returned by sockAddr().
 	 */
 	@property uint sockAddrLen()
-	const pure nothrow {
+	const @safe @nogc pure nothrow {
 		switch (this.family) {
 			default: assert(false, "Unsupported address family");
 			case AF_UNSPEC: return addr_storage.sizeof;
