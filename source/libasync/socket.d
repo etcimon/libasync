@@ -68,18 +68,25 @@ struct NetworkMessage
 		+/
 		import core.sys.posix.sys.socket : msghdr, iovec, AF_UNSPEC;
 
+		invariant
+		{
+			assert(m_count <= m_buf.length, "Count of transferred bytes must not exceed the message buffer's length");
+		}
+
 		private:
 			msghdr m_header;
 			iovec m_content;
 
+			ubyte[] m_buf;
+			size_t m_count = 0;
+
 		package:
-			msghdr* header() @trusted pure @nogc nothrow const @property
+			@property msghdr* header() @trusted pure @nogc nothrow const
 			{ return cast(msghdr*) &m_header; }
 
 		public:
-			uint count;
 
-			this(ubyte[] buf, NetworkAddress* addr = null)
+			this(ubyte[] buf, NetworkAddress* addr = null) @safe pure @nogc nothrow
 			{
 				if (addr is null) {
 					m_header.msg_name = null;
@@ -97,19 +104,33 @@ struct NetworkMessage
 
 				m_header.msg_flags = 0;
 
+				m_buf = buf;
+
 				m_content.iov_base = buf.ptr;
 				m_content.iov_len = buf.length;
-
-				count = 0;
 			}
 
-			this(this) nothrow
+			this(this) @safe pure @nogc nothrow
 			{
 				m_header.msg_iov = &m_content;
 			}
 
-			ubyte[] buf() @trusted pure @nogc nothrow @property
-			{ return cast(ubyte[]) m_content.iov_base[0 .. m_content.iov_len]; }
+			@property size_t count() @safe pure @nogc nothrow
+			{ return m_count; }
+
+			@property void count(size_t count) @safe pure @nogc nothrow
+			{
+				m_count = count;
+				auto content = m_buf[count .. $];
+				m_content.iov_base = content.ptr;
+				m_content.iov_len = content.length;
+			}
+
+			@property ubyte[] buf() @safe pure @nogc nothrow
+			{ return m_buf; }
+
+			@property bool transferred() @safe pure @nogc nothrow
+			{ return m_count == m_buf.length; }
 	} else version (Windows) {
 		/+
 		struct WSAMSG {
@@ -226,7 +247,7 @@ package:
 	{
 		while (!readBlocked && !m_recvRequests.empty) {
 			auto request = &m_recvRequests.front();
-			auto received = doReceive(request.msg);
+			auto received = receiveMessage(request.msg);
 			if (!received.length && !readBlocked) {
 				if (!handleError()) kill();
 				return;
@@ -466,44 +487,37 @@ private:
 	 +	as the provided buffer had available space, then the returned slice
 	 +	will have the same length as the provided buffer.
 	 +/
-	ubyte[] receiveAllAvailable(ref NetworkMessage msg)
-	{
-		size_t recvCount = void;
-
-		do {
-			recvCount = m_evLoop.recvMsg(m_socket, msg);
-			msg.count += recvCount;
-		} while (recvCount > 0 && msg.count < msg.buf.length);
-
-		// More bytes may become available in the OS receive buffer
-		if (m_evLoop.status.code == Status.ASYNC) {
-			readBlocked = true;
-		// Connection was shutdown by the remote peer
-		} else if (m_evLoop.status.code == Status.OK && !recvCount) {
-			readBlocked = true;
-		}
-
-		return msg.buf[0 .. msg.count];
-	}
 
 	/++
 	 +  Fill the provided buffer with bytes of the datagram currently pending
 	 +  in the OS receive buffer - if any - and return a slice to the received bytes.
 	 +  Used only for sockets that are message-based.
 	 +/
-	ubyte[] receiveOneDatagram(ref NetworkMessage msg)
-	{
-		auto recvCount = m_evLoop.recvMsg(m_socket, msg);
-		msg.count += recvCount;
 
+	ubyte[] receiveMessage(ref NetworkMessage msg)
+	in {
+		assert(!msg.transferred, "Message already received");
+	} body {
+		size_t recvCount = void;
+
+		if (m_datagramOriented) {
+			recvCount = m_evLoop.recvMsg(m_socket, msg);
+			msg.count = msg.count + recvCount;
+		} else do {
+			recvCount = m_evLoop.recvMsg(m_socket, msg);
+			msg.count = msg.count + recvCount;
+		} while (recvCount > 0 && !msg.transferred);
+
+		// More bytes may yet become available in the future
 		if (m_evLoop.status.code == Status.ASYNC) {
+			readBlocked = true;
+		// Connection was shutdown in an orderly fashion by the remote peer
+		} else if (m_connectionOriented && m_evLoop.status.code == Status.OK && !recvCount) {
 			readBlocked = true;
 		}
 
-		return msg.buf[0 .. recvCount];
+		return msg.buf[0 .. msg.count];
 	}
-
-	ubyte[] delegate(ref NetworkMessage) doReceive = void;
 
 	/++
 	 +  Transfers as much of the given message's untransferred bytes
@@ -515,23 +529,20 @@ private:
 	 +           have been transferred.
 	 +/
 	bool sendMessage(ref NetworkMessage msg)
-	in {
-		assert(msg.count != msg.buf.length, "Message already sent");
-		assert(msg.count <= msg.buf.length, "Count of transferred bytes must not exceed the message's content length");
-	} body {
+	in { assert(!msg.transferred, "Message already sent"); }
+	body {
 		size_t sentCount = void;
 
 		do {
 			sentCount = m_evLoop.sendMsg(m_socket, msg);
-			msg.count += sentCount;
-		} while (sentCount > 0 && msg.count < msg.buf.length);
+			msg.count = msg.count + sentCount;
+		} while (sentCount > 0 && !msg.transferred);
 
 		if (m_evLoop.status.code == Status.ASYNC) {
 			writeBlocked = true;
 		}
 
-		assert(msg.count <= msg.buf.length, "Count of transferred bytes must not exceed the message's content length");
-		return msg.count == msg.buf.length;
+		return msg.transferred;
 	}
 
 package:
@@ -564,9 +575,6 @@ public:
 		m_params = SocketParams(af, type, protocol);
 		m_connectionOriented = type.isConnectionOriented;
 		m_datagramOriented = type.isDatagramOriented;
-
-		if (m_datagramOriented) doReceive = &receiveOneDatagram;
-		else doReceive = &receiveAllAvailable;
 
 		assumeWontThrow(() @trusted {
 			m_recvRequests.reserve(32);
