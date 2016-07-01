@@ -625,14 +625,6 @@ public:
 	{ return bind(to.sockAddr, to.sockAddrLen); }
 
 	///
-	bool bind(Address addr)
-	{ return bind(addr.name, addr.nameLen); }
-
-	///
-	bool connect(Address to)
-	{ return bind(to.name, to.nameLen); }
-
-	///
 	bool listen(int backlog)
 	in { assert(m_onAccept !is null); }
 	body
