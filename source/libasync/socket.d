@@ -162,6 +162,8 @@ final class AsyncSocket
 		//  - connectionless, datagram-oriented sockets
 		// There are no connectionless, not datagram-oriented sockets
 		assert(m_connectionOriented || m_datagramOriented);
+
+		if (m_continuousReceiving) assert(m_recvRequests.length <= 1, "At most one request may be pending while receiving continuously");
 	}
 
 private:
@@ -220,7 +222,7 @@ private:
 
 
 	///
-	void receive(ubyte[] buf, OnReceive onRecv, bool exact)
+	/+void receive(ubyte[] buf, OnReceive onRecv, bool exact)
 	in {
 		assert(!m_passive, "Active socket required");
 		if (m_connectionOriented) {
@@ -234,7 +236,7 @@ private:
 	} body {
 		m_recvRequests ~= RecvRequest(NetworkMessage(buf), onRecv, exact);
 		processReceiveRequests();
-	}
+	}+/
 
 package:
 	///
@@ -324,7 +326,7 @@ public:
 		assert(!m_passive, "Passive sockets cannot receive");
 		assert(!m_connectionOriented || connected, "Established connection required");
 		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
-		assert(!m_continuousReceiving, "Cannot receive message manually while in continuous receive mode");
+		assert(!m_continuousReceiving || m_recvRequests.empty, "Cannot receive message manually while receiving continuously");
 		assert(!m_datagramOriented || !exact, "Datagram sockets must receive one datagram at a time");
 		assert(onRecv !is null, "Completion callback required");
 	}
@@ -379,38 +381,6 @@ public:
 	{
 		auto message = NetworkMessage(buf, &to);
 		sendMessage(message, onSend);
-	}
-
-	///
-	void startReceiving(ubyte[] buf, OnReceive onRecv, bool exact = false)
-	in {
-		assert(!m_passive, "Active socket required");
-		if (m_connectionOriented) {
-			assert(connected, "Established connection required");
-		} else if (m_datagramOriented) {
-			assertNotThrown(localAddress, "Local address required");
-			assert(!exact, "Datagram sockets must receive one datagram at a time");
-		}
-	} body {
-		if (m_continuousReceiving) return;
-		m_recvRequests ~= RecvRequest(NetworkMessage(buf), onRecv, exact);
-		m_continuousReceiving = true;
-		if (!readBlocked) processReceiveRequests();
-	}
-
-	///
-	void startReceivingFrom(ubyte[] buf, OnReceive onRecv, ref NetworkAddress from)
-	in {
-		assert (!m_connectionOriented, "Connectionless socket required");
-		if (m_datagramOriented) {
-			assertNotThrown(localAddress, "Local address required");
-		}
-		assert(onRecv !is null, "Callback to use once reception has been completed required");
-	} body {
-		if (m_continuousReceiving) return;
-		m_recvRequests ~= RecvRequest(NetworkMessage(buf, &from), onRecv);
-		m_continuousReceiving = true;
-		if (!readBlocked) processReceiveRequests();
 	}
 
 	/// Same as `kill` on connection-less sockets; on connection-oriented sockets,
@@ -580,14 +550,14 @@ package:
 	mixin COSocketMixins;
 
 	///
-	SocketParams params() const @safe pure @nogc @property
+	@property SocketParams params() const @safe pure @nogc
 	{ return m_params; }
 
-	fd_t preInitializedHandle() @safe pure @nogc @property
+	@property fd_t preInitializedHandle() @safe pure @nogc
 	{ return m_preInitializedSocket; }
 
 	///
-	void connectionOriented(bool connectionOriented) @safe pure @nogc @property
+	@property void connectionOriented(bool connectionOriented) @safe pure @nogc
 	{ m_connectionOriented = connectionOriented; }
 
 public:
@@ -621,7 +591,7 @@ public:
 
 	/// Whether this socket establishes a (stateful) connection to a remote peer
 	/// See_Also: isConnectionOriented
-	bool connectionOriented() @safe pure @nogc @property
+	@property bool connectionOriented() @safe pure @nogc
 	{ return m_connectionOriented; }
 
 	/// Whether this socket transceives datagrams
@@ -696,19 +666,24 @@ public:
 		return m_evLoop.listen(this, backlog);
 	}
 
+	@property bool receiveContinuously() const @safe pure @nogc
+	{ return m_continuousReceiving; }
+
 	///
-	void stopReceiving()
-	{
-		if (!m_continuousReceiving) return;
-		assumeWontThrow(m_recvRequests.removeFront);
-		m_continuousReceiving = false;
+	@property void receiveContinuously(bool toggle) @safe pure
+	in {
+		if (!m_continuousReceiving) assert(m_recvRequests.empty, "Cannot start receiving continuously when there are still pending receives");
+	} body {
+		if (m_continuousReceiving == toggle) return;
+		if (!toggle && !m_recvRequests.empty) assumeWontThrow(m_recvRequests.removeFront());
+		m_continuousReceiving = toggle;
 	}
 
 	/// Removes the socket from the event loop, shutting it down if necessary,
 	/// and cleans up the underlying resources.
 	bool kill(bool forced = false)
 	{
-		stopReceiving();
+		receiveContinuously = false;
 		return m_evLoop.kill(this, forced);
 	}
 
