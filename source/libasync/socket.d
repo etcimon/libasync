@@ -252,15 +252,15 @@ package:
 	body { m_onAccept(peer); }
 
 
-	/++
-	 +  Try to fulfill all requested receive operations.
-	 +/
-	/+
-	 +  NOTE: The continuous receive mode is modeled as a single
-	 +	      receive request, which - in contrast to normal receive
-	 +	      requests - only gets removed from the queue when
-	 +	      the continous receive mode is stopped.
-	 +/
+	/**
+	 * Try to fulfill all requested receive operations.
+	 */
+	/*
+	 * NOTE: The continuous receive mode is modeled as a single
+	 *	     receive request, which - in contrast to normal receive
+	 *	     requests - only gets removed from the queue when
+	 *	     the continous receive mode is stopped.
+	 */
 	void processReceiveRequests()
 	{
 		while (!readBlocked && !m_recvRequests.empty) {
@@ -288,9 +288,9 @@ package:
 		}
 	}
 
-	/++
-	 +  Try to fulfill all requested send operations.
-	 +/
+	/**
+	 * Try to fulfill all requested send operations.
+	 */
 	void processSendRequests()
 	{
 		while (!writeBlocked && !m_sendRequests.empty) {
@@ -460,15 +460,15 @@ nothrow:
 
 private:
 
-	/++
-	 +  Appends as much of the bytes currently available in the OS receive
-	 +  buffer to the given message's transferred bytes as the message's
-	 +  buffer's remaining free bytes and the state of the OS receive buffer
-	 +  allow for, advancing the message's count of transferred bytes in the process.
-	 +  Sets $(DDOC_MEMBERS readBlocked) on indication by the OS that there were
-	 +  not enough bytes available in the OS receive buffer.
-	 +  Returns: $(D_INLINECODE true) if any bytes were transferred.
-	 +/
+	/**
+	 * Appends as much of the bytes currently available in the OS receive
+	 * buffer to the given message's transferred bytes as the message's
+	 * buffer's remaining free bytes and the state of the OS receive buffer
+	 * allow for, advancing the message's count of transferred bytes in the process.
+	 * Sets $(DDOC_MEMBERS readBlocked) on indication by the OS that there were
+	 * not enough bytes available in the OS receive buffer.
+	 * Returns: $(D_INLINECODE true) if any bytes were transferred.
+	 */
 	bool attemptMessageReception(ref NetworkMessage msg)
 	in {
 		assert(m_connectionOriented && !msg.receivedAll || !msg.receivedAny, "Message already received");
@@ -497,15 +497,15 @@ private:
 		return received;
 	}
 
-	/++
-	 +  Transfers as much of the given message's untransferred bytes
-	 +  into the OS send buffer as the latter's state allows for,
-	 +  advancing the message's count of transferred bytes in the process.
-	 +  Sets $(DDOC_MEMBERS writeBlocked) on indication by the OS that
-	 +  there was not enough space available in the OS send buffer.
-	 +  Returns: $(D_INLINECODE true) if all of the message's bytes
-	 +           have been transferred.
-	 +/
+	/**
+	 * Transfers as much of the given message's untransferred bytes
+	 * into the OS send buffer as the latter's state allows for,
+	 * advancing the message's count of transferred bytes in the process.
+	 * Sets $(DDOC_MEMBERS writeBlocked) on indication by the OS that
+	 * there was not enough space available in the OS send buffer.
+	 * Returns: $(D_INLINECODE true) if all of the message's bytes
+	 *          have been transferred.
+	 */
 	bool attemptMessageTransmission(ref NetworkMessage msg)
 	in { assert(!msg.sent, "Message already sent"); }
 	body {
@@ -565,39 +565,47 @@ public:
 	@property fd_t handle() @safe pure @nogc
 	{ return m_socket; }
 
-	/// Whether this socket establishes a (stateful) connection to a remote peer
+	/// Whether this socket establishes a (stateful) connection to a remote peer.
 	/// See_Also: isConnectionOriented
 	@property bool connectionOriented() @safe pure @nogc
 	{ return m_connectionOriented; }
 
-	/// Whether this socket transceives datagrams
+	/// Whether this socket transceives datagrams.
 	/// See_Also: isDatagramOriented
 	@property bool datagramOriented() const @safe pure @nogc
 	{ return m_datagramOriented; }
 
-	///
+	/// Whether this socket has been put into passive mode.
+	/// See_Also: listen
 	@property bool passive() const @safe pure @nogc
 	{ return m_passive; }
 
-	///
+	/**
+	 *  Convenience constructor for when there is only one protocol
+	 *  supporting both $(D_PARAM af) and $(D_PARAM type).
+	 */
 	this(EventLoop eventLoop, int af, SocketType type) @safe
 	{ this(eventLoop, af, type, 0); }
 
-	///
+	/// Sets callback for when an active connection-oriented socket connects.
 	@property void onConnect(OnEvent onConnect) @safe pure @nogc 
-	{ m_onConnect = onConnect; }
+	in { assert(m_connectionOriented); }
+	body { m_onConnect = onConnect; }
 
-	///
+	/// Sets callback for when an active connection-oriented socket disconnects.
 	@property void onClose(OnEvent onClose) @safe pure @nogc
-	{ m_onClose = onClose; }
+	in { assert(m_connectionOriented); }
+	body { m_onClose = onClose; }
 
-	///
+	/// Sets callback for when a socket error has occurred.
 	@property void onError(OnEvent onError) @safe pure @nogc
 	{ m_onError = onError; }
 
-	///
+	/// Sets callback for when a passive connection-oriented socket
+	/// accepts a new connection request from a remote socket.
 	@property void onAccept(OnAccept onAccept) @safe pure @nogc
-	{ m_onAccept = onAccept; }
+	in { assert(m_connectionOriented); }
+	body { m_onAccept = onAccept; }
 	
 	/// Creates the underlying OS socket - if necessary - and
 	/// registers the event handler in the underlying OS event loop.
@@ -608,7 +616,12 @@ public:
 		return m_socket != INVALID_SOCKET;
 	}
 
-	///
+	/**
+	 * Assigns the network address pointed to by $(D_PARAM addr),
+	 * with $(D_PARAM addrlen) specifying the size, in bytes, of
+	 * this address, as the local name of this socket.
+	 * See_Also: http://pubs.opengroup.org/onlinepubs/9699919799/functions/bind.html
+	 */
 	bool bind(sockaddr* addr, socklen_t addrlen)
 	{ return m_evLoop.bind(this, addr, addrlen); }
 
