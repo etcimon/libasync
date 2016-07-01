@@ -66,6 +66,7 @@ struct NetworkMessage
 			int           msg_flags;      /* flags on received message */
 		}
 		+/
+
 		import core.sys.posix.sys.socket : msghdr, iovec, AF_UNSPEC;
 
 		invariant
@@ -81,7 +82,7 @@ struct NetworkMessage
 			size_t m_count = 0;
 
 		package:
-			@property msghdr* header() @trusted pure @nogc nothrow const
+			@property msghdr* header() const @trusted pure @nogc nothrow
 			{ return cast(msghdr*) &m_header; }
 
 		public:
@@ -129,8 +130,17 @@ struct NetworkMessage
 			@property ubyte[] buf() @safe pure @nogc nothrow
 			{ return m_buf; }
 
-			@property bool transferred() @safe pure @nogc nothrow
+			@property bool receivedAny() @safe pure @nogc nothrow
+			{ return m_count > 0; }
+
+			@property bool receivedAll() @safe pure @nogc nothrow
 			{ return m_count == m_buf.length; }
+
+			@property bool sent() @safe pure @nogc nothrow
+			{ return m_count == m_buf.length; }
+
+			@property ubyte[] transferred() @safe pure @nogc nothrow
+			{ return m_buf[0 .. m_count]; }
 
 			@property bool hasAddress() @safe pure @nogc nothrow
 			{ return m_header.msg_name !is null; }
@@ -163,7 +173,7 @@ final class AsyncSocket
 		// There are no connectionless, not datagram-oriented sockets
 		assert(m_connectionOriented || m_datagramOriented);
 
-		if (m_continuousReceiving) assert(m_recvRequests.length <= 1, "At most one request may be pending while receiving continuously");
+		if (m_receiveContinuously) assert(m_recvRequests.length <= 1, "At most one request may be pending while receiving continuously");
 	}
 
 private:
@@ -213,30 +223,12 @@ private:
 	}
 
 	///
-	bool m_continuousReceiving;
+	bool m_receiveContinuously;
 
 	///
 	Vector!RecvRequest m_recvRequests;
 	///
 	Vector!SendRequest m_sendRequests;
-
-
-	///
-	/+void receive(ubyte[] buf, OnReceive onRecv, bool exact)
-	in {
-		assert(!m_passive, "Active socket required");
-		if (m_connectionOriented) {
-			assert(connected, "Established connection required");
-		} else {
-			assertNotThrown(remoteAddress, "Remote address required");
-		}
-		assert(!m_continuousReceiving, "Cannot receive manually while receiving continuously");
-		assert(!m_datagramOriented || !exact, "Datagram sockets must receive one datagram at a time");
-		assert(onRecv !is null, "Callback to use once reception has been completed required");
-	} body {
-		m_recvRequests ~= RecvRequest(NetworkMessage(buf), onRecv, exact);
-		processReceiveRequests();
-	}+/
 
 package:
 	///
@@ -260,41 +252,44 @@ package:
 	body { m_onAccept(peer); }
 
 
-	/++ Try to fulfil all requested receive operations, up until
-	 +  there are no more bytes available in the OS receive buffer.
+	/++
+	 +  Try to fulfill all requested receive operations.
+	 +/
+	/+
 	 +  NOTE: The continuous receive mode is modeled as a single
-	 +		receive request, which - in contrast to normal receive
-	 +		requests - only gets removed from the queue when
-	 +		the continous receive mode is stopped.
+	 +	      receive request, which - in contrast to normal receive
+	 +	      requests - only gets removed from the queue when
+	 +	      the continous receive mode is stopped.
 	 +/
 	void processReceiveRequests()
 	{
 		while (!readBlocked && !m_recvRequests.empty) {
 			auto request = &m_recvRequests.front();
 			auto received = attemptMessageReception(request.msg);
-			if (!received.length && !readBlocked) {
+			if (!received && !readBlocked) {
 				if (!handleError()) kill();
 				return;
 			}
 
-			if (request.exact) with (request.msg) {
-				if (count == buf.length) {
-					if (!m_continuousReceiving) m_recvRequests.removeFront();
-					else count = 0;
-					request.onComplete(buf);
+			if (request.exact) {
+				if (request.msg.receivedAll) {
+					auto transferred = request.msg.transferred;
+					if (!m_receiveContinuously) m_recvRequests.removeFront();
+					else request.msg.count = 0;
+					request.onComplete(transferred);
 				} else break;
-			} else if (received.length > 0
-			           // These sockets allow zero-sized datagrams (e.g. UDP)
-			           || !m_connectionOriented && m_datagramOriented) {
-				if (!m_continuousReceiving) m_recvRequests.removeFront();
+			// New bytes or zero-sized datagram
+			} else if (received || !m_connectionOriented) {
+				auto transferred = request.msg.transferred;
+				if (!m_receiveContinuously) m_recvRequests.removeFront();
 				else request.msg.count = 0;
-				request.onComplete(received);
+				request.onComplete(transferred);
 			} else break;
 		}
 	}
 
-	/++ Try to fulfil all requested send operations, up until
-	 +  there is no more space available in the OS send buffer.
+	/++
+	 +  Try to fulfill all requested send operations.
 	 +/
 	void processSendRequests()
 	{
@@ -326,8 +321,8 @@ public:
 		assert(!m_passive, "Passive sockets cannot receive");
 		assert(!m_connectionOriented || connected, "Established connection required");
 		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
-		assert(!m_continuousReceiving || m_recvRequests.empty, "Cannot receive message manually while receiving continuously");
-		assert(!m_datagramOriented || !exact, "Datagram sockets must receive one datagram at a time");
+		assert(!m_receiveContinuously || m_recvRequests.empty, "Cannot receive message manually while receiving continuously");
+		assert(m_connectionOriented || !exact, "Connectionless datagram sockets must receive one datagram at a time");
 		assert(onRecv !is null, "Completion callback required");
 	}
 	body {
@@ -398,7 +393,7 @@ public:
 	}
 
 	///
-	NetworkAddress localAddress() const @trusted @property
+	@property NetworkAddress localAddress() const @trusted
 	{
 		import libasync.internals.socket_compat : getsockname;
 
@@ -414,7 +409,7 @@ public:
 	}
 
 	///
-	NetworkAddress remoteAddress() const @trusted @property
+	@property NetworkAddress remoteAddress() const @trusted
 	{
 		import libasync.internals.socket_compat : getpeername;
 
@@ -466,47 +461,30 @@ nothrow:
 private:
 
 	/++
-	 +  Fill the provided buffer with bytes currently available in
-	 +  the OS receive buffer and return a slice to the received bytes.
-	 +  If the provided buffer is large enough and there are no
-	 +  recv/recvfrom/recvmsg system calls on this socket concurrent to this one,
-	 +  then the returned slice contains all bytes that were available
-	 +  in the OS receive buffer for this socket (in the sense that
-	 +  any byte available in the OS receive buffer will generate a new
-	 +  edge-triggered READ event).
-	 +  Used only for sockets that are not message-based.
-	 +  NOTES:
-	 +  - If the OS receive buffer had more bytes available than fit in the
-	 +	buffer, then the returned slice will have the same length
-	 +	as the provided buffer. It is socket-type-specific what
-	 +	happens to the bytes that did not fit into the provided buffer.
-	 +  - If the OS receive buffer had less bytes available than could have
-	 +	fit into the buffer, then the returned slice will be smaller then
-	 +	the provided buffer.
-	 +  - If the OS receive buffer had the same amount of bytes available
-	 +	as the provided buffer had available space, then the returned slice
-	 +	will have the same length as the provided buffer.
+	 +  Appends as much of the bytes currently available in the OS receive
+	 +  buffer to the given message's transferred bytes as the message's
+	 +  buffer's remaining free bytes and the state of the OS receive buffer
+	 +  allow for, advancing the message's count of transferred bytes in the process.
+	 +  Sets $(DDOC_MEMBERS readBlocked) on indication by the OS that there were
+	 +  not enough bytes available in the OS receive buffer.
+	 +  Returns: $(D_INLINECODE true) if any bytes were transferred.
 	 +/
-
-	/++
-	 +  Fill the provided buffer with bytes of the datagram currently pending
-	 +  in the OS receive buffer - if any - and return a slice to the received bytes.
-	 +  Used only for sockets that are message-based.
-	 +/
-
-	ubyte[] attemptMessageReception(ref NetworkMessage msg)
+	bool attemptMessageReception(ref NetworkMessage msg)
 	in {
-		assert(!msg.transferred, "Message already received");
+		assert(m_connectionOriented && !msg.receivedAll || !msg.receivedAny, "Message already received");
 	} body {
+		bool received = false;
 		size_t recvCount = void;
 
 		if (m_datagramOriented) {
 			recvCount = m_evLoop.recvMsg(m_socket, msg);
 			msg.count = msg.count + recvCount;
+			received = received || recvCount > 0;
 		} else do {
 			recvCount = m_evLoop.recvMsg(m_socket, msg);
 			msg.count = msg.count + recvCount;
-		} while (recvCount > 0 && !msg.transferred);
+			received = received || recvCount > 0;
+		} while (recvCount > 0 && !msg.receivedAll);
 
 		// More bytes may yet become available in the future
 		if (m_evLoop.status.code == Status.ASYNC) {
@@ -516,33 +494,33 @@ private:
 			readBlocked = true;
 		}
 
-		return msg.buf[0 .. msg.count];
+		return received;
 	}
 
 	/++
 	 +  Transfers as much of the given message's untransferred bytes
-	 +  into the OS send buffer as the OS allows for, advancing
-	 +  the message's count of transferred bytes in the process.
-	 +  Sets $(DDOC_MEMBERS writeBlocked) if the OS indicated there
-	 +  was not enough space available in the OS send buffer.
+	 +  into the OS send buffer as the latter's state allows for,
+	 +  advancing the message's count of transferred bytes in the process.
+	 +  Sets $(DDOC_MEMBERS writeBlocked) on indication by the OS that
+	 +  there was not enough space available in the OS send buffer.
 	 +  Returns: $(D_INLINECODE true) if all of the message's bytes
 	 +           have been transferred.
 	 +/
 	bool attemptMessageTransmission(ref NetworkMessage msg)
-	in { assert(!msg.transferred, "Message already sent"); }
+	in { assert(!msg.sent, "Message already sent"); }
 	body {
 		size_t sentCount = void;
 
 		do {
 			sentCount = m_evLoop.sendMsg(m_socket, msg);
 			msg.count = msg.count + sentCount;
-		} while (sentCount > 0 && !msg.transferred);
+		} while (sentCount > 0 && !msg.sent);
 
 		if (m_evLoop.status.code == Status.ASYNC) {
 			writeBlocked = true;
 		}
 
-		return msg.transferred;
+		return msg.sent;
 	}
 
 package:
@@ -563,12 +541,10 @@ package:
 public:
 	///
 	this(EventLoop evLoop, int af, SocketType type, int protocol, fd_t socket = INVALID_SOCKET) @safe
-	in
-	{
+	in {
 		assert(evLoop !is EventLoop.init);
 		if (socket != INVALID_SOCKET) assert(socket.isSocket);
-	}
-	body
+	} body
 	{
 		m_evLoop = evLoop;
 		m_preInitializedSocket = socket;
@@ -586,7 +562,7 @@ public:
 	}
 
 	/// The underlying OS socket descriptor
-	fd_t handle() @safe pure @nogc @property
+	@property fd_t handle() @safe pure @nogc
 	{ return m_socket; }
 
 	/// Whether this socket establishes a (stateful) connection to a remote peer
@@ -596,11 +572,11 @@ public:
 
 	/// Whether this socket transceives datagrams
 	/// See_Also: isDatagramOriented
-	bool datagramOriented() @safe pure @nogc @property
+	@property bool datagramOriented() const @safe pure @nogc
 	{ return m_datagramOriented; }
 
 	///
-	bool passive() const @safe pure @nogc @property
+	@property bool passive() const @safe pure @nogc
 	{ return m_passive; }
 
 	///
@@ -608,27 +584,26 @@ public:
 	{ this(eventLoop, af, type, 0); }
 
 	///
-	void onConnect(OnEvent onConnect) @safe pure @nogc @property
+	@property void onConnect(OnEvent onConnect) @safe pure @nogc 
 	{ m_onConnect = onConnect; }
 
 	///
-	void onClose(OnEvent onClose) @safe pure @nogc @property
+	@property void onClose(OnEvent onClose) @safe pure @nogc
 	{ m_onClose = onClose; }
 
 	///
-	void onError(OnEvent onError) @safe pure @nogc @property
+	@property void onError(OnEvent onError) @safe pure @nogc
 	{ m_onError = onError; }
 
 	///
-	void onAccept(OnAccept onAccept) @safe pure @nogc @property
+	@property void onAccept(OnAccept onAccept) @safe pure @nogc
 	{ m_onAccept = onAccept; }
 	
 	/// Creates the underlying OS socket - if necessary - and
 	/// registers the event handler in the underlying OS event loop.
 	bool run()
 	in { assert(m_socket == INVALID_SOCKET); }
-	body
-	{
+	body {
 		m_socket = m_evLoop.run(this);
 		return m_socket != INVALID_SOCKET;
 	}
@@ -667,16 +642,16 @@ public:
 	}
 
 	@property bool receiveContinuously() const @safe pure @nogc
-	{ return m_continuousReceiving; }
+	{ return m_receiveContinuously; }
 
 	///
 	@property void receiveContinuously(bool toggle) @safe pure
 	in {
-		if (!m_continuousReceiving) assert(m_recvRequests.empty, "Cannot start receiving continuously when there are still pending receives");
+		if (!m_receiveContinuously) assert(m_recvRequests.empty, "Cannot start receiving continuously when there are still pending receives");
 	} body {
-		if (m_continuousReceiving == toggle) return;
+		if (m_receiveContinuously == toggle) return;
 		if (!toggle && !m_recvRequests.empty) assumeWontThrow(m_recvRequests.removeFront());
-		m_continuousReceiving = toggle;
+		m_receiveContinuously = toggle;
 	}
 
 	/// Removes the socket from the event loop, shutting it down if necessary,
