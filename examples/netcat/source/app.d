@@ -132,7 +132,8 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 
 	if (client.connectionOriented) {
 		client.onConnect = {
-			client.startReceiving(socketRecvBuf, (data) {
+			client.receiveContinuously = true;
+			client.receive(socketRecvBuf, (data) {
 				stdout.rawWrite(data);
 				stdout.flush();
 			});
@@ -177,7 +178,8 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 	}
 
 	if (!client.connectionOriented) {
-		client.startReceiving(socketRecvBuf, (data) {
+		client.receiveContinuously = true;
+		client.receive(socketRecvBuf, (data) {
 			stdout.rawWrite(data);
 			stdout.flush();
 		});
@@ -206,7 +208,8 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 		listener.kill();
 
 		client.onConnect = {
-			client.startReceiving(socketRecvBuf, (data) {
+			client.receiveContinuously = true;
+			client.receive(socketRecvBuf, (data) {
 				stdout.rawWrite(data);
 				stdout.flush();
 			});
@@ -260,10 +263,11 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 
 	if (!listener.connectionOriented) {
 		NetworkAddress remoteAddr;
-		listener.startReceivingFrom(socketRecvBuf, (data) {
+		listener.receiveContinuously = true;
+		listener.receiveFrom(socketRecvBuf, remoteAddr, (data) {
 			stdout.rawWrite(data);
 			stdout.flush();
-		}, remoteAddr);
+		});
 	}
 	else if (!listener.listen(128)) {
 		stderr.writeln("ncat: ", listener.status.text);
