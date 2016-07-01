@@ -355,29 +355,30 @@ public:
 	}
 
 	///
-	void send(ubyte[] buf, OnEvent onSend)
+	void sendMessage(ref NetworkMessage message, OnEvent onSend)
 	in {
-		assert(!m_passive, "Active socket required");
-		if (m_connectionOriented) {
-			assert(connected, "Established connection required");
-		} else {
-			assertNotThrown(remoteAddress, "Remote address required");
-		}
-		assert(onSend !is null, "Callback to use once transmission has been completed required");
-	}
-	body
-	{
-		m_sendRequests ~= SendRequest(NetworkMessage(buf), onSend);
+		assert(!m_passive, "Passive sockets cannot receive");
+		assert(!m_connectionOriented || connected, "Established connection required");
+		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
+		assert(m_connectionOriented || { remoteAddress; return true; }().ifThrown(false) || message.hasAddress, "Remote address required");
+		assert(onSend !is null, "Completion callback required");
+	} body {
+		m_sendRequests ~= SendRequest(message, onSend);
 		processSendRequests();
 	}
 
+	///
+	void send(ubyte[] buf, OnEvent onSend)
+	{
+		auto message = NetworkMessage(buf);
+		sendMessage(message, onSend);
+	}
+
+	///
 	void sendTo(ubyte[] buf, NetworkAddress to, OnEvent onSend)
-	in {
-		assert (!m_connectionOriented, "Connectionless socket required");
-		assert(onSend !is null, "Callback to use once transmission has been completed required");
-	} body {
-		m_sendRequests ~= SendRequest(NetworkMessage(buf, &to), onSend);
-		processSendRequests();
+	{
+		auto message = NetworkMessage(buf, &to);
+		sendMessage(message, onSend);
 	}
 
 	///
