@@ -131,6 +131,10 @@ struct NetworkMessage
 
 			@property bool transferred() @safe pure @nogc nothrow
 			{ return m_count == m_buf.length; }
+
+			@property bool hasAddress() @safe pure @nogc nothrow
+			{ return m_header.msg_name !is null; }
+
 	} else version (Windows) {
 		/+
 		struct WSAMSG {
@@ -214,6 +218,24 @@ private:
 	///
 	Vector!SendRequest m_sendRequests;
 
+
+	///
+	void receive(ubyte[] buf, OnReceive onRecv, bool exact)
+	in {
+		assert(!m_passive, "Active socket required");
+		if (m_connectionOriented) {
+			assert(connected, "Established connection required");
+		} else {
+			assertNotThrown(remoteAddress, "Remote address required");
+		}
+		assert(!m_continuousReceiving, "Cannot receive manually while receiving continuously");
+		assert(!m_datagramOriented || !exact, "Datagram sockets must receive one datagram at a time");
+		assert(onRecv !is null, "Callback to use once reception has been completed required");
+	} body {
+		m_recvRequests ~= RecvRequest(NetworkMessage(buf), onRecv, exact);
+		processReceiveRequests();
+	}
+
 package:
 	///
 	EventLoop m_evLoop;
@@ -247,7 +269,7 @@ package:
 	{
 		while (!readBlocked && !m_recvRequests.empty) {
 			auto request = &m_recvRequests.front();
-			auto received = receiveMessage(request.msg);
+			auto received = attemptMessageReception(request.msg);
 			if (!received.length && !readBlocked) {
 				if (!handleError()) kill();
 				return;
@@ -277,7 +299,7 @@ package:
 		while (!writeBlocked && !m_sendRequests.empty) {
 			auto request = &m_sendRequests.front();
 
-			if (sendMessage(request.msg)) {
+			if (attemptMessageTransmission(request.msg)) {
 				m_sendRequests.removeFront();
 				request.onComplete();
 			} else if (!writeBlocked) {
@@ -297,32 +319,39 @@ public:
 	alias OnAccept = nothrow void delegate(typeof(this) peer);
 
 	///
-	void receive(ubyte[] buf, OnReceive onRecv, bool exact = false)
+	void receiveMessage(ref NetworkMessage message, OnReceive onRecv, bool exact)
 	in {
-		assert(!m_passive, "Active socket required");
-		if (m_connectionOriented) {
-			assert(connected, "Established connection required");
-		} else {
-			assertNotThrown(remoteAddress, "Remote address required");
-		}
-		assert(!m_continuousReceiving, "Cannot receive manually while receiving continuously");
+		assert(!m_passive, "Passive sockets cannot receive");
+		assert(!m_connectionOriented || connected, "Established connection required");
+		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
+		assert(!m_continuousReceiving, "Cannot receive message manually while in continuous receive mode");
 		assert(!m_datagramOriented || !exact, "Datagram sockets must receive one datagram at a time");
-		assert(onRecv !is null, "Callback to use once reception has been completed required");
+		assert(onRecv !is null, "Completion callback required");
 	}
 	body {
-		m_recvRequests ~= RecvRequest(NetworkMessage(buf), onRecv, exact);
+		m_recvRequests ~= RecvRequest(message, onRecv, exact);
 		processReceiveRequests();
 	}
 
 	///
+	void receive(ubyte[] buf, OnReceive onRecv)
+	{
+		auto message = NetworkMessage(buf);
+		receiveMessage(message, onRecv, false);
+	}
+
+	///
+	void receiveExactly(ubyte[] buf, OnReceive onRecv)
+	{
+		auto message = NetworkMessage(buf);
+		receiveMessage(message, onRecv, true);
+	}
+
+	///
 	void receiveFrom(ubyte[] buf, ref NetworkAddress from, OnReceive onRecv)
-	in {
-		assert(!m_connectionOriented, "Connectionless socket required");
-		assert(!m_continuousReceiving, "Cannot receive manually while receiving continuously");
-		assert(onRecv !is null, "Callback to use once reception has been completed required");
-	} body {
-		m_recvRequests ~= RecvRequest(NetworkMessage(buf, &from), onRecv);
-		processReceiveRequests();
+	{
+		auto message = NetworkMessage(buf, &from);
+		receiveMessage(message, onRecv, false);
 	}
 
 	///
@@ -494,7 +523,7 @@ private:
 	 +  Used only for sockets that are message-based.
 	 +/
 
-	ubyte[] receiveMessage(ref NetworkMessage msg)
+	ubyte[] attemptMessageReception(ref NetworkMessage msg)
 	in {
 		assert(!msg.transferred, "Message already received");
 	} body {
@@ -528,7 +557,7 @@ private:
 	 +  Returns: $(D_INLINECODE true) if all of the message's bytes
 	 +           have been transferred.
 	 +/
-	bool sendMessage(ref NetworkMessage msg)
+	bool attemptMessageTransmission(ref NetworkMessage msg)
 	in { assert(!msg.transferred, "Message already sent"); }
 	body {
 		size_t sentCount = void;
