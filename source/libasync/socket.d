@@ -225,9 +225,8 @@ package:
 
 	bool handleError()
 	{
-		if (m_onError is null) return false;
-		m_onError();
-		return true;
+		if (m_onError !is null) return m_onError();
+		return false;
 	}
 
 	void handleConnect()
@@ -236,9 +235,9 @@ package:
 	void handleClose()
 	{ if (m_onClose !is null) m_onClose(); }
 
-	void handleAccept(typeof(this) peer) nothrow
+	bool handleAccept(typeof(this) peer) nothrow
 	in { assert(m_onAccept !is null); }
-	body { m_onAccept(peer); }
+	body { return m_onAccept(peer); }
 
 
 	/**
@@ -298,11 +297,13 @@ package:
 public:
 	/// Generic callback type to handle events without additional parameters
 	alias OnEvent = void delegate();
+	///
+	alias OnError = bool delegate();
 	/// Callback type to handle the completion of data reception
 	alias OnReceive = void delegate(ubyte[] data);
 	/// Callback type to handle the successful acceptance of a peer on a
 	/// socket on which `listen` succeeded
-	alias OnAccept = nothrow void delegate(typeof(this) peer);
+	alias OnAccept = nothrow bool delegate(typeof(this) peer);
 
 	///
 	void receiveMessage(ref NetworkMessage message, OnReceive onRecv, bool exact)
@@ -589,7 +590,7 @@ public:
 	body { m_onClose = onClose; }
 
 	/// Sets callback for when a socket error has occurred.
-	@property void onError(OnEvent onError) @safe pure @nogc
+	@property void onError(OnError onError) @safe pure @nogc
 	{ m_onError = onError; }
 
 	/// Sets callback for when a passive connection-oriented socket

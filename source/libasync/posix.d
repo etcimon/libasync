@@ -377,8 +377,13 @@ package:
 
 					if (socket.passive) {
 						success = onCOPSocketEvent(socket, event_flags);
+						if (!success && (m_status.code == Status.ABORT || m_status.code == Status.ERROR)) {
+							close(info.fd);
+							try socket.handleError(); catch(Exception e) .error("Socket error handler failed: ", e.toString());
+							assumeWontThrow(ThreadMem.free(info));
+						}
 					} else if (socket.connectionOriented) {
-						void abortCBSocket(bool graceful) nothrow {
+						void abortCOASocket(bool graceful) nothrow {
 							void cleanup() nothrow {
 								trace("!cleanup");
 
@@ -387,17 +392,15 @@ package:
 								}
 							}
 
-							/// Close the connection after an unexpected socket error
+							// Close the connection after an unexpected socket error
 							if (graceful) {
-								if (socket.connected) try socket.handleClose();
-								catch (Exception e) { .error("Could not dispatch socket close: ", e.toString()); }
+								try socket.handleClose(); catch(Exception e) .error("Socket close handler failed: ", e.toString());
 								cleanup();
 							}
-							/// Kill the connection after an internal error
+							// Kill the connection after an internal error
 							else {
-								try socket.handleError();
-								catch (Exception e) { .error("Could not dispatch socket error: ", e.toString()); }
 								cleanup();
+								try socket.handleError(); catch(Exception e) .error("Socket error handler failed: ", e.toString());
 							}
 
 							assumeWontThrow(ThreadMem.free(info));
@@ -405,23 +408,17 @@ package:
 
 						success = onCOASocketEvent(socket, event_flags);
 						if (!success && m_status.code == Status.ABORT) {
-							abortCBSocket(true);
+							abortCOASocket(true);
 						}
 						else if (!success && m_status.code == Status.ERROR) {
-							abortCBSocket(false);
+							abortCOASocket(false);
 						}
 					} else {
-						nothrow void abortCLSocket() {
-							close(info.fd);
-							try socket.handleError();
-							catch (Exception) { }
-							try ThreadMem.free(info);
-							catch (Exception) { assert(false); }
-						}
-
 						success = onCLSocketEvent(socket, event_flags);
-						if (!success && m_status.code == Status.ABORT || m_status.code == Status.ERROR) {
-							abortCLSocket();
+						if (!success && (m_status.code == Status.ABORT || m_status.code == Status.ERROR)) {
+							close(info.fd);
+							try socket.handleError(); catch(Exception e) .error("Socket error handler failed: ", e.toString());
+							assumeWontThrow(ThreadMem.free(info));
 						}
 					}
 					break;
@@ -2182,18 +2179,16 @@ private:
 		if (error) {
 			info("!error");
 
-			import libasync.internals.socket_compat : SOL_SOCKET, SO_ERROR;
-			int err;
-			assumeWontThrow(socket.getOption(SOL_SOCKET, SO_ERROR, err));
-			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t) err);
-
-			try socket.handleError();
-			catch (Exception e) {
+			m_error = cast(error_t) socket.lastError;
+			try {
+				auto err = this.error;
+				enforce(socket.handleError(), "Failed to recover from socket error: " ~ err);
+				return true;
+			} catch (Exception e) {
 				.error(e.msg);
-				setInternalError!"del@Socket.ERROR"(Status.ABORT);
-				// ignore failure...
+				setInternalError!"del@AsyncSocket.ERROR"(Status.ABORT, null, m_error);
+				return false;
 			}
-			return false;
 		}
 
 		return true;
@@ -2224,17 +2219,16 @@ private:
 		if (error) {
 			info("!error");
 
-			import libasync.internals.socket_compat : SOL_SOCKET, SO_ERROR;
-			int err;
-			assumeWontThrow(socket.getOption(SOL_SOCKET, SO_ERROR, err));
-			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t) err);
-
-			try socket.handleError();
-			catch (Exception) {
-				setInternalError!"del@TCPEvent.ERROR"(Status.ABORT);
-				// ignore failure...
+			m_error = cast(error_t) socket.lastError;
+			try {
+				auto err = this.error;
+				enforce(socket.handleError(), "Failed to recover from socket error: " ~ err);
+				return true;
+			} catch (Exception e) {
+				.error(e.msg);
+				setInternalError!"del@AsyncSocket.ERROR"(Status.ABORT, null, m_error);
+				return false;
 			}
-			return false;
 		}
 
 		if (connect) {
@@ -2326,62 +2320,72 @@ private:
 		if (incoming) {
 			info("!incoming");
 
-			while (true) {
+			AsyncSocket peer = void;
+			do {
 				fd_t peerSocket = void;
 				sockaddr peerAddress = void;
-				socklen_t peerAddressLength = void;
+				socklen_t peerAddressLength = peerAddress.sizeof;
+
+				enum common = q{
+					if (peerSocket == SOCKET_ERROR) {
+						m_error = lastError();
+
+						if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+							return true;
+						} else if (m_error == EBADF ||
+						           m_error == EINTR ||
+						           m_error == EINVAL ||
+						           m_error == ENOTSOCK ||
+						           m_error == EOPNOTSUPP ||
+						           m_error == EFAULT) {
+							assert(false, "accept{4} system call on FD " ~ socket.handle.to!string ~ " encountered fatal socket error: " ~ this.error);
+						} else {
+							.errorf("accept{4} system call on FD %d encountered socket error: %s", socket.handle, this.error);
+
+							try {
+								auto err = this.error;
+								enforce(socket.handleError(), "Failed to recover from socket error: " ~ err);
+								return true;
+							} catch (Exception e) {
+								.error(e.msg);
+								setInternalError!"del@AsyncSocket.ERROR"(Status.ABORT, null, m_error);
+								return false;
+							}
+						}
+					}
+				};
 
 				version (linux) {
-					peerAddressLength = peerAddress.sizeof;
 					peerSocket = accept4(socket.handle, &peerAddress, &peerAddressLength, O_NONBLOCK);
-
-					if (catchError!"accept"(peerSocket)) {
-						if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-							m_status.code = Status.OK;
-							return true;
-						}
-						return false;
-					}
+					mixin(common);
 				} else {
-					peerAddressLength = peerAddress.sizeof;
 					peerSocket = accept(socket.handle, &peerAddress, &peerAddressLength);
-
-					if (catchError!"accept"(peerSocket)) {
-						if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-							m_status.code = Status.OK;
-							return true;
-						}
-						return false;
-					}
-
+					mixin(common);
 					if (!setNonBlock(peerSocket)) {
+						.error("Failed to set accepted peer socket non-blocking");
+						close(peerSocket);
 						continue;
 					}
 				}
 
-				auto peer = new AsyncSocket(m_evLoop, peerAddress.sa_family, socket.params.type, socket.params.protocol, peerSocket);
-
-				socket.handleAccept(peer);
+				peer = new AsyncSocket(m_evLoop, peerAddress.sa_family, socket.info.type, socket.info.protocol, peerSocket);
 				peer.run();
-			}
+			} while (socket.handleAccept(peer));
 		}
 
 		if (error) {
 			info("!error");
 
-			import libasync.internals.socket_compat : SOL_SOCKET, SO_ERROR;
-			int err;
-			assumeWontThrow(socket.getOption(SOL_SOCKET, SO_ERROR, err));
-			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t) err);
-
-			try socket.handleError();
-			catch (Exception e)
-			{
+			m_error = cast(error_t) socket.lastError;
+			try {
+				auto err = this.error;
+				enforce(socket.handleError(), "Failed to recover from socket error: " ~ err);
+				return true;
+			} catch (Exception e) {
 				.error(e.msg);
-				setInternalError!"del@Event.ERROR"(Status.ABORT);
-				// ignore failure...
+				setInternalError!"del@AsyncSocket.ERROR"(Status.ABORT, null, m_error);
+				return false;
 			}
-			return false;
 		}
 
 		return true;
