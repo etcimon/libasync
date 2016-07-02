@@ -177,32 +177,25 @@ final class AsyncSocket
 	}
 
 private:
-	/// The socket used internally
-	fd_t m_socket = INVALID_SOCKET;
-	/// If constructing from an existing socket,
-	/// this holds it until initialization
-	fd_t m_preInitializedSocket;
+	fd_t m_preInitializedSocket;    /// If constructing from an existing socket, this holds it until initialization.
 
+	fd_t m_socket = INVALID_SOCKET; /// The socket used internally.
 	SocketInfo m_info;              /// Additional information about the socket.
+	bool m_connectionOriented;      /// Whether this socket is connection-oriented.
+	bool m_datagramOriented;        /// Whether this socket is datagram-oriented.
 
-	/// 
-	bool m_connectionOriented;
-
-	/// 
-	bool m_datagramOriented;
-
-	/// 
-	/// See_Also: listen
+	/**
+	 * Whether this socket has been put into passive mode.
+	 * See_Also: listen
+	 */
 	bool m_passive;
 
-	/// See_Also: onEvent
-	OnEvent m_onConnect, m_onClose, m_onError, m_onSend;
-	/// See_Also: onReceive
-	OnReceive m_onReceive;
-	/// See_Also: onAccept
-	OnAccept m_onAccept;
+	OnEvent m_onConnect; /// See_Also: onConnect
+	OnEvent m_onClose;   /// See_Also: onClose
+	OnError m_onError;   /// See_Also: onError
+	OnAccept m_onAccept; /// See_Also: onAccept
 
-	///
+	/// Holds information of a single call to $(D receiveMessage).
 	struct RecvRequest
 	{
 		NetworkMessage msg;
@@ -210,24 +203,25 @@ private:
 		bool exact;
 	}
 
-	///
+	/// Holds information of a single call to $(D sendMessage).
 	struct SendRequest
 	{
 		NetworkMessage msg;
 		OnEvent onComplete;
 	}
 
-	///
+	/**
+	 * If disabled: Every call to $(D receiveMessage) will be processed only once.
+	 * After enabling: The first call to $(D receiveMessage) will be processed repeatedly.
+	 *                 Any further calls to $(D receiveMessage) are forbidden (while enabled).
+	 */
 	bool m_receiveContinuously;
 
-	///
-	Vector!RecvRequest m_recvRequests;
-	///
-	Vector!SendRequest m_sendRequests;
+	Vector!RecvRequest m_recvRequests; /// Queue of calls to $(D receiveMessage).
+	Vector!SendRequest m_sendRequests; /// Queue of calls to $(D sendMessage).
 
 package:
-	///
-	EventLoop m_evLoop;
+	EventLoop m_evLoop; /// Event loop of the thread this socket was created by.
 
 	bool handleError()
 	{
@@ -455,9 +449,9 @@ private:
 	 * buffer to the given message's transferred bytes as the message's
 	 * buffer's remaining free bytes and the state of the OS receive buffer
 	 * allow for, advancing the message's count of transferred bytes in the process.
-	 * Sets $(DDOC_MEMBERS readBlocked) on indication by the OS that there were
+	 * Sets $(D readBlocked) on indication by the OS that there were
 	 * not enough bytes available in the OS receive buffer.
-	 * Returns: $(D_INLINECODE true) if any bytes were transferred.
+	 * Returns: $(D true) if any bytes were transferred.
 	 */
 	bool attemptMessageReception(ref NetworkMessage msg)
 	in {
@@ -493,7 +487,7 @@ private:
 	 * advancing the message's count of transferred bytes in the process.
 	 * Sets $(DDOC_MEMBERS writeBlocked) on indication by the OS that
 	 * there was not enough space available in the OS send buffer.
-	 * Returns: $(D_INLINECODE true) if all of the message's bytes
+	 * Returns: $(D true) if all of the message's bytes
 	 *          have been transferred.
 	 */
 	bool attemptMessageTransmission(ref NetworkMessage msg)
@@ -617,7 +611,7 @@ public:
 	 * Assigns the network address pointed to by $(D_PARAM addr),
 	 * with $(D_PARAM addrlen) specifying the size, in bytes, of
 	 * this address, as the local name of this socket.
-	 * Returns: $(D_INLINECODE true) if the binding was successful.
+	 * Returns: $(D true) if the binding was successful.
 	 * See_Also:
 	 *     localAddress, http://pubs.opengroup.org/onlinepubs/9699919799/functions/bind.html
 	 */
@@ -629,8 +623,8 @@ public:
 	 * with $(D_PARAM addrlen) specifying the size, n bytes, of
 	 * this address, as the name of the remote socket.
 	 * For connection-oriented sockets, also start establishing a
-	 * connection with that socket and call $(D_MEMBERS onConnect) once it has.
-	 * Returns: $(D_INLINECODE true) if the name was successfully assigned and
+	 * connection with that socket and call $(D onConnect) once it has.
+	 * Returns: $(D true) if the name was successfully assigned and
 	 *          - for connection-oriented sockets - if the connection is
 	 *          now being established.
 	 * See_Also:
