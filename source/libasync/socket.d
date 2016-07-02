@@ -183,10 +183,7 @@ private:
 	/// this holds it until initialization
 	fd_t m_preInitializedSocket;
 
-	/// Parameters for a socket system call
-	alias SocketParams = Tuple!(int, "af", SocketType, "type", int, "protocol");
-	/// See_Also: SocketParams
-	SocketParams m_params;
+	SocketInfo m_info;              /// Additional information about the socket.
 
 	/// 
 	bool m_connectionOriented;
@@ -404,7 +401,7 @@ public:
 		}
 		assert(addrLen <= addr.sockAddrLen,
 			   "POSIX.1-2013 requires sockaddr_storage be able to store any socket address");
-		assert(addr.family == params.af, "Inconsistent address family");
+		assert(addr.family == m_info.af, "Inconsistent address family");
 		return addr;
 	}
 
@@ -420,7 +417,7 @@ public:
 		}
 		assert(addrLen <= addr.sockAddrLen,
 			   "POSIX.1-2013 requires sockaddr_storage be able to store any socket address");
-		assert(addr.family == params.af, "Inconsistent address family");
+		assert(addr.family == m_info.af, "Inconsistent address family");
 		return addr;
 	}
 
@@ -527,8 +524,8 @@ package:
 	mixin COSocketMixins;
 
 	///
-	@property SocketParams params() const @safe pure @nogc
-	{ return m_params; }
+	@property SocketInfo info() const @safe pure @nogc
+	{ return m_info; }
 
 	@property fd_t preInitializedHandle() @safe pure @nogc
 	{ return m_preInitializedSocket; }
@@ -547,7 +544,7 @@ public:
 	{
 		m_evLoop = evLoop;
 		m_preInitializedSocket = socket;
-		m_params = SocketParams(af, type, protocol);
+		m_info = SocketInfo(af, type, protocol);
 		m_connectionOriented = type.isConnectionOriented;
 		m_datagramOriented = type.isDatagramOriented;
 
@@ -683,9 +680,18 @@ public:
 	mixin DefStatus;
 }
 
-/++
- + Represents a network/socket address. (adapted from vibe.core.net)
- +/
+
+/// Holds additional information about a socket.
+struct SocketInfo
+{
+	int family;
+	SocketType type;
+	int protocol;
+}
+
+/**
+ * Represents a network/socket address. (adapted from vibe.core.net)
+ */
 struct NetworkAddress
 {
 	import std.bitmanip: nativeToBigEndian, bigEndianToNative;

@@ -147,7 +147,7 @@ mixin template RunKill()
 		auto fd = ctxt.preInitializedHandle;
 
 		if (fd == INVALID_SOCKET) {
-			fd = socket(ctxt.params.expand);
+			fd = socket(ctxt.info.family, ctxt.info.type, ctxt.info.protocol);
 		}
 
 		if (catchError!"socket"(fd)) {
