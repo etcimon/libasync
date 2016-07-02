@@ -2136,7 +2136,7 @@ private:
 		return true;
 	}
 
-	/// Handle the event for a connectionless socket
+	/// Handle an event for a connectionless socket
 	bool onCLSocketEvent(AsyncSocket socket, int events)
 	{
 		static if (EPOLL)
@@ -2162,7 +2162,7 @@ private:
 			try socket.processReceiveRequests();
 			catch (Exception e) {
 				.error(e.msg);
-				setInternalError!"del@Socket.READ"(Status.ABORT);
+				setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
 				return false;
 			}
 		}
@@ -2174,7 +2174,7 @@ private:
 			try socket.processSendRequests();
 			catch (Exception e) {
 				.error(e.msg);
-				setInternalError!"del@Socket.WRITE"(Status.ABORT);
+				setInternalError!"del@AsyncSocket.WRITE"(Status.ABORT);
 				return false;
 			}
 		}
@@ -2197,7 +2197,7 @@ private:
 		return true;
 	}
 
-	/// Handle the event for a connection-oriented, active socket
+	/// Handle an event for a connection-oriented, active socket
 	bool onCOASocketEvent(AsyncSocket socket, int events)
 	{
 		static if (EPOLL) {
@@ -2217,7 +2217,7 @@ private:
 			const bool close = cast(bool) (kqueue_flags & EV_EOF);
 		}
 
-		tracef("Socket events: (read: %s, write: %s, error: %s, connect: %s, close: %s)", read, write, error, connect, close);
+		tracef("AsyncSocket events: (read: %s, write: %s, error: %s, connect: %s, close: %s)", read, write, error, connect, close);
 
 		if (error) {
 			info("!error");
@@ -2242,7 +2242,7 @@ private:
 			try socket.handleConnect();
 			catch (Exception e) {
 				.error(e.msg);
-				setInternalError!"del@Event.CONNECT"(Status.ABORT);
+				setInternalError!"del@AsyncSocket.CONNECT"(Status.ABORT);
 				return false;
 			}
 			return true;
@@ -2255,7 +2255,7 @@ private:
 			try socket.processSendRequests();
 			catch (Exception e) {
 				.error(e.msg);
-				setInternalError!"del@Socket.READ"(Status.ABORT);
+				setInternalError!"del@AsyncSocket.WRITE"(Status.ABORT);
 				return false;
 			}
 		}
@@ -2267,7 +2267,7 @@ private:
 			try socket.processReceiveRequests();
 			catch (Exception e) {
 				.error(e.msg);
-				setInternalError!"del@Socket.READ"(Status.ABORT);
+				setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
 				return false;
 			}
 		}
@@ -2279,7 +2279,7 @@ private:
 			try socket.handleClose();
 			catch (Exception e) {
 				.error(e.msg);
-				setInternalError!"del@Event.CLOSE"(Status.ABORT);
+				setInternalError!"del@AsyncSocket.CLOSE"(Status.ABORT);
 				return false;
 			}
 
@@ -2304,7 +2304,7 @@ private:
 		return true;
 	}
 
-	/// Handle the event for a connection-oriented, passive socket
+	/// Handle an event for a connection-oriented, passive socket
 	bool onCOPSocketEvent(AsyncSocket socket, int events)
 	{
 		import core.sys.posix.fcntl : O_NONBLOCK;
@@ -2321,7 +2321,7 @@ private:
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
 		}
 
-		tracef("Socket events: (incoming: %s, error: %s)", incoming, error);
+		tracef("AsyncSocket events: (incoming: %s, error: %s)", incoming, error);
 
 		if (incoming) {
 			info("!incoming");
