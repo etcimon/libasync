@@ -138,7 +138,8 @@ mixin template RunKill()
 		return fd;
 	}
 
-	fd_t run(AsyncSocket ctxt) {
+	fd_t run(AsyncSocket ctxt)
+	{
 		import core.sys.posix.unistd : close;
 		import libasync.internals.socket_compat : socket;
 

@@ -366,8 +366,7 @@ package:
 
 					if (!success) {
 						close(info.fd);
-						try ThreadMem.free(info);
-						catch (Exception e){ assert(false, "Error freeing resources"); }
+						assumeWontThrow(ThreadMem.free(info));
 					}
 					break;
 				case EventType.Socket:
@@ -401,8 +400,7 @@ package:
 								cleanup();
 							}
 
-							try ThreadMem.free(info);
-							catch (Exception) { assert(false); }
+							assumeWontThrow(ThreadMem.free(info));
 						}
 
 						success = onCOASocketEvent(socket, event_flags);
@@ -932,15 +930,15 @@ package:
 		while (true) {
 			auto err = recvmsg(fd, msg.header, 0);
 
-			.tracef("recvmsg syscall on FD %d returned %d", fd, err);
+			.tracef("recvmsg system call on FD %d returned %d", fd, err);
 			if (err == SOCKET_ERROR) {
 				m_error = lastError();
 
 				if (m_error == EPosix.EINTR) {
-					.tracef("recvmsg syscall on FD %d was interrupted before any transfer occured", fd);
+					.tracef("recvmsg system call on FD %d was interrupted before any transfer occured", fd);
 					continue;
 				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-					.tracef("recvmsg syscall on FD %d would have blocked", fd);
+					.tracef("recvmsg system call on FD %d would have blocked", fd);
 					m_status.code = Status.ASYNC;
 					return 0;
 				} else if (m_error == EBADF ||
@@ -948,9 +946,9 @@ package:
 				           m_error == EINVAL ||
 				           m_error == ENOTCONN ||
 				           m_error == ENOTSOCK) {
-					assert(false, "recvmsg syscall message on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ error);
+					assert(false, "recvmsg system call message on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ this.error);
 				} else if (catchError!"Receive message"(err)) {
-					.errorf("recvmsg syscall on FD %d encountered socket error: %s", fd, error);
+					.errorf("recvmsg system call on FD %d encountered socket error: %s", fd, this.error);
 					return 0;
 				}
 			} else {
@@ -970,15 +968,15 @@ package:
 		while (true) {
 			auto err = sendmsg(fd, msg.header, 0);
 
-			.tracef("sendmsg syscall on FD %d returned %d", fd, err);
+			.tracef("sendmsg system call on FD %d returned %d", fd, err);
 			if (err == SOCKET_ERROR) {
 				m_error = lastError();
 
 				if (m_error == EPosix.EINTR) {
-					.tracef("sendmsg syscall on FD %d was interrupted before any transfer occured", fd);
+					.tracef("sendmsg system call on FD %d was interrupted before any transfer occured", fd);
 					continue;
 				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-					.tracef("sendmsg syscall on FD %d would have blocked", fd);
+					.tracef("sendmsg system call on FD %d would have blocked", fd);
 					m_status.code = Status.ASYNC;
 					return 0;
 				} else if (m_error == EBADF ||
@@ -992,9 +990,9 @@ package:
 				           m_error == ENOTSOCK ||
 				           m_error == EOPNOTSUPP ||
 				           m_error == EPIPE) {
-					assert(false, "sendmsg syscall on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ error);
+					assert(false, "sendmsg system call on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ this.error);
 				} else if (catchError!"Send message"(err)) {
-					.errorf("sendmsg syscall on FD %d encountered socket error: %s", fd, error);
+					.errorf("sendmsg system call on FD %d encountered socket error: %s", fd, this.error);
 					return 0;
 				}
 			} else {
@@ -2298,8 +2296,7 @@ private:
 				socket.writeBlocked = true;
 				socket.readBlocked = true;
 
-				try ThreadMem.free(socket.evInfo);
-				catch (Exception) { assert(false); }
+				assumeWontThrow(ThreadMem.free(socket.evInfo));
 			}
 			return true;
 		}
@@ -2369,8 +2366,7 @@ private:
 			}
 		}
 
-		if (error)
-		{
+		if (error) {
 			info("!error");
 
 			import libasync.internals.socket_compat : SOL_SOCKET, SO_ERROR;

@@ -206,7 +206,6 @@ private:
 	struct RecvRequest
 	{
 		NetworkMessage msg;
-
 		OnReceive onComplete;
 		bool exact;
 	}
@@ -215,7 +214,6 @@ private:
 	struct SendRequest
 	{
 		NetworkMessage msg;
-
 		OnEvent onComplete;
 	}
 
@@ -385,11 +383,6 @@ public:
 	}
 
 	///
-	@property bool alive() {
-		return m_socket.isSocket();
-	}
-
-	///
 	@property NetworkAddress localAddress() const @trusted
 	{
 		import libasync.internals.socket_compat : getsockname;
@@ -534,14 +527,22 @@ package:
 	@property void connectionOriented(bool connectionOriented) @safe pure @nogc
 	{ m_connectionOriented = connectionOriented; }
 
+	/// Retrieves and clears the most recent error on this socket
+	@property auto lastError() const
+	{
+		import libasync.internals.socket_compat : SOL_SOCKET, SO_ERROR;
+		int code;
+		assumeWontThrow(getOption(SOL_SOCKET, SO_ERROR, code));
+		return code;
+	}
+
 public:
 	///
 	this(EventLoop evLoop, int af, SocketType type, int protocol, fd_t socket = INVALID_SOCKET) @safe
 	in {
 		assert(evLoop !is EventLoop.init);
 		if (socket != INVALID_SOCKET) assert(socket.isSocket);
-	} body
-	{
+	} body {
 		m_evLoop = evLoop;
 		m_preInitializedSocket = socket;
 		m_info = SocketInfo(af, type, protocol);
@@ -674,6 +675,11 @@ public:
 	{
 		receiveContinuously = false;
 		return m_evLoop.kill(this, forced);
+	}
+
+	///
+	@property bool alive() @safe @nogc {
+		return m_socket.isSocket();
 	}
 
 	///
