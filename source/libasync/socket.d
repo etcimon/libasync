@@ -389,7 +389,7 @@ public:
 		}
 		assert(addrLen <= addr.sockAddrLen,
 			   "POSIX.1-2013 requires sockaddr_storage be able to store any socket address");
-		assert(addr.family == m_info.af, "Inconsistent address family");
+		assert(addr.family == m_info.family, "Inconsistent address family");
 		return addr;
 	}
 
@@ -405,7 +405,7 @@ public:
 		}
 		assert(addrLen <= addr.sockAddrLen,
 			   "POSIX.1-2013 requires sockaddr_storage be able to store any socket address");
-		assert(addr.family == m_info.af, "Inconsistent address family");
+		assert(addr.family == m_info.family, "Inconsistent address family");
 		return addr;
 	}
 
