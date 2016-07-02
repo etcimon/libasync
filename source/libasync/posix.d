@@ -381,6 +381,7 @@ package:
 							close(info.fd);
 							try socket.handleError(); catch(Exception e) .error("Socket error handler failed: ", e.toString());
 							assumeWontThrow(ThreadMem.free(info));
+							socket.evInfo = null;
 						}
 					} else if (socket.connectionOriented) {
 						void abortCOASocket(bool graceful) nothrow {
@@ -404,6 +405,7 @@ package:
 							}
 
 							assumeWontThrow(ThreadMem.free(info));
+							socket.evInfo = null;
 						}
 
 						success = onCOASocketEvent(socket, event_flags);
@@ -419,6 +421,7 @@ package:
 							close(info.fd);
 							try socket.handleError(); catch(Exception e) .error("Socket error handler failed: ", e.toString());
 							assumeWontThrow(ThreadMem.free(info));
+							socket.evInfo = null;
 						}
 					}
 					break;
@@ -2290,7 +2293,10 @@ private:
 				socket.writeBlocked = true;
 				socket.readBlocked = true;
 
-				assumeWontThrow(ThreadMem.free(socket.evInfo));
+				if (socket.evInfo !is null) {
+					assumeWontThrow(ThreadMem.free(socket.evInfo));
+					socket.evInfo = null;
+				}
 			}
 			return true;
 		}

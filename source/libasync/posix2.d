@@ -263,7 +263,7 @@ mixin template RunKill()
 			if (forced) {
 				ctxt.connected = false;
 				ctxt.disconnecting = false;
-				if (ctxt.evInfo) {
+				if (ctxt.evInfo !is null) {
 					assumeWontThrow(ThreadMem.free(ctxt.evInfo));
 					ctxt.evInfo = null;
 				}
@@ -277,7 +277,7 @@ mixin template RunKill()
 			return false;
 		}
 
-		if (ctxt.evInfo) {
+		if (ctxt.evInfo !is null) {
 			assumeWontThrow(ThreadMem.free(ctxt.evInfo));
 			ctxt.evInfo = null;
 		}
