@@ -151,8 +151,7 @@ mixin template RunKill()
 		}
 
 		if (catchError!"socket"(fd)) {
-			m_status.text = m_error.formatSocketError;
-			.error("Failed to create socket: ", m_status.text);
+			.error("Failed to create socket: ", error);
 			return INVALID_SOCKET;
 		}
 
@@ -208,7 +207,7 @@ mixin template RunKill()
 
 		auto err = bind(ctxt.handle, addr, addrlen);
 		if (catchError!"bind"(err)) {
-			m_status.text = m_error.formatSocketError;
+			.error("Failed to bind socket: ", error);
 			assumeWontThrow(ThreadMem.free(ctxt.evInfo));
 			ctxt.evInfo = null;
 			return false;
@@ -225,7 +224,7 @@ mixin template RunKill()
 		if (catchErrorsEq!"connect"(err, [ tuple(cast(fd_t) SOCKET_ERROR, EPosix.EINPROGRESS, Status.ASYNC) ])) {
 			return true;
 		} else if (catchError!"connect"(err)) {
-			m_status.text = m_error.formatSocketError;
+			.error("Failed to connect socket: ", error);
 			assumeWontThrow(ThreadMem.free(ctxt.evInfo));
 			ctxt.evInfo = null;
 			return false;
@@ -240,7 +239,7 @@ mixin template RunKill()
 
 		auto err = listen(ctxt.handle, backlog);
 		if (catchError!"bind"(err)) {
-			m_status.text = m_error.formatSocketError;
+			.error("Failed to listen on socket: ", error);
 			assumeWontThrow(ThreadMem.free(ctxt.evInfo));
 			ctxt.evInfo = null;
 			return false;

@@ -155,7 +155,7 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 	}
 
 	if (client.connectionOriented && !client.connect(remote.name, remote.nameLen)) {
-		stderr.writeln("ncat: ", client.status.text);
+		stderr.writeln("ncat: ", client.error);
 		return 1;
 	} else if (af == AddressFamily.UNIX) {
 		import std.path: buildPath;
@@ -172,7 +172,7 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 		local.sockAddr.sa_family = AddressFamily.UNIX;
 		(cast(sockaddr_un*) local.sockAddr).sun_path[0 .. localName.length] = cast(byte[]) localName[];
 		if (!client.bind(local)) {
-			stderr.writeln("ncat: ", client.status.text);
+			stderr.writeln("ncat: ", client.error);
 			return 1;
 		}
 	}
@@ -257,7 +257,7 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 	}
 
 	if (!listener.bind(NetworkAddress(local))) {
-		stderr.writeln("ncat: ", listener.status.text);
+		stderr.writeln("ncat: ", listener.error);
 		return 1;
 	}
 
@@ -270,7 +270,7 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 		});
 	}
 	else if (!listener.listen(128)) {
-		stderr.writeln("ncat: ", listener.status.text);
+		stderr.writeln("ncat: ", listener.error);
 		return 1;	
 	}
 

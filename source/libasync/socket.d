@@ -524,7 +524,6 @@ private:
 	}
 
 package:
-	///
 	mixin COSocketMixins;
 
 	///
@@ -845,86 +844,6 @@ struct NetworkAddress
 				toAddressString(sink);
 				break;
 		}
-	}
-}
-
-/// Taken from std.socket, as it is not part of its documented API
-// Needs to be public so that SocketOSException can be thrown outside of
-// std.socket (since it uses it as a default argument), but it probably doesn't
-// need to actually show up in the docs, since there's not really any public
-// need for it outside of being a default argument.
-string formatSocketError(int err) @trusted nothrow
-{
-	version(Posix)
-	{
-		import core.stdc.string : strerror_r, strlen;
-		import std.conv : to;
-
-		char[80] buf;
-		const(char)* cs;
-
-		version (CRuntime_Glibc)
-		{
-			cs = strerror_r(err, buf.ptr, buf.length);
-		}
-		else version (OSX)
-		{
-			auto errs = strerror_r(err, buf.ptr, buf.length);
-			if (errs == 0)
-				cs = buf.ptr;
-			else
-				return "Socket error " ~ to!string(err);
-		}
-		else version (FreeBSD)
-		{
-			auto errs = strerror_r(err, buf.ptr, buf.length);
-			if (errs == 0)
-				cs = buf.ptr;
-			else
-				return "Socket error " ~ to!string(err);
-		}
-		else version (NetBSD)
-		{
-			auto errs = strerror_r(err, buf.ptr, buf.length);
-			if (errs == 0)
-				cs = buf.ptr;
-			else
-				return "Socket error " ~ to!string(err);
-		}
-		else version (Solaris)
-		{
-			auto errs = strerror_r(err, buf.ptr, buf.length);
-			if (errs == 0)
-				cs = buf.ptr;
-			else
-				return "Socket error " ~ to!string(err);
-		}
-		else version (CRuntime_Bionic)
-		{
-			auto errs = strerror_r(err, buf.ptr, buf.length);
-			if (errs == 0)
-				cs = buf.ptr;
-			else
-				return "Socket error " ~ to!string(err);
-		}
-		else
-			static assert(0);
-
-		auto len = strlen(cs);
-
-		if (cs[len - 1] == '\n')
-			len--;
-		if (cs[len - 1] == '\r')
-			len--;
-		return cs[0 .. len].idup;
-	}
-	else version(Windows)
-	{
-		import std.windows.syserror : sysErrorString;
-
-		return sysErrorString(err);
-	} else {
-		return "Socket error " ~ to!string(err);
 	}
 }
 

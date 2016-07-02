@@ -948,9 +948,9 @@ package:
 				           m_error == EINVAL ||
 				           m_error == ENOTCONN ||
 				           m_error == ENOTSOCK) {
-					assert(false, "recvmsg syscall message on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ m_error.formatSocketError());
+					assert(false, "recvmsg syscall message on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ error);
 				} else if (catchError!"Receive message"(err)) {
-					.errorf("recvmsg syscall on FD %d encountered socket error: %s", fd, m_error.formatSocketError());
+					.errorf("recvmsg syscall on FD %d encountered socket error: %s", fd, error);
 					return 0;
 				}
 			} else {
@@ -992,9 +992,9 @@ package:
 				           m_error == ENOTSOCK ||
 				           m_error == EOPNOTSUPP ||
 				           m_error == EPIPE) {
-					assert(false, "sendmsg syscall on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ m_error.formatSocketError());
+					assert(false, "sendmsg syscall on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ error);
 				} else if (catchError!"Send message"(err)) {
-					.errorf("sendmsg syscall on FD %d encountered socket error: %s", fd, m_error.formatSocketError());
+					.errorf("sendmsg syscall on FD %d encountered socket error: %s", fd, error);
 					return 0;
 				}
 			} else {
