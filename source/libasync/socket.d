@@ -620,12 +620,25 @@ public:
 	 * Assigns the network address pointed to by $(D_PARAM addr),
 	 * with $(D_PARAM addrlen) specifying the size, in bytes, of
 	 * this address, as the local name of this socket.
-	 * See_Also: http://pubs.opengroup.org/onlinepubs/9699919799/functions/bind.html
+	 * Returns: $(D_INLINECODE true) if the binding was successful.
+	 * See_Also:
+	 *     localAddress, http://pubs.opengroup.org/onlinepubs/9699919799/functions/bind.html
 	 */
 	bool bind(sockaddr* addr, socklen_t addrlen)
 	{ return m_evLoop.bind(this, addr, addrlen); }
 
-	///
+	/**
+	 * Assigns the network address pointed to by $(D_PARAM addr),
+	 * with $(D_PARAM addrlen) specifying the size, n bytes, of
+	 * this address, as the name of the remote socket.
+	 * For connection-oriented sockets, also start establishing a
+	 * connection with that socket and call $(D_MEMBERS onConnect) once it has.
+	 * Returns: $(D_INLINECODE true) if the name was successfully assigned and
+	 *          - for connection-oriented sockets - if the connection is
+	 *          now being established.
+	 * See_Also:
+	 *     remoteAddress, onConnect, http://pubs.opengroup.org/onlinepubs/9699919799/functions/connect.html
+	 */
 	bool connect(sockaddr* addr, socklen_t addrlen)
 	{ return m_evLoop.connect(this, addr, addrlen); }
 
