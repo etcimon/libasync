@@ -223,6 +223,8 @@ private:
 package:
 	EventLoop m_evLoop; /// Event loop of the thread this socket was created by.
 
+	void handleError() nothrow
+	{ if (m_onError !is null) m_onError(); }
 
 	void handleConnect()
 	{ if (m_onConnect !is null) m_onConnect(); }
