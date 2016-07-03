@@ -147,7 +147,6 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 	client.onError = {
 		stderr.writeln("ncat: ", client.error);
 		running = false;
-		return false;
 	};
 
 	if(!client.run()) {
@@ -235,12 +234,12 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 		};
 
 		client.onClose = { running = false; };
-		client.onError = { stderr.writeln("ncat: ", client.error); return false; };
+		client.onError = { stderr.writeln("ncat: ", client.error); };
 
 		return false;
 	};
 
-	listener.onError = { stderr.writeln("ncat: ", listener.error); return false; };
+	listener.onError = { stderr.writeln("ncat: ", listener.error); };
 
 	if(!listener.run()) {
 		stderr.writeln("ncat: ", listener.error);

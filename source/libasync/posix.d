@@ -379,7 +379,7 @@ package:
 						success = onCOPSocketEvent(socket, event_flags);
 						if (!success && (m_status.code == Status.ABORT || m_status.code == Status.ERROR)) {
 							close(info.fd);
-							try socket.handleError(); catch(Exception e) .error("Socket error handler failed: ", e.toString());
+							socket.handleError();
 							assumeWontThrow(ThreadMem.free(info));
 							socket.evInfo = null;
 						}
@@ -401,7 +401,7 @@ package:
 							// Kill the connection after an internal error
 							else {
 								cleanup();
-								try socket.handleError(); catch(Exception e) .error("Socket error handler failed: ", e.toString());
+								socket.handleError();
 							}
 
 							assumeWontThrow(ThreadMem.free(info));
@@ -419,7 +419,7 @@ package:
 						success = onCLSocketEvent(socket, event_flags);
 						if (!success && (m_status.code == Status.ABORT || m_status.code == Status.ERROR)) {
 							close(info.fd);
-							try socket.handleError(); catch(Exception e) .error("Socket error handler failed: ", e.toString());
+							socket.handleError();
 							assumeWontThrow(ThreadMem.free(info));
 							socket.evInfo = null;
 						}
@@ -962,7 +962,7 @@ package:
 	size_t sendMsg(in fd_t fd, in NetworkMessage msg) {
 		import libasync.internals.socket_compat : sendmsg;
 
-		.tracef("Send message on FD %d", fd);
+		.tracef("Send message on FD %d with size %d", fd, msg.header.msg_iov.iov_len);
 		m_status = StatusInfo.init;
 
 		while (true) {
@@ -980,16 +980,16 @@ package:
 					m_status.code = Status.ASYNC;
 					return 0;
 				} else if (m_error == EBADF ||
-				           m_error == ECONNRESET ||
+				           /+m_error == ECONNRESET ||+/
 				           m_error == EDESTADDRREQ ||
 				           m_error == EFAULT ||
 				           m_error == EINVAL ||
 				           m_error == EISCONN ||
 				           m_error == EMSGSIZE ||
-				           m_error == ENOTCONN ||
+				           /+m_error == ENOTCONN ||+/
 				           m_error == ENOTSOCK ||
-				           m_error == EOPNOTSUPP ||
-				           m_error == EPIPE) {
+				           m_error == EOPNOTSUPP/+ ||
+				           m_error == EPIPE+/) {
 					assert(false, "sendmsg system call on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ this.error);
 				} else if (catchError!"Send message"(err)) {
 					.errorf("sendmsg system call on FD %d encountered socket error: %s", fd, this.error);
@@ -2182,16 +2182,10 @@ private:
 		if (error) {
 			tracef("Error on FD %d", socket.handle);
 
-			m_error = cast(error_t) socket.lastError;
-			try {
-				auto err = this.error;
-				enforce(socket.handleError(), "Failed to recover from socket error: " ~ err);
-				return true;
-			} catch (Exception e) {
-				.error(e.msg);
-				setInternalError!"del@AsyncSocket.ERROR"(Status.ABORT, null, m_error);
-				return false;
-			}
+			auto err = cast(error_t) socket.lastError;
+			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
+			socket.handleError();
+			return false;
 		}
 
 		return true;
@@ -2222,16 +2216,10 @@ private:
 		if (error) {
 			tracef("Error on FD %d", socket.handle);
 
-			m_error = cast(error_t) socket.lastError;
-			try {
-				auto err = this.error;
-				enforce(socket.handleError(), "Failed to recover from socket error: " ~ err);
-				return true;
-			} catch (Exception e) {
-				.error(e.msg);
-				setInternalError!"del@AsyncSocket.ERROR"(Status.ABORT, null, m_error);
-				return false;
-			}
+			auto err = cast(error_t) socket.lastError;
+			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
+			socket.handleError();
+			return false;
 		}
 
 		if (connect) {
@@ -2350,15 +2338,10 @@ private:
 						} else {
 							.errorf("accept{4} system call on FD %d encountered socket error: %s", socket.handle, this.error);
 
-							try {
-								auto err = this.error;
-								enforce(socket.handleError(), "Failed to recover from socket error: " ~ err);
-								return true;
-							} catch (Exception e) {
-								.error(e.msg);
-								setInternalError!"del@AsyncSocket.ERROR"(Status.ABORT, null, m_error);
-								return false;
-							}
+							m_status.text = "AsyncSocket.ERROR";
+							m_status.code = Status.ABORT;
+							socket.handleError();
+							return false;
 						}
 					}
 				};
@@ -2384,16 +2367,10 @@ private:
 		if (error) {
 			tracef("Error on FD %d", socket.handle);
 
-			m_error = cast(error_t) socket.lastError;
-			try {
-				auto err = this.error;
-				enforce(socket.handleError(), "Failed to recover from socket error: " ~ err);
-				return true;
-			} catch (Exception e) {
-				.error(e.msg);
-				setInternalError!"del@AsyncSocket.ERROR"(Status.ABORT, null, m_error);
-				return false;
-			}
+			auto err = cast(error_t) socket.lastError;
+			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
+			socket.handleError();
+			return false;
 		}
 
 		return true;

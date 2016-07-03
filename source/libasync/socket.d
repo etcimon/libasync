@@ -223,11 +223,6 @@ private:
 package:
 	EventLoop m_evLoop; /// Event loop of the thread this socket was created by.
 
-	bool handleError()
-	{
-		if (m_onError !is null) return m_onError();
-		return false;
-	}
 
 	void handleConnect()
 	{ if (m_onConnect !is null) m_onConnect(); }
@@ -255,7 +250,8 @@ package:
 			auto request = &m_recvRequests.front();
 			auto received = attemptMessageReception(request.msg);
 			if (!received && !readBlocked) {
-				if (!handleError()) kill();
+				handleError();
+				kill();
 				return;
 			}
 
@@ -288,7 +284,8 @@ package:
 				m_sendRequests.removeFront();
 				request.onComplete();
 			} else if (!writeBlocked) {
-				if (!handleError()) kill();
+				handleError();
+				kill();
 				return;
 			}
 		}
@@ -298,7 +295,7 @@ public:
 	/// Generic callback type to handle events without additional parameters
 	alias OnEvent = void delegate();
 	///
-	alias OnError = bool delegate();
+	alias OnError = nothrow void delegate();
 	/// Callback type to handle the completion of data reception
 	alias OnReceive = void delegate(ubyte[] data);
 	/// Callback type to handle the successful acceptance of a peer on a
