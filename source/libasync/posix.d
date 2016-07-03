@@ -2238,6 +2238,7 @@ private:
 			info("!connect");
 
 			socket.connected = true;
+			socket.readBlocked = false;
 			socket.writeBlocked = false;
 			try socket.handleConnect();
 			catch (Exception e) {
