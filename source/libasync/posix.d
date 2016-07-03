@@ -952,7 +952,7 @@ package:
 					return 0;
 				}
 			} else {
-				.infof("Received %d bytes on FD %d", err, fd);
+				.tracef("Received %d bytes on FD %d", err, fd);
 				m_status.code = Status.OK;
 				return err;
 			}
@@ -996,7 +996,7 @@ package:
 					return 0;
 				}
 			} else {
-				.infof("Sent %d bytes on FD %d", err, fd);
+				.tracef("Sent %d bytes on FD %d", err, fd);
 				m_status.code = Status.OK;
 				return err;
 			}
@@ -2156,7 +2156,7 @@ private:
 		}
 
 		if (read) {
-			info("!read");
+			tracef("Read on FD %d", socket.handle);
 
 			socket.readBlocked = false;
 			try socket.processReceiveRequests();
@@ -2168,7 +2168,7 @@ private:
 		}
 
 		if (write) {
-			info("!write");
+			tracef("Write on FD %d", socket.handle);
 
 			socket.writeBlocked = false;
 			try socket.processSendRequests();
@@ -2180,7 +2180,7 @@ private:
 		}
 
 		if (error) {
-			info("!error");
+			tracef("Error on FD %d", socket.handle);
 
 			m_error = cast(error_t) socket.lastError;
 			try {
@@ -2220,7 +2220,7 @@ private:
 		tracef("AsyncSocket events: (read: %s, write: %s, error: %s, connect: %s, close: %s)", read, write, error, connect, close);
 
 		if (error) {
-			info("!error");
+			tracef("Error on FD %d", socket.handle);
 
 			m_error = cast(error_t) socket.lastError;
 			try {
@@ -2235,7 +2235,7 @@ private:
 		}
 
 		if (connect) {
-			info("!connect");
+			tracef("Connect on FD %d", socket.handle);
 
 			socket.connected = true;
 			socket.readBlocked = false;
@@ -2251,7 +2251,7 @@ private:
 		}
 
 		if (write && socket.connected && !socket.disconnecting && socket.writeBlocked) {
-			info("!write");
+			tracef("Write on FD %d", socket.handle);
 
 			socket.writeBlocked = false;
 			try socket.processSendRequests();
@@ -2263,7 +2263,7 @@ private:
 		}
 
 		if (read && socket.connected && !socket.disconnecting && socket.readBlocked) {
-			info("!read");
+			tracef("Read on FD %d", socket.handle);
 
 			socket.readBlocked = false;
 			try socket.processReceiveRequests();
@@ -2276,7 +2276,7 @@ private:
 
 		if (close && socket.connected && !socket.disconnecting)
 		{
-			info("!close");
+			tracef("Close on FD %d", socket.handle);
 
 			try socket.handleClose();
 			catch (Exception e) {
@@ -2326,7 +2326,7 @@ private:
 		tracef("AsyncSocket events: (incoming: %s, error: %s)", incoming, error);
 
 		if (incoming) {
-			info("!incoming");
+			tracef("Incoming on FD %d", socket.handle);
 
 			AsyncSocket peer = void;
 			do {
@@ -2382,7 +2382,7 @@ private:
 		}
 
 		if (error) {
-			info("!error");
+			tracef("Error on FD %d", socket.handle);
 
 			m_error = cast(error_t) socket.lastError;
 			try {

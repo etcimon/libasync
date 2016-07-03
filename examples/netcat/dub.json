@@ -12,6 +12,10 @@
             "versions": ["StdLoggerDisableTrace",
                          "StdLoggerDisableInfo",
                          "StdLoggerDisableWarning"]
+        },
+        "informative": {
+            "versions": ["StdLoggerDisableTrace"],
+            "buildSettings": ["releaseMode", "optimize", "inline"]
         }
     }
 }
