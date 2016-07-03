@@ -657,7 +657,7 @@ public:
 	///
 	@property void receiveContinuously(bool toggle) @safe pure
 	in {
-		if (!m_receiveContinuously) assert(m_recvRequests.empty, "Cannot start receiving continuously when there are still pending receives");
+		if (!m_receiveContinuously && toggle) assert(m_recvRequests.empty, "Cannot start receiving continuously when there are still pending receives");
 	} body {
 		if (m_receiveContinuously == toggle) return;
 		if (!toggle && !m_recvRequests.empty) assumeWontThrow(m_recvRequests.removeFront());

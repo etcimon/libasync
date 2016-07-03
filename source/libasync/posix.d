@@ -2202,16 +2202,16 @@ private:
 	{
 		static if (EPOLL) {
 			const uint epoll_events = cast(uint) events;
-			const bool read = cast(bool) (epoll_events & EPOLLIN);
-			const bool write = cast(bool) (epoll_events & EPOLLOUT);
+			bool read = cast(bool) (epoll_events & EPOLLIN);
+			bool write = cast(bool) (epoll_events & EPOLLOUT);
 			const bool error = cast(bool) (epoll_events & EPOLLERR);
 			const bool connect = ((cast(bool) (epoll_events & EPOLLIN)) || (cast(bool) (epoll_events & EPOLLOUT))) && !socket.disconnecting && !socket.connected;
 			const bool close = (cast(bool) (epoll_events & EPOLLRDHUP)) || (cast(bool) (events & EPOLLHUP));
 		} else {
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
-			const bool read = cast(bool) (kqueue_events & EVFILT_READ);
-			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
+			bool read = cast(bool) (kqueue_events & EVFILT_READ);
+			bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
 			const bool connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !socket.disconnecting && !socket.connected);
 			const bool close = cast(bool) (kqueue_flags & EV_EOF);
@@ -2246,7 +2246,8 @@ private:
 				setInternalError!"del@AsyncSocket.CONNECT"(Status.ABORT);
 				return false;
 			}
-			return true;
+			read = false;
+			write = false;
 		}
 
 		if (write && socket.connected && !socket.disconnecting && socket.writeBlocked) {
