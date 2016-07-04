@@ -1,6 +1,8 @@
 {
     "name": "netcat",
     "description": "A rudimentary netcat clone",
+    "copyright": "Copyright © 2016, Moritz Maxeiner",
+    "authors": ["Moritz Maxeiner"],
     "dependencies": {
         "libasync": { "path": "../../" },
         "docopt": "~>0.6.1-b.5"

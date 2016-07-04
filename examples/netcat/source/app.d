@@ -145,7 +145,7 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 	}
 
 	client.onError = {
-		stderr.writeln("ncat: ", client.error);
+		stderr.writeln("ncat: ", client.error).collectException();
 		running = false;
 	};
 
@@ -234,12 +234,12 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 		};
 
 		client.onClose = { running = false; };
-		client.onError = { stderr.writeln("ncat: ", client.error); };
+		client.onError = { stderr.writeln("ncat: ", client.error).collectException(); };
 
 		return false;
 	};
 
-	listener.onError = { stderr.writeln("ncat: ", listener.error); };
+	listener.onError = { stderr.writeln("ncat: ", listener.error).collectException(); };
 
 	if(!listener.run()) {
 		stderr.writeln("ncat: ", listener.error);
@@ -296,6 +296,7 @@ import std.socket;
 import std.conv;
 import std.format;
 import std.file;
+import std.exception;
 
 import libasync;
 import docopt;
