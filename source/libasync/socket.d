@@ -544,8 +544,8 @@ public:
 		m_datagramOriented = type.isDatagramOriented;
 
 		assumeWontThrow(() @trusted {
-			m_recvRequests.reserve(32);
-			m_sendRequests.reserve(32);
+			m_recvRequests.reserve(1);
+			m_sendRequests.reserve(1);
 		} ());
 
 		readBlocked = true;
@@ -639,7 +639,7 @@ public:
 
 	///
 	bool connect(NetworkAddress to)
-	{ return bind(to.sockAddr, to.sockAddrLen); }
+	{ return connect(to.sockAddr, to.sockAddrLen); }
 
 	///
 	bool listen(int backlog)
