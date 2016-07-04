@@ -2350,6 +2350,8 @@ private:
 					peerSocket = accept4(socket.handle, &peerAddress, &peerAddressLength, O_NONBLOCK);
 					mixin(common);
 				} else {
+					import core.sys.posix.unistd : close;
+
 					peerSocket = accept(socket.handle, &peerAddress, &peerAddressLength);
 					mixin(common);
 					if (!setNonBlock(peerSocket)) {
