@@ -1,0 +1,15 @@
+{
+	"name": "http_request_benchmark",
+	"description": "Benchmark simple HTTP request send and receive.",
+	"copyright": "Copyright © 2016, Moritz Maxeiner",
+    "authors": ["Moritz Maxeiner"],
+	"dependencies": {
+        "libasync": { "path": "../../" }
+    },
+    "buildTypes": {
+        "release": {
+            "versions": ["StdLoggerDisableLogging"]
+        },
+    },
+    "targetPath": "bin"
+}
