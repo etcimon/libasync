@@ -320,21 +320,21 @@ public:
 	}
 
 	///
-	void receive(ubyte[] buf, OnReceive onRecv)
+	void receive(ref ubyte[] buf, OnReceive onRecv)
 	{
 		auto message = NetworkMessage(buf);
 		receiveMessage(message, onRecv, false);
 	}
 
 	///
-	void receiveExactly(ubyte[] buf, OnReceive onRecv)
+	void receiveExactly(ref ubyte[] buf, OnReceive onRecv)
 	{
 		auto message = NetworkMessage(buf);
 		receiveMessage(message, onRecv, true);
 	}
 
 	///
-	void receiveFrom(ubyte[] buf, ref NetworkAddress from, OnReceive onRecv)
+	void receiveFrom(ref ubyte[] buf, ref NetworkAddress from, OnReceive onRecv)
 	{
 		auto message = NetworkMessage(buf, &from);
 		receiveMessage(message, onRecv, false);
@@ -354,16 +354,16 @@ public:
 	}
 
 	///
-	void send(ubyte[] buf, OnEvent onSend)
+	void send(in ubyte[] buf, OnEvent onSend)
 	{
-		auto message = NetworkMessage(buf);
+		auto message = NetworkMessage(cast(ubyte[]) buf);
 		sendMessage(message, onSend);
 	}
 
 	///
-	void sendTo(ubyte[] buf, NetworkAddress to, OnEvent onSend)
+	void sendTo(in ubyte[] buf, NetworkAddress to, OnEvent onSend)
 	{
-		auto message = NetworkMessage(buf, &to);
+		auto message = NetworkMessage(cast(ubyte[]) buf, &to);
 		sendMessage(message, onSend);
 	}
 
