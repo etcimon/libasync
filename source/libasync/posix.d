@@ -1536,21 +1536,30 @@ private:
 					entryPath = path ~ entryPath;
 				bool found;
 
-				// compare it to the cached list fixme: make it faster using another container?
-				foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles) {
-					if (file.folder != wd) continue; // this file isn't in the evented folder
-					if (file.path == entryPath) {
-						found = true;
-						static if (LOG) log("File modified? " ~ entryPath.toNativeString() ~ " at: " ~ de.timeLastModified.to!string ~ " vs: " ~ file.lastModified.to!string);
-						// Check if it was modified
-						if (!isDir(entryPath.toNativeString()) && de.timeLastModified > file.lastModified)
-						{
-							DWFileInfo dwf = file;
-							dwf.lastModified = de.timeLastModified;
-							m_dwFiles[id] = dwf;
-							changes.insertBack(DWChangeInfo(DWFileEvent.MODIFIED, file.path));
+				if (!de.isDir()) {
+					// compare it to the cached list fixme: make it faster using another container?
+					foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles) {
+						if (file.folder != wd) continue; // this file isn't in the evented folder
+						if (file.path == entryPath) {
+							found = true;
+							static if (LOG) log("File modified? " ~ entryPath.toNativeString() ~ " at: " ~ de.timeLastModified.to!string ~ " vs: " ~ file.lastModified.to!string);
+							// Check if it was modified
+							if (!isDir(entryPath.toNativeString()) && de.timeLastModified > file.lastModified)
+							{
+								DWFileInfo dwf = file;
+								dwf.lastModified = de.timeLastModified;
+								m_dwFiles[id] = dwf;
+								changes.insertBack(DWChangeInfo(DWFileEvent.MODIFIED, file.path));
+							}
+							break;
 						}
-						break;
+					}
+				} else {
+					foreach (ref const DWFolderInfo folder; m_dwFolders) {
+						if (folder.wi.path == entryPath) {
+							found = true;
+							break;
+						}
 					}
 				}
 
@@ -1558,7 +1567,7 @@ private:
 				if (!found) {
 					changes.insertBack(DWChangeInfo(DWFileEvent.CREATED, entryPath));
 
-					if (fi.wi.recursive && isDir(entryPath.toNativeString())) {
+					if (fi.wi.recursive && de.isDir()) {
 						/// This is the complicated part. The folder needs to be watched, and all the events
 						/// generated for every file/folder found recursively inside it,
 						/// Useful e.g. when mkdir -p is used.
