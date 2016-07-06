@@ -28,7 +28,7 @@ alias error_t = EWIN;
 
 
 package struct EventLoopImpl {
-	pragma(msg, "Using Windows message-based notifications and APC for events");
+	pragma(msg, "Using Windows message-based notifications and alertable IO for events");
 
 private:
 	HashMap!(fd_t, TCPAcceptHandler) m_connHandlers; // todo: Change this to an array
