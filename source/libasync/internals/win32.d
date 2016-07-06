@@ -109,6 +109,15 @@ extern(System) nothrow
 		ubyte *buf;
 	}
 
+	struct WSAMSG {
+        sockaddr*  name;
+        int        namelen;
+        WSABUF*    lpBuffers;
+        DWORD      dwBufferCount;
+        WSABUF     Control;
+        DWORD      dwFlags;
+    }
+
 	struct WSAOVERLAPPEDX {
 		ULONG_PTR Internal;
 		ULONG_PTR InternalHigh;
@@ -212,6 +221,8 @@ extern(System) nothrow
 	SOCKET WSAAccept(SOCKET s, sockaddr *addr, INT* addrlen, LPCONDITIONPROC lpfnCondition, DWORD_PTR dwCallbackData);
 	int WSAAsyncSelect(SOCKET s, HWND hWnd, uint wMsg, sizediff_t lEvent);
 	SOCKET WSASocketW(int af, int type, int protocol, WSAPROTOCOL_INFOW *lpProtocolInfo, uint g, DWORD dwFlags);
+	int WSARecvMsg(SOCKET s, WSAMSG* lpMsg, DWORD* lpdwNumberOfBytesRecvd, in WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
+	int WSASendMsg(SOCKET s, in WSAMSG* lpMsg, DWORD dwFlags, DWORD* lpNumberOfBytesSent, in WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
 	int WSARecv(SOCKET s, WSABUF* lpBuffers, DWORD dwBufferCount, DWORD* lpNumberOfBytesRecvd, DWORD* lpFlags, in WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
 	int WSASend(SOCKET s, in WSABUF* lpBuffers, DWORD dwBufferCount, DWORD* lpNumberOfBytesSent, DWORD dwFlags, in WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
 	int WSASendDisconnect(SOCKET s, WSABUF* lpOutboundDisconnectData);
