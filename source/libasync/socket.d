@@ -75,8 +75,7 @@ version (Posix) {
 
 	@property size_t contentLength() @trusted pure @nogc nothrow { return m_content.iov_len; }
 	@property void contentLength(size_t contentLength) @safe pure @nogc nothrow { m_content.iov_len = contentLength; }
-}
-version (Windows) {
+} else version (Windows) {
 	import libasync.internals.win32 : WSABUF, WSAMSG;
 
 	alias Header      = WSAMSG;
@@ -113,7 +112,7 @@ version (Windows) {
 
 	@property size_t contentLength() @trusted pure @nogc nothrow { return m_content.len; }
 	@property void contentLength(size_t contentLength) @safe pure @nogc nothrow { m_content.len = contentLength; }
-}
+} else { assert(false, "Platform unsupported"); }
 
 private:
 	Header m_header;
@@ -264,16 +263,7 @@ package:
 	in { assert(m_onAccept !is null); }
 	body { return m_onAccept(peer); }
 
-
-	/**
-	 * Try to fulfill all requested receive operations.
-	 */
-	/*
-	 * NOTE: The continuous receive mode is modeled as a single
-	 *	     receive request, which - in contrast to normal receive
-	 *	     requests - only gets removed from the queue when
-	 *	     the continous receive mode is stopped.
-	 */
+version (Posix) {
 	void processReceiveRequests()
 	{
 		while (!readBlocked && !m_recvRequests.empty) {
@@ -302,9 +292,6 @@ package:
 		}
 	}
 
-	/**
-	 * Try to fulfill all requested send operations.
-	 */
 	void processSendRequests()
 	{
 		while (!writeBlocked && !m_sendRequests.empty) {
@@ -320,6 +307,17 @@ package:
 			}
 		}
 	}
+} else version (Windows) {
+	void processReceiveRequests()
+	{
+		assert(false, "Implement");
+	}
+
+	void processSendRequests()
+	{
+		assert(false, "Implement");
+	}
+} else { assert(false, "Platform unsupported"); }
 
 public:
 	/// Generic callback type to handle events without additional parameters
@@ -481,7 +479,7 @@ private:
 	 * not enough bytes available in the OS receive buffer.
 	 * Returns: $(D true) if any bytes were transferred.
 	 */
-	bool attemptMessageReception(ref NetworkMessage msg)
+	version (Posix) bool attemptMessageReception(ref NetworkMessage msg)
 	in {
 		assert(m_connectionOriented && !msg.receivedAll || !msg.receivedAny, "Message already received");
 	} body {
@@ -518,7 +516,7 @@ private:
 	 * Returns: $(D true) if all of the message's bytes
 	 *          have been transferred.
 	 */
-	bool attemptMessageTransmission(ref NetworkMessage msg)
+	version (Posix) bool attemptMessageTransmission(ref NetworkMessage msg)
 	in { assert(!msg.sent, "Message already sent"); }
 	body {
 		size_t sentCount = void;
@@ -576,8 +574,10 @@ public:
 			m_sendRequests.reserve(1);
 		} ());
 
-		readBlocked = true;
-		writeBlocked = true;
+		version (Posix) {
+			readBlocked = true;
+			writeBlocked = true;
+		}
 	}
 
 	/// The underlying OS socket descriptor
