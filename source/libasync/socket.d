@@ -49,113 +49,141 @@ bool isDatagramOriented(SocketType type) @safe pure nothrow @nogc
 
 struct NetworkMessage
 {
-	version (Posix) {
-		/+
-		struct iovec {                    /* Scatter/gather array items */
-			void  *iov_base;              /* Starting address */
-			size_t iov_len;               /* Number of bytes to transfer */
+version (Posix) {
+	import core.sys.posix.sys.socket : msghdr, iovec;
+
+	alias Header        = msghdr;
+	alias Content       = iovec; 
+
+	@property sockaddr* name() @trusted pure @nogc nothrow { return cast(sockaddr*) m_header.msg_name; }
+	@property void name(sockaddr* name) @safe pure @nogc nothrow { m_header.msg_name = name; }
+
+	@property socklen_t nameLength() @trusted pure @nogc nothrow { return m_header.msg_namelen; }
+	@property void nameLength(socklen_t nameLength) @safe pure @nogc nothrow { m_header.msg_namelen = nameLength; }
+
+	@property iovec* buffers() @trusted pure @nogc nothrow { return m_header.msg_iov; }
+	@property void buffers(iovec* buffers) @safe pure @nogc nothrow { m_header.msg_iov = buffers; }
+
+	@property size_t bufferCount() @trusted pure @nogc nothrow { return m_header.msg_iovlen; }
+	@property void bufferCount(size_t bufferCount) @safe pure @nogc nothrow { m_header.msg_iovlen = bufferCount; }
+
+	@property int flags() @trusted pure @nogc nothrow { return m_header.msg_flags; }
+	@property void flags(int flags) @safe pure @nogc nothrow { m_header.msg_flags = flags; }
+
+	@property ubyte* contentStart() @trusted pure @nogc nothrow { return cast (ubyte*) m_content.iov_base; }
+	@property void contentStart(ubyte* contentStart) @safe pure @nogc nothrow { m_content.iov_base = contentStart; }
+
+	@property size_t contentLength() @trusted pure @nogc nothrow { return m_content.iov_len; }
+	@property void contentLength(size_t contentLength) @safe pure @nogc nothrow { m_content.iov_len = contentLength; }
+}
+version (Windows) {
+	import libasync.internals.win32 : WSABUF, WSAMSG;
+
+	alias Header      = WSAMSG;
+	alias Content     = WSABUF;
+
+	alias name        = m_header.name;
+	alias nameLength  = m_header.namelen;
+
+	alias buffers     = m_header.lpBuffers;
+	alias bufferCount = m_header.dwBufferCount;
+
+	alias flags       = m_header.dwFlags;
+
+	alias contentStart = m_content.buf;
+	alias contentLength = m_content.len;
+
+	@property sockaddr* name() @trusted pure @nogc nothrow { return m_header.name; }
+	@property void name(sockaddr* name) @safe pure @nogc nothrow { m_header.name = name; }
+
+	@property socklen_t nameLength() @trusted pure @nogc nothrow { return m_header.namelen; }
+	@property void nameLength(socklen_t nameLength) @safe pure @nogc nothrow { m_header.namelen = nameLength; }
+
+	@property WSABUF* buffers() @trusted pure @nogc nothrow { return m_header.lpBuffers; }
+	@property void buffers(WSABUF* buffers) @safe pure @nogc nothrow { m_header.lpBuffers = buffers; }
+
+	@property DWORD bufferCount() @trusted pure @nogc nothrow { return m_header.dwBufferCount; }
+	@property void bufferCount(DWORD bufferCount) @safe pure @nogc nothrow { m_header.dwBufferCount = bufferCount; }
+
+	@property DWORD flags() @trusted pure @nogc nothrow { return m_header.dwFlags; }
+	@property void flags(DWORD flags) @safe pure @nogc nothrow { m_header.dwFlags = flags; }
+
+	@property ubyte* contentStart() @trusted pure @nogc nothrow { return m_content.buf; }
+	@property void contentStart(ubyte* contentStart) @safe pure @nogc nothrow { m_content.buf = contentStart; }
+
+	@property size_t contentLength() @trusted pure @nogc nothrow { return m_content.len; }
+	@property void contentLength(size_t contentLength) @safe pure @nogc nothrow { m_content.len = contentLength; }
+}
+
+private:
+	Header m_header;
+	Content m_content;
+
+	ubyte[] m_buffer;
+	size_t m_count = 0;
+
+package:
+	@property Header* header() const @trusted pure @nogc nothrow
+	{ return cast(Header*) &m_header; }
+
+public:
+	this(ubyte[] content, NetworkAddress* addr = null) @safe pure @nogc nothrow
+	{
+		if (addr is null) {
+			name = null;
+			nameLength = 0;
+		} else {
+			name = addr.sockAddr;
+			nameLength = addr.sockAddrLen;
 		}
 
-		struct msghdr {
-			void         *msg_name;       /* optional address */
-			socklen_t     msg_namelen;    /* size of address */
-			struct iovec *msg_iov;        /* scatter/gather array */
-			size_t        msg_iovlen;     /* # elements in msg_iov */
-			void         *msg_control;    /* ancillary data, see below */
-			size_t        msg_controllen; /* ancillary data buffer len */
-			int           msg_flags;      /* flags on received message */
-		}
-		+/
+		buffers = &m_content;
+		bufferCount = 1;
 
-		import core.sys.posix.sys.socket : msghdr, iovec, AF_UNSPEC;
-
-		invariant
-		{
-			assert(m_count <= m_buf.length, "Count of transferred bytes must not exceed the message buffer's length");
+		version (Posix) {
+			m_header.msg_control = null;
+			m_header.msg_controllen = 0;
 		}
 
-		private:
-			msghdr m_header;
-			iovec m_content;
+		flags = 0;
 
-			ubyte[] m_buf;
-			size_t m_count = 0;
+		m_buffer      = content;
+		contentStart  = content.ptr;
+		contentLength = content.length;
+	}
 
-		package:
-			@property msghdr* header() const @trusted pure @nogc nothrow
-			{ return cast(msghdr*) &m_header; }
+	this(this) @safe pure @nogc nothrow
+	{ buffers = &m_content; }
 
-		public:
+	@property size_t count() @safe pure @nogc nothrow
+	{ return m_count; }
 
-			this(ubyte[] buf, NetworkAddress* addr = null) @safe pure @nogc nothrow
-			{
-				if (addr is null) {
-					m_header.msg_name = null;
-					m_header.msg_namelen = 0;
-				} else {
-					m_header.msg_name = addr.sockAddr;
-					m_header.msg_namelen = addr.sockAddrLen;
-				}
+	@property void count(size_t count) @safe pure @nogc nothrow
+	{
+		m_count = count;
+		auto content = m_buffer[count .. $];
+		contentStart = content.ptr;
+		contentLength = content.length;
+	}
 
-				m_header.msg_iov = &m_content;
-				m_header.msg_iovlen = 1;
+	@property bool hasAddress() @safe pure @nogc nothrow
+	{ return name !is null; }
 
-				m_header.msg_control = null;
-				m_header.msg_controllen = 0;
+	@property bool receivedAny() @safe pure @nogc nothrow
+	{ return m_count > 0; }
 
-				m_header.msg_flags = 0;
+	@property bool receivedAll() @safe pure @nogc nothrow
+	{ return m_count == m_buffer.length; }
 
-				m_buf = buf;
+	@property bool sent() @safe pure @nogc nothrow
+	{ return m_count == m_buffer.length; }
 
-				m_content.iov_base = buf.ptr;
-				m_content.iov_len = buf.length;
-			}
+	@property ubyte[] transferred() @safe pure @nogc nothrow
+	{ return m_buffer[0 .. m_count]; }
 
-			this(this) @safe pure @nogc nothrow
-			{
-				m_header.msg_iov = &m_content;
-			}
-
-			@property size_t count() @safe pure @nogc nothrow
-			{ return m_count; }
-
-			@property void count(size_t count) @safe pure @nogc nothrow
-			{
-				m_count = count;
-				auto content = m_buf[count .. $];
-				m_content.iov_base = content.ptr;
-				m_content.iov_len = content.length;
-			}
-
-			@property ubyte[] buf() @safe pure @nogc nothrow
-			{ return m_buf; }
-
-			@property bool receivedAny() @safe pure @nogc nothrow
-			{ return m_count > 0; }
-
-			@property bool receivedAll() @safe pure @nogc nothrow
-			{ return m_count == m_buf.length; }
-
-			@property bool sent() @safe pure @nogc nothrow
-			{ return m_count == m_buf.length; }
-
-			@property ubyte[] transferred() @safe pure @nogc nothrow
-			{ return m_buf[0 .. m_count]; }
-
-			@property bool hasAddress() @safe pure @nogc nothrow
-			{ return m_header.msg_name !is null; }
-
-	} else version (Windows) {
-		/+
-		struct WSAMSG {
-			LPSOCKADDR name;
-			INT        namelen;
-			LPWSABUF   lpBuffers;
-			DWORD      dwBufferCount;
-			WSABUF     Control;
-			DWORD      dwFlags;
-		}
-		+/
+	invariant
+	{
+		assert(m_count <= m_buffer.length, "Count of transferred bytes must not exceed the message buffer's length");
 	}
 }
 
@@ -711,16 +739,19 @@ struct NetworkAddress
 		version (Posix) sockaddr_un addr_un = void;
 	}
 
-	this(Address address) @trusted pure nothrow @nogc
+	this(sockaddr* addr, socklen_t addrlen) @trusted pure nothrow @nogc
 	in {
-		assert(address.nameLen <= sockaddr_storage.sizeof,
+		assert(addrlen <= sockaddr_storage.sizeof,
 			   "POSIX.1-2013 requires sockaddr_storage be able to store any socket address");
 	} body {
 		import std.algorithm : copy;
-		copy((cast(ubyte*) address.name)[0 .. address.nameLen],
-			 (cast(ubyte*) &addr_storage)[0 .. address.nameLen]);
+		copy((cast(ubyte*) addr)[0 .. addrlen],
+			 (cast(ubyte*) &addr_storage)[0 .. addrlen]);
 	}
- 
+
+	this(Address address) @safe pure nothrow @nogc
+	{ this(address.name, address.nameLen); }
+
 	@property bool ipv6() const @safe pure nothrow @nogc
 	{ return this.family == AF_INET6; }
 
