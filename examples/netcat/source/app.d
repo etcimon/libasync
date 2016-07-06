@@ -75,6 +75,12 @@ int main(string[] args)
 	auto arguments = docopt.docopt(HELP, args[1..$], true);
 
 	auto af = getAddressFamily(arguments);
+	version (Windows) {
+		if (af == AddressFamily.UNIX) {
+			stderr.writeln("ncat: Unix domain sockets unsupported on Windows");
+			return 1;
+		}
+	}
 	
 	Address address = void;
 	try address = getAddress(arguments, af);
