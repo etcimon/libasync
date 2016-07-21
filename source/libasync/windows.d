@@ -816,6 +816,41 @@ package:
 		return true;
 	}
 
+	bool bind(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
+	{
+		assert(false, "Not implemented");
+	}
+
+	bool connect(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
+	{
+		assert(false, "Not implemented");
+	}
+
+	bool listen(AsyncSocket ctxt, int backlog)
+	{
+		assert(false, "Not implemented");
+	}
+
+	fd_t run(AsyncSocket ctxt)
+	{
+		assert(false, "Not implemented");
+	}
+
+	bool kill(AsyncSocket obj, bool forced = false)
+	{
+		assert(false, "Not implemented");
+	}
+
+	size_t recvMsg(in fd_t fd, ref NetworkMessage msg)
+	{
+		assert(false, "Not implemented");
+	}
+
+	size_t sendMsg(in fd_t fd, in NetworkMessage msg)
+	{
+		assert(false, "Not implemented");
+	}
+
 	pragma(inline, true)
 	uint recv(in fd_t fd, void[] data)
 	{
@@ -1445,7 +1480,7 @@ private:
 			return false;
 		}
 
-		err = bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
+		err = .bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
 		if (catchSocketError!"bind"(err)) {
 			closesocket(fd);
 			return false;
@@ -1467,13 +1502,13 @@ private:
 	body {
 		INT err;
 		if (!reusing) {
-			err = bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
+			err = .bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
 			if (catchSocketError!"bind"(err)) {
 				closesocket(fd);
 				return false;
 			}
 
-			err = listen(fd, 128);
+			err = .listen(fd, 128);
 			if (catchSocketError!"listen"(err)) {
 				closesocket(fd);
 				return false;

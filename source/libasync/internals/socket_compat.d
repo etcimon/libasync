@@ -13,7 +13,17 @@
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
 module libasync.internals.socket_compat;
-version(Posix):
+
+version (Windows)
+{
+	public import libasync.internals.win32 :
+		sockaddr, sockaddr_storage, sockaddr_in, sockaddr_in6,
+		AF_UNSPEC, AF_INET, AF_INET6,
+		socklen_t,
+		getsockname, getpeername,
+		SOL_SOCKET, SO_TYPE, SO_ERROR,
+		getsockopt, setsockopt;
+} else:
 
 public import core.sys.posix.sys.un;
 

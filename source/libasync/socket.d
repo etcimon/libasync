@@ -76,21 +76,10 @@ version (Posix) {
 	@property size_t contentLength() @trusted pure @nogc nothrow { return m_content.iov_len; }
 	@property void contentLength(size_t contentLength) @safe pure @nogc nothrow { m_content.iov_len = contentLength; }
 } else version (Windows) {
-	import libasync.internals.win32 : WSABUF, WSAMSG;
+	import libasync.internals.win32 : WSABUF, WSAMSG, DWORD;
 
 	alias Header      = WSAMSG;
 	alias Content     = WSABUF;
-
-	alias name        = m_header.name;
-	alias nameLength  = m_header.namelen;
-
-	alias buffers     = m_header.lpBuffers;
-	alias bufferCount = m_header.dwBufferCount;
-
-	alias flags       = m_header.dwFlags;
-
-	alias contentStart = m_content.buf;
-	alias contentLength = m_content.len;
 
 	@property sockaddr* name() @trusted pure @nogc nothrow { return m_header.name; }
 	@property void name(sockaddr* name) @safe pure @nogc nothrow { m_header.name = name; }
@@ -112,7 +101,7 @@ version (Posix) {
 
 	@property size_t contentLength() @trusted pure @nogc nothrow { return m_content.len; }
 	@property void contentLength(size_t contentLength) @safe pure @nogc nothrow { m_content.len = contentLength; }
-} else { assert(false, "Platform unsupported"); }
+} else { static assert(false, "Platform unsupported"); }
 
 private:
 	Header m_header;
@@ -317,7 +306,7 @@ version (Posix) {
 	{
 		assert(false, "Implement");
 	}
-} else { assert(false, "Platform unsupported"); }
+} else { static assert(false, "Platform unsupported"); }
 
 public:
 	/// Generic callback type to handle events without additional parameters
