@@ -6,6 +6,7 @@ version(Windows):
 public import core.sys.windows.windows;
 public import core.sys.windows.windows;
 public import core.sys.windows.winsock2;
+public import core.sys.windows.com : GUID;
 
 extern(System) nothrow
 {
@@ -233,11 +234,41 @@ extern(System) nothrow
 	alias void* LPCONDITIONPROC;
 	alias void* LPTRANSMIT_FILE_BUFFERS;
 
-	int WSAIoctl(SOCKET s, DWORD dwIoControlCode, void* lpvInBuffer, DWORD cbInBuffer, void* lpvOutBuffer, DWORD, cbOutBuffer, DWORD* lpcbBytesReturned, WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
+	alias BOOL function(SOCKET sListenSocket,
+	                    SOCKET sAcceptSocket,
+	                    void* lpOutputBuffer,
+	                    DWORD dwReceiveDataLength,
+	                    DWORD dwLocalAddressLength,
+	                    DWORD dwRemoteAddressLength,
+	                    DWORD* lpdwBytesReceived,
+	                    OVERLAPPED* lpOverlapped) LPFN_ACCEPTEX;
+	auto WSAID_ACCEPTEX = GUID(0xb5367df1, 0xcbac, 0x11cf, [ 0x95, 0xca, 0x00, 0x80, 0x5f, 0x48, 0xa1, 0x92 ]);
+
+	alias void function(void* lpOutputBuffer,
+	                    DWORD dwReceiveDataLength,
+	                    DWORD dwLocalAddressLength,
+	                    DWORD dwRemoteAddressLength,
+	                    sockaddr** LocalSockaddr,
+	                    int* LocalSockaddrLength,
+	                    sockaddr** RemoteSockaddr,
+	                    int* RemoteSockaddrLength) LPFN_GETACCEPTEXSOCKADDRS;
+	auto WSAID_GETACCEPTEXSOCKADDRS = GUID(0xb5367df2, 0xcbac, 0x11cf, [ 0x95, 0xca, 0x00, 0x80, 0x5f, 0x48, 0xa1, 0x92 ]);
+
+	alias BOOL function(SOCKET s, sockaddr* name, int namelen, void* lpSendBuffer, DWORD dwSendDataLength, DWORD* lpdwBytesSent, OVERLAPPED* lpOverlapped) LPFN_CONNECTEX;
+	auto WSAID_CONNECTEX = GUID(0x25a207b9, 0xddf3, 0x4660, [ 0x8e, 0xe9, 0x76, 0xe5, 0x8c, 0x74, 0x06, 0x3e ]);
+
+	alias BOOL function(SOCKET s, OVERLAPPED* lpOverlapped, DWORD  dwFlags, DWORD  dwReserved) LPFN_DISCONNECTEX;
+	auto WSAID_DISCONNECTEX = GUID(0x7fda2e11, 0x8630, 0x436f, [ 0xa0, 0x31, 0xf5, 0x36, 0xa6, 0xee, 0xc1, 0x57 ]);
+
+	int WSAIoctl(SOCKET s, DWORD dwIoControlCode, void* lpvInBuffer, DWORD cbInBuffer, void* lpvOutBuffer, DWORD cbOutBuffer, DWORD* lpcbBytesReturned, WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
+	LPFN_ACCEPTEX AcceptEx;
+	LPFN_GETACCEPTEXSOCKADDRS GetAcceptExSockaddrs;
+	LPFN_CONNECTEX ConnectEx;
+	LPFN_DISCONNECTEX DisconnectEx;
+
 	SOCKET WSAAccept(SOCKET s, sockaddr *addr, INT* addrlen, LPCONDITIONPROC lpfnCondition, DWORD_PTR dwCallbackData);
 	int WSAAsyncSelect(SOCKET s, HWND hWnd, uint wMsg, sizediff_t lEvent);
 	SOCKET WSASocketW(int af, int type, int protocol, WSAPROTOCOL_INFOW *lpProtocolInfo, uint g, DWORD dwFlags);
-	alias BOOL function(SOCKET s, sockaddr* name, int namelen, void* lpSendBuffer, DWORD dwSendDataLength, DWORD* lpdwBytesSent, OVERLAPPED* lpOverlapped) LPFN_CONNECTEX;
 	int WSARecvMsg(SOCKET s, WSAMSG* lpMsg, DWORD* lpdwNumberOfBytesRecvd, in WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
 	int WSASendMsg(SOCKET s, in WSAMSG* lpMsg, DWORD dwFlags, DWORD* lpNumberOfBytesSent, in WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
 	int WSARecv(SOCKET s, WSABUF* lpBuffers, DWORD dwBufferCount, DWORD* lpNumberOfBytesRecvd, DWORD* lpFlags, in WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
@@ -253,15 +284,6 @@ extern(System) nothrow
 	void FreeAddrInfoExW(ADDRINFOEXW* pAddrInfo);
 	void freeaddrinfo(ADDRINFOA* ai);
 	BOOL TransmitFile(SOCKET hSocket, HANDLE hFile, DWORD nNumberOfBytesToWrite, DWORD nNumberOfBytesPerSend, OVERLAPPED* lpOverlapped, LPTRANSMIT_FILE_BUFFERS lpTransmitBuffers, DWORD dwFlags);
-
-
-	struct GUID
-	{
-		DWORD Data1;
-		WORD Data2;
-		WORD Data3;
-		BYTE[8]  Data4;
-	};
 
 	enum WM_USER = 0x0400;
 
