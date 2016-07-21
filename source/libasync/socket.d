@@ -789,7 +789,7 @@ struct NetworkAddress
 
 	/** Size of the sockaddr struct that is returned by sockAddr().
 	 */
-	@property uint sockAddrLen()
+	@property socklen_t sockAddrLen()
 	const @safe @nogc pure nothrow {
 		switch (this.family) {
 			default: assert(false, "Unsupported address family");
@@ -803,7 +803,7 @@ struct NetworkAddress
 	/++
 	 + Maximum size of any sockaddr struct, regardless of address family.
 	 +/
-	static @property uint sockAddrMaxLen()
+	static @property socklen_t sockAddrMaxLen()
 	pure nothrow { return sockaddr_storage.sizeof; }
 
 	@property inout(sockaddr_in)* sockAddrInet4() inout pure nothrow
@@ -847,9 +847,11 @@ struct NetworkAddress
 					sink.formattedWrite("%x", bigEndianToNative!ushort(_dummy));
 				}
 				break;
-			version (Posix) case AF_UNIX:
+			version (Posix) {
+			case AF_UNIX:
 				sink.formattedWrite("%s", fromStringz(cast(char*) addr_un.sun_path));
 				break;
+			}
 		}
 	}
 
@@ -877,9 +879,11 @@ struct NetworkAddress
 				toAddressString(sink);
 				sink.formattedWrite("]:%s", port);
 				break;
-			version (Posix) case AF_UNIX:
+			version (Posix) {
+			case AF_UNIX:
 				toAddressString(sink);
 				break;
+			}
 		}
 	}
 }

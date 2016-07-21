@@ -213,6 +213,21 @@ extern(System) nothrow
 	}
 	alias sockaddr SOCKADDR;
 
+	enum _SS_MAXSIZE = 128;           // Maximum size
+	enum _SS_ALIGNSIZE = long.sizeof; // Desired alignment
+
+	enum _SS_PAD1SIZE = _SS_ALIGNSIZE - ushort.sizeof;
+	enum _SS_PAD2SIZE = _SS_MAXSIZE - (ushort.sizeof + _SS_PAD1SIZE + _SS_ALIGNSIZE);
+
+	struct SOCKADDR_STORAGE {
+		ushort ss_family;
+		byte[_SS_PAD1SIZE] __ss_pad1;
+		long __ss_align;
+		byte[_SS_PAD2SIZE] __ss_pad2;
+	}
+	alias SOCKADDR_STORAGE* PSOCKADDR_STORAGE;
+	alias SOCKADDR_STORAGE sockaddr_storage;
+
 	alias void function(DWORD, DWORD, WSAOVERLAPPEDX*, DWORD) LPWSAOVERLAPPED_COMPLETION_ROUTINEX;
 	alias void function(DWORD, DWORD, WSAOVERLAPPEDX*) LPLOOKUPSERVICE_COMPLETION_ROUTINE;
 	alias void* LPCONDITIONPROC;
