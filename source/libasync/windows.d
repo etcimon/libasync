@@ -120,6 +120,57 @@ package:
 			return false;
 		}
 		assert(wd.wVersion == 0x0202);
+
+		auto dummySocket = socket(AF_INET6, SOCK_STREAM, 0);
+		if (dummySocket == INVALID_SOCKET) return false;
+		scope (exit) closesocket(dummySocket);
+
+		DWORD bytesReturned;
+
+		if (WSAIoctl(dummySocket,
+		             SIO_GET_EXTENSION_FUNCTION_POINTER,
+		             &WSAID_ACCEPTEX, GUID.sizeof,
+		             &AcceptEx, AcceptEx.sizeof,
+		             &bytesReturned,
+		             null, null) == SOCKET_ERROR) {
+			m_error = WSAGetLastErrorSafe();
+			m_status.code = Status.ABORT;
+			return false;
+		}
+
+		if (WSAIoctl(dummySocket,
+		             SIO_GET_EXTENSION_FUNCTION_POINTER,
+		             &WSAID_GETACCEPTEXSOCKADDRS, GUID.sizeof,
+		             &GetAcceptExSockaddrs, GetAcceptExSockaddrs.sizeof,
+		             &bytesReturned,
+		             null, null) == SOCKET_ERROR) {
+			m_error = WSAGetLastErrorSafe();
+			m_status.code = Status.ABORT;
+			return false;
+		}
+
+		if (WSAIoctl(dummySocket,
+		             SIO_GET_EXTENSION_FUNCTION_POINTER,
+		             &WSAID_CONNECTEX, GUID.sizeof,
+		             &ConnectEx, ConnectEx.sizeof,
+		             &bytesReturned,
+		             null, null) == SOCKET_ERROR) {
+			m_error = WSAGetLastErrorSafe();
+			m_status.code = Status.ABORT;
+			return false;
+		}
+
+		if (WSAIoctl(dummySocket,
+		             SIO_GET_EXTENSION_FUNCTION_POINTER,
+		             &WSAID_DISCONNECTEX, GUID.sizeof,
+		             &DisconnectEx, DisconnectEx.sizeof,
+		             &bytesReturned,
+		             null, null) == SOCKET_ERROR) {
+			m_error = WSAGetLastErrorSafe();
+			m_status.code = Status.ABORT;
+			return false;
+		}
+
 		m_started = true;
 		return true;
 	}

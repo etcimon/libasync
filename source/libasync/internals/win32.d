@@ -261,6 +261,25 @@ extern(System) nothrow
 	auto WSAID_DISCONNECTEX = GUID(0x7fda2e11, 0x8630, 0x436f, [ 0xa0, 0x31, 0xf5, 0x36, 0xa6, 0xee, 0xc1, 0x57 ]);
 
 	int WSAIoctl(SOCKET s, DWORD dwIoControlCode, void* lpvInBuffer, DWORD cbInBuffer, void* lpvOutBuffer, DWORD cbOutBuffer, DWORD* lpcbBytesReturned, WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
+
+	enum IOCPARM_MASK = 0x7f;
+	enum uint IOC_VOID         = 0x20000000;
+	enum uint IOC_OUT          = 0x40000000;
+	enum uint IOC_IN           = 0x80000000;
+	enum uint IOC_INOUT        = (IOC_IN|IOC_OUT);
+
+	enum uint IOC_UNIX         = 0x00000000;
+	enum uint IOC_WS2          = 0x08000000;
+	enum uint IOC_PROTOCOL     = 0x10000000;
+	enum uint IOC_VENDOR       = 0x18000000;
+
+	auto _WSAIO(uint x,uint y)      { return (IOC_VOID|(x)|(y)); }
+	auto _WSAIOR(uint x,uint y)     { return (IOC_OUT|(x)|(y)); }
+	auto _WSAIOW(uint x,uint y)     { return (IOC_IN|(x)|(y)); }
+	auto _WSAIORW(uint x,uint y)    { return (IOC_INOUT|(x)|(y)); }
+
+	enum SIO_GET_EXTENSION_FUNCTION_POINTER = _WSAIORW(IOC_WS2,6);
+
 	LPFN_ACCEPTEX AcceptEx;
 	LPFN_GETACCEPTEXSOCKADDRS GetAcceptExSockaddrs;
 	LPFN_CONNECTEX ConnectEx;
