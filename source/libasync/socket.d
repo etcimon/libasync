@@ -175,6 +175,24 @@ public:
 	}
 }
 
+version (Windows) {
+	import libasync.internals.win32;
+
+	struct AsyncSocketOverlapped
+	{
+		align (1):
+		OVERLAPPED overlapped;
+		align:
+		AsyncSocket socket;
+		union
+		{
+			WSABUF buffer;
+			AsyncSocket.RecvRequest* receiveRequest;
+			AsyncSocket.SendRequest* sendRequest;
+		}
+	}
+}
+
 /++
  + 
  +/

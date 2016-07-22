@@ -10,7 +10,9 @@ import std.string : toStringz;
 import std.conv : to;
 import std.datetime : Duration, msecs, seconds;
 import std.algorithm : min;
+import std.exception;
 import libasync.internals.win32;
+import libasync.internals.logging;
 import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
 import std.utf : toUTFz;
@@ -52,11 +54,16 @@ private:
 	wstring m_window;
 	HWND m_hwnd;
 	DWORD m_threadId;
-	HANDLE[] m_waitObjects;
 	ushort m_instanceId;
 	StatusInfo m_status;
 	error_t m_error = EWIN.WSA_OK;
 	__gshared Mutex gs_mtx;
+
+	HANDLE[] m_waitObjects;
+	OVERLAPPED*[AsyncSocket] m_pendingConnects;
+
+	@property HANDLE pendingConnectEvent()
+	{ return m_waitObjects[0]; }
 package:
 	@property bool started() const {
 		return m_started;
@@ -171,6 +178,8 @@ package:
 			return false;
 		}
 
+		m_waitObjects ~= CreateEvent(null, false, false, null);
+
 		m_started = true;
 		return true;
 	}
@@ -206,9 +215,10 @@ package:
 		 * Waits until one or all of the specified objects are in the signaled state
 		 * http://msdn.microsoft.com/en-us/library/windows/desktop/ms684245%28v=vs.85%29.aspx
 		*/
+		m_status = StatusInfo.init;
 		DWORD signal = MsgWaitForMultipleObjectsEx(
-			cast(DWORD)0,
-			null,
+			m_waitObjects.length,
+			m_waitObjects.ptr,
 			msTimeout,
 			QS_ALLEVENTS,
 			MWMO_ALERTABLE | MWMO_INPUTAVAILABLE		// MWMO_ALERTABLE: Wakes up to execute overlapped hEvent (i/o completion)
@@ -218,12 +228,46 @@ package:
 		auto errors =
 		[ tuple(WAIT_FAILED, Status.EVLOOP_FAILURE) ];	/* WAIT_FAILED: Failed to call MsgWait..() */
 
-		if (signal == WAIT_TIMEOUT)
+		if (signal == WAIT_TIMEOUT) {
 			return true;
+		}
+
+		if (signal == WAIT_IO_COMPLETION) {
+			return m_status.code == Status.OK;
+		}
 
 		if (catchErrors!"MsgWaitForMultipleObjectsEx"(signal, errors)) {
 			static if (LOG) log("Event Loop Exiting because of error");
 			return false;
+		}
+
+		switch (signal - WAIT_OBJECT_0) {
+			case 0:
+				DWORD transferred, flags;
+				foreach (ref pendingConnect; m_pendingConnects.byKeyValue()) {
+					if (WSAGetOverlappedResult(pendingConnect.key.handle,
+					                           pendingConnect.value,
+					                           &transferred,
+					                           false,
+					                           &flags)) {
+						m_pendingConnects.remove(pendingConnect.key);
+						assumeWontThrow(ThreadMem.free(pendingConnect.value));
+						onConnect(pendingConnect.key);
+					} else {
+						m_error = WSAGetLastErrorSafe();
+						if (m_error == WSA_IO_INCOMPLETE) {
+							continue;
+						} else {
+							m_status.code = Status.ABORT;
+							pendingConnect.key.handleError();
+							return false;
+						}
+					}
+				}
+				break;
+			default:
+				.warning("Unknown event was triggered: ", signal);
+				break;
 		}
 
 		MSG msg;
@@ -867,27 +911,159 @@ package:
 		return true;
 	}
 
-	bool bind(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
+	fd_t run(AsyncSocket ctxt)
+	{
+		m_status = StatusInfo.init;
+
+		auto fd = ctxt.preInitializedHandle;
+
+		if (fd == INVALID_SOCKET) {
+			fd = WSASocketW(ctxt.info.family, ctxt.info.type, ctxt.info.protocol, null, 0, WSA_FLAG_OVERLAPPED);
+		}
+
+		if (catchErrors!"socket"(fd)) {
+			.error("Failed to create socket: ", error);
+			return INVALID_SOCKET;
+		}
+
+		return fd;
+	}
+
+	bool kill(AsyncSocket obj, bool forced = false)
 	{
 		assert(false, "Not implemented");
+	}
+
+	bool bind(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
+	{
+		import libasync.internals.socket_compat : bind;
+
+		auto err = bind(ctxt.handle, addr, addrlen);
+		if (catchSocketError!"bind"(err)) {
+			.error("Failed to bind socket: ", error);
+			return false;
+		}
+
+		return true;
 	}
 
 	bool connect(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
 	{
-		assert(false, "Not implemented");
+		m_status = StatusInfo.init;
+
+		// Connectionless sockets can be connected immediately,
+		// as this only sets the default remote address.
+		if (!ctxt.connectionOriented) {
+			import libasync.internals.socket_compat : connect;
+
+			auto err = connect(ctxt.handle, addr, addrlen);
+			if (catchSocketError!"connect"(err)) {
+				.error("Failed to connect socket: ", error);
+				return false;
+			}
+			return true;
+		}
+
+		// ConnectEx requires a bound connection-oriented socket.
+		try ctxt.localAddress; catch (SocketOSException) {
+			NetworkAddress local;
+			switch (ctxt.info.family) {
+				case AF_INET:
+					local.addr_ip4.sin_family = AF_INET;
+					local.addr_ip4.sin_addr.s_addr = INADDR_ANY;
+					local.addr_ip4.sin_port = 0;
+					break;
+				case AF_INET6:
+					local.addr_ip6.sin6_family = AF_INET6;
+					local.addr_ip6.sin6_addr = IN6ADDR_ANY;
+					local.addr_ip6.sin6_port = 0;
+					break;
+				default:
+					assert(false, "Unsupported address family");
+			}
+
+			if (!bind(ctxt, local.sockAddr, local.sockAddrLen)) {
+				return false;
+			}
+		} catch (Exception e) assert(false);
+
+		auto overlapped = assumeWontThrow(ThreadMem.alloc!OVERLAPPED);
+		overlapped.hEvent = pendingConnectEvent;
+		if (ConnectEx(ctxt.handle, addr, addrlen, null, 0, null, overlapped)) {
+			assumeWontThrow(ThreadMem.free(overlapped));
+			return onConnect(ctxt);
+		} else {
+			m_error = WSAGetLastErrorSafe();
+			if (m_error == WSA_IO_PENDING) {
+				m_pendingConnects[ctxt] = overlapped;
+				return true;
+			} else {
+				m_status.code = Status.ABORT;
+				ctxt.handleError();
+				return false;
+			}
+		}
+	}
+
+	bool onConnect(AsyncSocket ctxt, bool incoming = false)
+	{
+		fd_t err;
+
+		*ctxt.connected = true;
+
+		if (incoming) {
+			err = setsockopt(ctxt.handle, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, null, 0);
+			if (catchSocketError!"connect"(err)) {
+				.error("Failed to setup connected socket", error);
+				ctxt.handleError();
+				return false;
+			}
+		} else {
+			err = setsockopt(ctxt.handle, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, null, 0);
+			if (catchSocketError!"connect"(err)) {
+				.error("Failed to setup connected socket", error);
+				ctxt.handleError();
+				return false;
+			}
+		}
+
+		auto overlapped = assumeWontThrow(ThreadMem.alloc!AsyncSocketOverlapped);
+		overlapped.socket = ctxt;
+		overlapped.buffer.len = 0;
+		queueDisconnectDetection(overlapped);
+
+		try ctxt.handleConnect();
+		catch (Exception e) {
+			.error(e.msg);
+			setInternalError!"del@AsyncSocket.CONNECT"(Status.ABORT);
+			return false;
+		}
+		return true;
+	}
+
+	private bool queueDisconnectDetection(AsyncSocketOverlapped* overlapped)
+	{
+		DWORD flags = MSG_OOB;
+		auto err = WSARecv(overlapped.socket.handle,
+		                   &overlapped.buffer,
+		                   1,
+		                   null,
+		                   &flags,
+		                   cast(const(WSAOVERLAPPEDX*)) overlapped,
+		                   cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOOBData);
+		if (err == SOCKET_ERROR) {
+			m_error = WSAGetLastErrorSafe();
+			if (m_error != WSA_IO_PENDING) {
+				m_status.code = Status.ABORT;
+				overlapped.socket.handleError();
+				assumeWontThrow(ThreadMem.free(overlapped));
+				return false;
+			}
+		}
+		return true;
 	}
 
 	bool listen(AsyncSocket ctxt, int backlog)
-	{
-		assert(false, "Not implemented");
-	}
-
-	fd_t run(AsyncSocket ctxt)
-	{
-		assert(false, "Not implemented");
-	}
-
-	bool kill(AsyncSocket obj, bool forced = false)
 	{
 		assert(false, "Not implemented");
 	}
@@ -1969,7 +2145,40 @@ package:
 			}
 		}
 	}
+}
 
+nothrow extern(System)
+{
+	void onOOBData(error_t error, DWORD transferred, AsyncSocketOverlapped* overlapped, DWORD flags)
+	{
+		auto socket = overlapped.socket;
+		auto eventLoop = &socket.m_evLoop.m_evLoop;
+		if (eventLoop.m_status.code != Status.OK) return;
+
+		eventLoop.m_error = error;
+		if (error == 0) {
+			eventLoop.queueDisconnectDetection(overlapped);
+		}
+
+		scope (exit) assumeWontThrow(ThreadMem.free(overlapped));
+
+		if (error == WSAECONNRESET) {
+			try socket.handleClose();
+			catch (Exception e) {
+				.error(e.msg);
+				eventLoop.setInternalError!"del@AsyncSocket.CLOSE"(Status.ABORT);
+				return;
+			}
+
+			*socket.connected = false;
+
+			closesocket(socket.handle);
+			return;
+		}
+
+		eventLoop.m_status.code = Status.ABORT;
+		socket.handleError();
+	}
 }
 
 enum WM_TCP_SOCKET = WM_USER+102;

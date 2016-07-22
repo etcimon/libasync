@@ -46,6 +46,7 @@ extern(System) nothrow
 	BOOL GetFileSizeEx(HANDLE hFile, long *lpFileSize);
 	BOOL SetEndOfFile(HANDLE hFile);
 	BOOL GetOverlappedResult(HANDLE hFile, OVERLAPPED* lpOverlapped, DWORD* lpNumberOfBytesTransferred, BOOL bWait);
+	BOOL WSAGetOverlappedResult(SOCKET s, OVERLAPPED* lpOverlapped, DWORD* lpcbTransfer, BOOL fWait, DWORD* lpdwFlags);
 	BOOL PostMessageW(HWND hwnd, UINT msg, WPARAM wPara, LPARAM lParam);
 	BOOL PostThreadMessageA(HWND hwnd, UINT msg, WPARAM wPara, LPARAM lParam);
 
@@ -75,6 +76,7 @@ extern(System) nothrow
 		MAX_PROTOCOL_CHAIN = 7,
 	};
 
+	enum WSA_IO_INCOMPLETE = 996;
 	enum WSA_IO_PENDING = 997;
 
 	struct WSAPROTOCOL_INFOW {
@@ -284,6 +286,9 @@ extern(System) nothrow
 	LPFN_GETACCEPTEXSOCKADDRS GetAcceptExSockaddrs;
 	LPFN_CONNECTEX ConnectEx;
 	LPFN_DISCONNECTEX DisconnectEx;
+
+	enum SO_UPDATE_ACCEPT_CONTEXT    = 0x700B;
+	enum SO_UPDATE_CONNECT_CONTEXT   = 0x7010;
 
 	SOCKET WSAAccept(SOCKET s, sockaddr *addr, INT* addrlen, LPCONDITIONPROC lpfnCondition, DWORD_PTR dwCallbackData);
 	int WSAAsyncSelect(SOCKET s, HWND hWnd, uint wMsg, sizediff_t lEvent);

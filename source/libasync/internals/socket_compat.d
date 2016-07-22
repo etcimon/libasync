@@ -22,7 +22,8 @@ version (Windows)
 		socklen_t,
 		getsockname, getpeername,
 		SOL_SOCKET, SO_TYPE, SO_ERROR,
-		getsockopt, setsockopt;
+		getsockopt, setsockopt,
+		bind, connect;
 } else:
 
 public import core.sys.posix.sys.un;
