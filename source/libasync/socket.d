@@ -53,22 +53,7 @@ version (Posix) {
 	import core.sys.posix.sys.socket : msghdr, iovec;
 
 	alias Header        = msghdr;
-	alias Content       = iovec; 
-
-	@property sockaddr* name() @trusted pure @nogc nothrow { return cast(sockaddr*) m_header.msg_name; }
-	@property void name(sockaddr* name) @safe pure @nogc nothrow { m_header.msg_name = name; }
-
-	@property socklen_t nameLength() @trusted pure @nogc nothrow { return m_header.msg_namelen; }
-	@property void nameLength(socklen_t nameLength) @safe pure @nogc nothrow { m_header.msg_namelen = nameLength; }
-
-	@property iovec* buffers() @trusted pure @nogc nothrow { return m_header.msg_iov; }
-	@property void buffers(iovec* buffers) @safe pure @nogc nothrow { m_header.msg_iov = buffers; }
-
-	@property size_t bufferCount() @trusted pure @nogc nothrow { return m_header.msg_iovlen; }
-	@property void bufferCount(size_t bufferCount) @safe pure @nogc nothrow { m_header.msg_iovlen = bufferCount; }
-
-	@property int flags() @trusted pure @nogc nothrow { return m_header.msg_flags; }
-	@property void flags(int flags) @safe pure @nogc nothrow { m_header.msg_flags = flags; }
+	alias Content       = iovec;
 
 	@property ubyte* contentStart() @trusted pure @nogc nothrow { return cast (ubyte*) m_content.iov_base; }
 	@property void contentStart(ubyte* contentStart) @safe pure @nogc nothrow { m_content.iov_base = contentStart; }
@@ -76,25 +61,18 @@ version (Posix) {
 	@property size_t contentLength() @trusted pure @nogc nothrow { return m_content.iov_len; }
 	@property void contentLength(size_t contentLength) @safe pure @nogc nothrow { m_content.iov_len = contentLength; }
 } else version (Windows) {
-	import libasync.internals.win32 : WSABUF, WSAMSG, DWORD;
+	import libasync.internals.win32 : WSABUF, DWORD;
 
-	alias Header      = WSAMSG;
+	struct Header
+	{
+		sockaddr* msg_name;
+		socklen_t msg_namelen;
+		WSABUF*   msg_iov;
+		size_t    msg_iovlen;
+		DWORD     msg_flags;
+	}
+
 	alias Content     = WSABUF;
-
-	@property sockaddr* name() @trusted pure @nogc nothrow { return m_header.name; }
-	@property void name(sockaddr* name) @safe pure @nogc nothrow { m_header.name = name; }
-
-	@property socklen_t nameLength() @trusted pure @nogc nothrow { return m_header.namelen; }
-	@property void nameLength(socklen_t nameLength) @safe pure @nogc nothrow { m_header.namelen = nameLength; }
-
-	@property WSABUF* buffers() @trusted pure @nogc nothrow { return m_header.lpBuffers; }
-	@property void buffers(WSABUF* buffers) @safe pure @nogc nothrow { m_header.lpBuffers = buffers; }
-
-	@property DWORD bufferCount() @trusted pure @nogc nothrow { return m_header.dwBufferCount; }
-	@property void bufferCount(DWORD bufferCount) @safe pure @nogc nothrow { m_header.dwBufferCount = bufferCount; }
-
-	@property DWORD flags() @trusted pure @nogc nothrow { return m_header.dwFlags; }
-	@property void flags(DWORD flags) @safe pure @nogc nothrow { m_header.dwFlags = flags; }
 
 	@property ubyte* contentStart() @trusted pure @nogc nothrow { return m_content.buf; }
 	@property void contentStart(ubyte* contentStart) @safe pure @nogc nothrow { m_content.buf = contentStart; }
@@ -102,6 +80,21 @@ version (Posix) {
 	@property size_t contentLength() @trusted pure @nogc nothrow { return m_content.len; }
 	@property void contentLength(size_t contentLength) @safe pure @nogc nothrow { m_content.len = contentLength; }
 } else { static assert(false, "Platform unsupported"); }
+
+	@property sockaddr* name() @trusted pure @nogc nothrow { return cast(sockaddr*) m_header.msg_name; }
+	@property void name(sockaddr* name) @safe pure @nogc nothrow { m_header.msg_name = name; }
+
+	@property socklen_t nameLength() @trusted pure @nogc nothrow { return m_header.msg_namelen; }
+	@property void nameLength(socklen_t nameLength) @safe pure @nogc nothrow { m_header.msg_namelen = nameLength; }
+
+	@property Content* buffers() @trusted pure @nogc nothrow { return m_header.msg_iov; }
+	@property void buffers(Content* buffers) @safe pure @nogc nothrow { m_header.msg_iov = buffers; }
+
+	@property size_t bufferCount() @trusted pure @nogc nothrow { return m_header.msg_iovlen; }
+	@property void bufferCount(size_t bufferCount) @safe pure @nogc nothrow { m_header.msg_iovlen = bufferCount; }
+
+	@property int flags() @trusted pure @nogc nothrow { return m_header.msg_flags; }
+	@property void flags(int flags) @safe pure @nogc nothrow { m_header.msg_flags = flags; }
 
 private:
 	Header m_header;
