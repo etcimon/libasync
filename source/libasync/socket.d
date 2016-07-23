@@ -490,7 +490,7 @@ private:
 	in {
 		assert(m_connectionOriented && !msg.receivedAll || !msg.receivedAny, "Message already received");
 	} body {
-		bool received = false;
+		bool received;
 		size_t recvCount = void;
 
 		if (m_datagramOriented) {

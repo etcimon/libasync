@@ -21,7 +21,7 @@ version (Windows)
 		AF_UNSPEC, AF_INET, AF_INET6,
 		socklen_t,
 		getsockname, getpeername,
-		SOL_SOCKET, SO_TYPE, SO_ERROR,
+		SOL_SOCKET, SO_TYPE, SO_ERROR, SO_REUSEADDR,
 		getsockopt, setsockopt,
 		bind, connect;
 } else:

@@ -241,7 +241,25 @@ package:
 			return false;
 		}
 
+		// Input messages
+		if (signal == WAIT_OBJECT_0 + m_waitObjects.length) {
+			MSG msg;
+			while (PeekMessageW(&msg, null, 0, 0, PM_REMOVE)) {
+				m_status = StatusInfo.init;
+				TranslateMessage(&msg);
+				DispatchMessageW(&msg);
+
+				if (m_status.code == Status.ERROR) {
+					static if (LOG) log(m_status.text);
+					return false;
+				}
+			}
+			return true;
+		}
+
+		// Events
 		switch (signal - WAIT_OBJECT_0) {
+			// ConnectEx completion
 			case 0:
 				DWORD transferred, flags;
 				foreach (ref pendingConnect; m_pendingConnects.byKeyValue()) {
@@ -270,17 +288,6 @@ package:
 				break;
 		}
 
-		MSG msg;
-		while (PeekMessageW(&msg, null, 0, 0, PM_REMOVE)) {
-			m_status = StatusInfo.init;
-			TranslateMessage(&msg);
-			DispatchMessageW(&msg);
-
-			if (m_status.code == Status.ERROR) {
-				static if (LOG) log(m_status.text);
-				return false;
-			}
-		}
 		return true;
 	}
 
@@ -1030,7 +1037,7 @@ package:
 		auto overlapped = assumeWontThrow(ThreadMem.alloc!AsyncSocketOverlapped);
 		overlapped.socket = ctxt;
 		overlapped.buffer.len = 0;
-		queueDisconnectDetection(overlapped);
+		submitDisconnectDetection(overlapped);
 
 		try ctxt.handleConnect();
 		catch (Exception e) {
@@ -1041,8 +1048,16 @@ package:
 		return true;
 	}
 
-	private bool queueDisconnectDetection(AsyncSocketOverlapped* overlapped)
+	private bool submitDisconnectDetection(AsyncSocketOverlapped* overlapped)
 	{
+		// To always detect our peer disconnecting, regardless of whether
+		// we have a normal receive or send operation pending, we submit an
+		// out of band zero sized receive operation. This operation will complete
+		// if either out of band data arrives, or an error occurs on the connection.
+		// On completion, we check which was the case and appropriately either
+		//   - resubmit this operation
+		//   - close the AsyncSocket
+		//   - trigger error on the AsyncSocket
 		DWORD flags = MSG_OOB;
 		auto err = WSARecv(overlapped.socket.handle,
 		                   &overlapped.buffer,
@@ -2157,7 +2172,7 @@ nothrow extern(System)
 
 		eventLoop.m_error = error;
 		if (error == 0) {
-			eventLoop.queueDisconnectDetection(overlapped);
+			eventLoop.submitDisconnectDetection(overlapped);
 		}
 
 		scope (exit) assumeWontThrow(ThreadMem.free(overlapped));
@@ -2167,7 +2182,6 @@ nothrow extern(System)
 			catch (Exception e) {
 				.error(e.msg);
 				eventLoop.setInternalError!"del@AsyncSocket.CLOSE"(Status.ABORT);
-				return;
 			}
 
 			*socket.connected = false;
