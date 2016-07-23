@@ -183,8 +183,7 @@ version (Windows) {
 		union
 		{
 			WSABUF buffer;
-			AsyncSocket.RecvRequest* receiveRequest;
-			AsyncSocket.SendRequest* sendRequest;
+			NetworkMessage* msg;
 		}
 
 		static typeof(this)* alloc() @trusted /+@nogc+/ nothrow
@@ -344,12 +343,33 @@ version (Posix) {
 } else version (Windows) {
 	void processReceiveRequests()
 	{
-		assert(false, "Implement");
+		while (!m_recvRequests.empty) {
+			auto request = &m_recvRequests.front();
+			if (!request.exact && request.msg.receivedAny ||
+			    request.exact && request.msg.receivedAll) {
+				auto transferred = request.msg.transferred;
+				if (!m_receiveContinuously) m_recvRequests.removeFront();
+				else request.msg.count = 0;
+				request.onComplete(transferred);
+			} else {
+				m_evLoop.m_evLoop.recvMsg(this, request.msg);
+				break;
+			}
+		}
 	}
 
 	void processSendRequests()
 	{
-		assert(false, "Implement");
+		while (!m_sendRequests.empty) {
+			auto request = &m_sendRequests.front();
+			if (request.msg.sent) {
+				m_sendRequests.removeFront();
+				request.onComplete();
+			} else {
+				m_evLoop.m_evLoop.sendMsg(this, request.msg);
+				break;
+			}
+		}
 	}
 } else { static assert(false, "Platform unsupported"); }
 

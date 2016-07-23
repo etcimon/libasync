@@ -1083,14 +1083,58 @@ package:
 		assert(false, "Not implemented");
 	}
 
-	size_t recvMsg(in fd_t fd, ref NetworkMessage msg)
+	void recvMsg(AsyncSocket ctxt, ref NetworkMessage msg)
 	{
-		assert(false, "Not implemented");
+		auto overlapped = AsyncSocketOverlapped.alloc();
+		overlapped.socket = ctxt;
+		overlapped.msg = &msg;
+
+		auto err = WSARecvFrom(overlapped.socket.handle,
+		                       msg.buffers,
+		                       msg.bufferCount,
+		                       null,
+		                       &msg.header.msg_flags,
+		                       msg.name,
+		                       &msg.header.msg_namelen,
+		                       cast(const(WSAOVERLAPPEDX*)) overlapped,
+		                       cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onMessageReceived);
+		if (err == SOCKET_ERROR) {
+			m_error = WSAGetLastErrorSafe();
+			// TODO: Possibly deal with WSAEWOULDBLOCK, which supposedly signals
+			//       too many pending overlapped I/O requests.
+			if (m_error != WSA_IO_PENDING) {
+				m_status.code = Status.ABORT;
+				overlapped.socket.handleError();
+				AsyncSocketOverlapped.free(overlapped);
+			}
+		}
 	}
 
-	size_t sendMsg(in fd_t fd, in NetworkMessage msg)
+	void sendMsg(AsyncSocket ctxt, ref NetworkMessage msg)
 	{
-		assert(false, "Not implemented");
+		auto overlapped = AsyncSocketOverlapped.alloc();
+		overlapped.socket = ctxt;
+		overlapped.msg = &msg;
+
+		auto err = WSASendTo(overlapped.socket.handle,
+		                     msg.buffers,
+		                     msg.bufferCount,
+		                     null,
+		                     msg.header.msg_flags,
+		                     msg.name,
+		                     msg.nameLength,
+		                     cast(const(WSAOVERLAPPEDX*)) overlapped,
+		                     cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onMessageSent);
+		if (err == SOCKET_ERROR) {
+			m_error = WSAGetLastErrorSafe();
+			// TODO: Possibly deal with WSAEWOULDBLOCK, which supposedly signals
+			//       too many pending overlapped I/O requests.
+			if (m_error != WSA_IO_PENDING) {
+				m_status.code = Status.ABORT;
+				overlapped.socket.handleError();
+				AsyncSocketOverlapped.free(overlapped);
+			}
+		}
 	}
 
 	pragma(inline, true)
@@ -2187,6 +2231,60 @@ nothrow extern(System)
 			*socket.connected = false;
 
 			closesocket(socket.handle);
+			return;
+		}
+
+		eventLoop.m_status.code = Status.ABORT;
+		socket.handleError();
+	}
+
+	void onMessageReceived(error_t error, DWORD recvCount, AsyncSocketOverlapped* overlapped, DWORD flags)
+	{
+		auto socket = overlapped.socket;
+		auto msg = overlapped.msg;
+		auto eventLoop = &socket.m_evLoop.m_evLoop;
+		if (eventLoop.m_status.code != Status.OK) return;
+
+		eventLoop.m_status = StatusInfo.init;
+
+		AsyncSocketOverlapped.free(overlapped);
+		if (error == 0) {
+			msg.count = msg.count + recvCount;
+			try socket.processReceiveRequests();
+			catch (Exception e) {
+				.error(e.msg);
+				eventLoop.setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
+				return;
+			}
+			return;
+		} else if (error == WSAECONNRESET) {
+			return;
+		}
+
+		eventLoop.m_status.code = Status.ABORT;
+		socket.handleError();
+	}
+
+	void onMessageSent(error_t error, DWORD sentCount, AsyncSocketOverlapped* overlapped, DWORD flags)
+	{
+		auto socket = overlapped.socket;
+		auto msg = overlapped.msg;
+		auto eventLoop = &socket.m_evLoop.m_evLoop;
+		if (eventLoop.m_status.code != Status.OK) return;
+
+		eventLoop.m_status = StatusInfo.init;
+
+		AsyncSocketOverlapped.free(overlapped);
+		if (error == 0) {
+			msg.count = msg.count + sentCount;
+			try socket.processSendRequests();
+			catch (Exception e) {
+				.error(e.msg);
+				eventLoop.setInternalError!"del@AsyncSocket.WRITE"(Status.ABORT);
+				return;
+			}
+			return;
+		} else if (error == WSAECONNRESET) {
 			return;
 		}
 
