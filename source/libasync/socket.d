@@ -494,11 +494,11 @@ private:
 		size_t recvCount = void;
 
 		if (m_datagramOriented) {
-			recvCount = m_evLoop.recvMsg(m_socket, msg);
+			recvCount = m_evLoop.m_evLoop.recvMsg(m_socket, msg);
 			msg.count = msg.count + recvCount;
 			received = received || recvCount > 0;
 		} else do {
-			recvCount = m_evLoop.recvMsg(m_socket, msg);
+			recvCount = m_evLoop.m_evLoop.recvMsg(m_socket, msg);
 			msg.count = msg.count + recvCount;
 			received = received || recvCount > 0;
 		} while (recvCount > 0 && !msg.receivedAll);
@@ -529,7 +529,7 @@ private:
 		size_t sentCount = void;
 
 		do {
-			sentCount = m_evLoop.sendMsg(m_socket, msg);
+			sentCount = m_evLoop.m_evLoop.sendMsg(m_socket, msg);
 			msg.count = msg.count + sentCount;
 		} while (sentCount > 0 && !msg.sent);
 

@@ -108,14 +108,6 @@ package:
 		return m_evLoop.sendTo(fd, data, addr);
 	}
 
-	size_t recvMsg(in fd_t fd, ref NetworkMessage msg) {
-		return m_evLoop.recvMsg(fd, msg);
-	}
-
-	size_t sendMsg(in fd_t fd, in NetworkMessage msg) {
-		return m_evLoop.sendMsg(fd, msg);
-	}
-
 	uint recv(in fd_t fd, ubyte[] data)
 	{
 		return m_evLoop.recv(fd, data);
