@@ -90,8 +90,8 @@ version (Posix) {
 	@property Content* buffers() @trusted pure @nogc nothrow { return m_header.msg_iov; }
 	@property void buffers(Content* buffers) @safe pure @nogc nothrow { m_header.msg_iov = buffers; }
 
-	@property size_t bufferCount() @trusted pure @nogc nothrow { return m_header.msg_iovlen; }
-	@property void bufferCount(size_t bufferCount) @safe pure @nogc nothrow { m_header.msg_iovlen = bufferCount; }
+	@property typeof(m_header.msg_iovlen) bufferCount() @trusted pure @nogc nothrow { return m_header.msg_iovlen; }
+	@property void bufferCount(typeof(m_header.msg_iovlen) bufferCount) @safe pure @nogc nothrow { m_header.msg_iovlen = bufferCount; }
 
 	@property int flags() @trusted pure @nogc nothrow { return m_header.msg_flags; }
 	@property void flags(int flags) @safe pure @nogc nothrow { m_header.msg_flags = flags; }
