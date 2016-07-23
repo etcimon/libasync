@@ -169,6 +169,8 @@ public:
 }
 
 version (Windows) {
+
+	import memutils.utils;
 	import libasync.internals.win32;
 
 	struct AsyncSocketOverlapped
@@ -177,12 +179,44 @@ version (Windows) {
 		OVERLAPPED overlapped;
 		align:
 		AsyncSocket socket;
+
 		union
 		{
 			WSABUF buffer;
 			AsyncSocket.RecvRequest* receiveRequest;
 			AsyncSocket.SendRequest* sendRequest;
 		}
+
+		static typeof(this)* alloc() @trusted /+@nogc+/ nothrow
+		{
+			typeof(this)* obj;
+
+			if (freelist) {
+				obj = freelist;
+				freelist = obj.next;
+				count -= 1;
+			} else {
+				obj = assumeWontThrow(ThreadMem.alloc!(typeof(this)));
+			}
+
+			return obj;
+		}
+
+		static void free(typeof(this)* obj) @trusted /+@nogc+/ nothrow
+		{
+			if (count <= maxCount) {
+				obj.next = freelist;
+				freelist = obj;
+				count += 1;
+			} else {
+				assumeWontThrow(ThreadMem.free(obj));
+			}
+		}
+
+		static typeof(this)* freelist;
+		static ubyte count;
+		static immutable ubyte maxCount = 4;
+		typeof(this)* next;
 	}
 }
 
