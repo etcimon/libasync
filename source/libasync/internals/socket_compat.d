@@ -23,7 +23,7 @@ version (Windows)
 		getsockname, getpeername,
 		SOL_SOCKET, SO_TYPE, SO_ERROR, SO_REUSEADDR,
 		getsockopt, setsockopt,
-		bind, connect;
+		bind, connect, listen;
 } else:
 
 public import core.sys.posix.sys.un;

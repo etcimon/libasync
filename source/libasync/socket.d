@@ -184,6 +184,11 @@ version (Windows) {
 		{
 			WSABUF buffer;
 			NetworkMessage* msg;
+			struct
+			{
+				fd_t clientSocket;
+				ubyte[] acceptBuffer;
+			}
 		}
 
 		static typeof(this)* alloc() @trusted /+@nogc+/ nothrow
@@ -204,6 +209,7 @@ version (Windows) {
 		static void free(typeof(this)* obj) @trusted /+@nogc+/ nothrow
 		{
 			if (count <= maxCount) {
+				// TODO: Reset all members to zero?
 				obj.next = freelist;
 				freelist = obj;
 				count += 1;
@@ -292,9 +298,9 @@ package:
 	void handleClose()
 	{ if (m_onClose !is null) m_onClose(); }
 
-	bool handleAccept(typeof(this) peer) nothrow
+	void handleAccept(typeof(this) peer) nothrow
 	in { assert(m_onAccept !is null); }
-	body { return m_onAccept(peer); }
+	body { m_onAccept(peer); }
 
 version (Posix) {
 	void processReceiveRequests()
@@ -382,7 +388,7 @@ public:
 	alias OnReceive = void delegate(ubyte[] data);
 	/// Callback type to handle the successful acceptance of a peer on a
 	/// socket on which `listen` succeeded
-	alias OnAccept = nothrow bool delegate(typeof(this) peer);
+	alias OnAccept = nothrow void delegate(typeof(this) peer);
 
 	///
 	void receiveMessage(ref NetworkMessage message, OnReceive onRecv, bool exact)
@@ -750,6 +756,7 @@ public:
 	bool kill(bool forced = false)
 	{
 		receiveContinuously = false;
+		scope (exit) m_socket = INVALID_SOCKET;
 		return m_evLoop.kill(this, forced);
 	}
 
