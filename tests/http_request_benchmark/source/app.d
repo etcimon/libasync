@@ -37,7 +37,7 @@ void main()
 	auto serverAddress = getServerAddress();
 	g_eventLoop = getThreadEventLoop();
 
-	auto dataFile = File(dataFilenameFormat.format(Clock.currTime.toISOExtString()), "w");
+	auto dataFile = File(dataFilenameFormat.format(Clock.currTime.toISOString()), "w");
 
 	foreach (i; 0..repetitions) {
 		auto client = doSetup_AsyncSocket(serverAddress);
@@ -69,7 +69,7 @@ void loopUntilDone()
 
 auto doSetup_AsyncSocket(NetworkAddress to)
 {
-	import libasync.internals.socket_compat : AF_INET, SOCK_STREAM;
+	import libasync.internals.socket_compat : AF_INET;
 
 	auto client = new AsyncSocket(g_eventLoop, AF_INET, SocketType.STREAM);
 
