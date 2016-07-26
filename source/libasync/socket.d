@@ -264,7 +264,7 @@ version (Posix) {
 					else request.msg.count = 0;
 					request.onComplete(transferred);
 				} else break;
-			// New bytes or zero-sized datagram
+			// New bytes or zero-sized connectionless datagram
 			} else if (received || !m_connectionOriented) {
 				auto transferred = request.msg.transferred;
 				if (!m_receiveContinuously) m_recvRequests.removeFront();
@@ -290,34 +290,56 @@ version (Posix) {
 		}
 	}
 } else version (Windows) {
-	void processReceiveRequests()
+	void processReceiveRequests(bool overlappedCompleted = false)
 	{
-		while (!m_recvRequests.empty) {
-			auto request = &m_recvRequests.front();
-			if (!request.exact && request.msg.receivedAny ||
-			    request.exact && request.msg.receivedAll) {
+		auto request = &m_recvRequests.front();
+		if (overlappedCompleted) {
+			assert(request.msg.receivedAny || !m_connectionOriented);
+			if (request.exact) {
+				if (request.msg.receivedAll) {
+					auto transferred = request.msg.transferred;
+					if (!m_receiveContinuously) m_recvRequests.removeFront();
+					else request.msg.count = 0;
+					request.onComplete(transferred);
+
+					if (!m_recvRequests.empty) {
+						request = &m_recvRequests.front();
+						m_evLoop.m_evLoop.recvMsg(this, request.msg);
+					}
+				} else {
+					m_evLoop.m_evLoop.recvMsg(this, request.msg);
+				}
+			// At least one byte received or zero-sized connectionless datagram
+			} else {
 				auto transferred = request.msg.transferred;
 				if (!m_receiveContinuously) m_recvRequests.removeFront();
 				else request.msg.count = 0;
 				request.onComplete(transferred);
-			} else {
-				m_evLoop.m_evLoop.recvMsg(this, request.msg);
-				break;
+
+				if (!m_recvRequests.empty) {
+					request = &m_recvRequests.front();
+					m_evLoop.m_evLoop.recvMsg(this, request.msg);
+				}
 			}
+		} else if (m_recvRequests.length == 1) {
+			m_evLoop.m_evLoop.recvMsg(this, request.msg);
 		}
 	}
 
-	void processSendRequests()
+	void processSendRequests(bool overlappedCompleted = false)
 	{
-		while (!m_sendRequests.empty) {
-			auto request = &m_sendRequests.front();
-			if (request.msg.sent) {
-				m_sendRequests.removeFront();
-				request.onComplete();
-			} else {
+		auto request = &m_sendRequests.front();
+		if (overlappedCompleted) {
+			assert(request.msg.sent);
+			m_sendRequests.removeFront();
+			request.onComplete();
+
+			if (!m_sendRequests.empty) {
+				request = &m_sendRequests.front();
 				m_evLoop.m_evLoop.sendMsg(this, request.msg);
-				break;
 			}
+		} else if (m_sendRequests.length == 1) {
+			m_evLoop.m_evLoop.sendMsg(this, request.msg);
 		}
 	}
 } else { static assert(false, "Platform unsupported"); }
@@ -342,6 +364,7 @@ public:
 		assert(!m_receiveContinuously || m_recvRequests.empty, "Cannot receive message manually while receiving continuously");
 		assert(m_connectionOriented || !exact, "Connectionless datagram sockets must receive one datagram at a time");
 		assert(onRecv !is null, "Completion callback required");
+		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
 	}
 	body {
 		m_recvRequests ~= RecvRequest(message, onRecv, exact);

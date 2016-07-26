@@ -2469,10 +2469,10 @@ nothrow extern(System)
 
 		eventLoop.m_status = StatusInfo.init;
 
-		if (error == 0 && recvCount > 0) {
 		AsyncOverlapped.free(overlapped);
+		if (error == 0 && recvCount > 0 || !socket.connectionOriented) {
 			msg.count = msg.count + recvCount;
-			try socket.processReceiveRequests();
+			try socket.processReceiveRequests(true);
 			catch (Exception e) {
 				.error(e.msg);
 				eventLoop.setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
