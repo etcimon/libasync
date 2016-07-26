@@ -168,63 +168,6 @@ public:
 	}
 }
 
-version (Windows) {
-
-	import memutils.utils;
-	import libasync.internals.win32;
-
-	struct AsyncSocketOverlapped
-	{
-		align (1):
-		OVERLAPPED overlapped;
-		align:
-		AsyncSocket socket;
-
-		union
-		{
-			WSABUF buffer;
-			NetworkMessage* msg;
-			struct
-			{
-				fd_t clientSocket;
-				ubyte[] acceptBuffer;
-			}
-		}
-
-		static typeof(this)* alloc() @trusted /+@nogc+/ nothrow
-		{
-			typeof(this)* obj;
-
-			if (freelist) {
-				obj = freelist;
-				freelist = obj.next;
-				count -= 1;
-			} else {
-				obj = assumeWontThrow(ThreadMem.alloc!(typeof(this)));
-			}
-
-			return obj;
-		}
-
-		static void free(typeof(this)* obj) @trusted /+@nogc+/ nothrow
-		{
-			if (count <= maxCount) {
-				// TODO: Reset all members to zero?
-				obj.next = freelist;
-				freelist = obj;
-				count += 1;
-			} else {
-				assumeWontThrow(ThreadMem.free(obj));
-			}
-		}
-
-		static typeof(this)* freelist;
-		static ubyte count;
-		static immutable ubyte maxCount = 4;
-		typeof(this)* next;
-	}
-}
-
 /++
  + 
  +/
