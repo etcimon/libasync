@@ -15,7 +15,7 @@ Options:
   -l           Start in listen mode, allowing inbound connects
   -4           Operate in the IPv4 address family.
   -6           Operate in the IPv6 address family [default].
-  -U           Operate in the UNIX domain socket address family.
+  -U           Operate in the UNIX domain socket address family (Posix platforms only).
   -u           Use datagram socket (e.g. UDP)
 ";
 
@@ -53,7 +53,7 @@ Address getAddress(A)(A arguments, AddressFamily af)
 	switch (af) with (AddressFamily) {
 		case INET: return new InternetAddress(address.toString, port);
 		case INET6: return new Internet6Address(address.toString, port);
-		case UNIX: return new UnixAddress(address.toString);
+		version (Posix) case UNIX: return new UnixAddress(address.toString);
 		default: assert(false);
 	}
 }
@@ -101,7 +101,6 @@ int main(string[] args)
 
 int connectMode(Address remote, AddressFamily af, SocketType type)
 {
-	import libasync.internals.socket_compat : setsockopt, SO_REUSEPORT;
 	auto running = true;
 
 	auto eventLoop = getThreadEventLoop();
@@ -163,7 +162,7 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 	if (client.connectionOriented && !client.connect(remote.name, remote.nameLen)) {
 		stderr.writeln("ncat: ", client.error);
 		return 1;
-	} else if (af == AddressFamily.UNIX) {
+	} else version (Posix) if (af == AddressFamily.UNIX) {
 		import std.path: buildPath;
 		import std.file: tempDir;
 		import std.conv : to;
@@ -199,7 +198,8 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 
 int listenMode(Address local, AddressFamily af, SocketType type)
 {
-	import libasync.internals.socket_compat : setsockopt, SO_REUSEADDR, SO_REUSEPORT;
+	import libasync.internals.socket_compat : setsockopt, SO_REUSEADDR;
+	version (Posix) import libasync.internals.socket_compat : SO_REUSEPORT;
 	auto running = true;
 
 	auto eventLoop = getThreadEventLoop();
@@ -241,8 +241,6 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 
 		client.onClose = { running = false; };
 		client.onError = { stderr.writeln("ncat: ", client.error).collectException(); };
-
-		return false;
 	};
 
 	listener.onError = { stderr.writeln("ncat: ", listener.error).collectException(); };
@@ -257,8 +255,8 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 		// None of the errors described for setsockopt (EBADF,EFAULT,EINVAL,ENOPROTOOPT,ENOTSOCK)
 		// can happen here unless there is a bug somewhere else.
 		assert(setsockopt(listener.handle, SocketOptionLevel.SOCKET, SO_REUSEADDR, &yes, yes.sizeof) == 0);
-		assert(setsockopt(listener.handle, SocketOptionLevel.SOCKET, SO_REUSEPORT, &yes, yes.sizeof) == 0);
-	} else {
+		version (Posix) assert(setsockopt(listener.handle, SocketOptionLevel.SOCKET, SO_REUSEPORT, &yes, yes.sizeof) == 0);
+	} else version (Posix) {
 		auto path = (cast(UnixAddress) local).path;
 		if (path.exists && !path.isDir) try path.remove;
 		catch (Exception) {}
