@@ -5,6 +5,8 @@ import std.traits;
 import libasync.types;
 import libasync.events;
 import core.thread;
+import core.sync.mutex : Mutex;
+import std.exception : assumeWontThrow;
 
 /// Enqueues a signal in the event loop of the AsyncSignal owner's thread,
 /// which allows a foreign thread to trigger the callback handler safely.
@@ -16,6 +18,13 @@ private:
 	Thread m_owner;
 	EventLoop m_evLoop;
 	fd_t m_evId;
+	Mutex m_mutex;
+
+	void lock() @trusted const nothrow
+	{ assumeWontThrow((cast(Mutex) m_mutex).lock()); }
+
+	void unlock() @trusted const nothrow
+	{ assumeWontThrow((cast(Mutex) m_mutex).unlock()); }
 
 public:
 
@@ -28,6 +37,7 @@ public:
 		m_evLoop = cast(shared) evl;
 		import core.thread : Thread;
 		m_owner = cast(shared) Thread.getThis();
+		m_mutex = cast(shared) new Mutex;
 
 		version(Posix) {
 			static if (EPOLL) {
@@ -56,11 +66,13 @@ public:
 	}
 
 	/// Registers the signal handler in the event loop
-	synchronized bool run(void delegate() del)
+	bool run(void delegate() del)
 	in {
 		debug assert(Thread.getThis() is cast(Thread)m_owner);
 	}
 	body {
+		lock();
+		scope (exit) unlock();
 
 		m_sgh = cast(void delegate()) del;
 
@@ -81,17 +93,23 @@ public:
 	}
 
 	/// Triggers the handler in its local thread
-	synchronized bool trigger(EventLoop evl) {
+	bool trigger(EventLoop evl) {
+		lock();
+		scope (exit) unlock();
 		return evl.notify(m_evId, this);
 	}
 
 	/// ditto
-	synchronized bool trigger() {
+	bool trigger() {
+		lock();
+		scope (exit) unlock();
 		return (cast(EventLoop)m_evLoop).notify(m_evId, this);
 	}
 
 	/// Returns the Thread that created this object.
-	synchronized @property Thread owner() const {
+	@property Thread owner() const {
+		lock();
+		scope (exit) unlock();
 		return cast(Thread) m_owner;
 	}
 
