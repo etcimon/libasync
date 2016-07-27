@@ -2363,7 +2363,8 @@ private:
 
 				peer = new AsyncSocket(m_evLoop, peerAddress.sa_family, socket.info.type, socket.info.protocol, peerSocket);
 				peer.run();
-			} while (socket.handleAccept(peer));
+				socket.handleAccept(peer);
+			} while (socket.handle != INVALID_SOCKET);
 		}
 
 		if (error) {
