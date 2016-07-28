@@ -9,15 +9,14 @@
 
     "targetName": "sender",
     "buildTypes": {
-        "debug": {
-            "versions": ["StdLoggerDisableTrace",
-                         "StdLoggerDisableInfo",
-                         "StdLoggerDisableWarning"]
-        },
         "release": {
             "versions": ["StdLoggerDisableTrace",
                          "StdLoggerDisableInfo",
                          "StdLoggerDisableWarning"]
         },
+        "informative": {
+            "versions": ["StdLoggerDisableTrace"],
+            "buildSettings": ["releaseMode", "optimize", "inline"]
+        }
     }
 }

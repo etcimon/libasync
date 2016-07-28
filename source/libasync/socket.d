@@ -283,8 +283,6 @@ version (Posix) {
 
 	void processSendRequests()
 	{
-		stderr.writefln("processSendRequests: %s, %s", writeBlocked, m_sendRequests.length);
-
 		foreach (request; m_sendRequests) {
 			// Try to fit all bytes of the current request's buffer
 			// into the OS send buffer.
@@ -417,12 +415,8 @@ public:
 		assert(m_connectionOriented || { remoteAddress; return true; }().ifThrown(false) || message.hasAddress, "Remote address required");
 		assert(onSend !is null, "Completion callback required");
 	} body {
-		stderr.writeln("sendMessage");
-		stderr.writefln("message: %s %s %s", message.m_content, &message.m_content, message.header.msg_iov);
 		auto request = SendRequest.alloc(message, onSend);
-		stderr.writefln("message: %s %s %s", message.m_content, &message.m_content, message.header.msg_iov);
 		m_sendRequests ~= request;
-		stderr.writefln("message: %s %s %s", message.m_content, &message.m_content, message.header.msg_iov);
 		if (m_sendRequests.length == 1) m_notifier.trigger();
 	}
 
