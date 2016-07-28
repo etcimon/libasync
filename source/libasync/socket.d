@@ -9,6 +9,7 @@ import libasync.events;
 import libasync.internals.logging;
 import libasync.internals.socket_compat;
 import libasync.internals.freelist;
+import libasync.internals.queue;
 import std.stdio : stderr;
 
 import std.socket : Address;
@@ -222,6 +223,7 @@ private:
 		OnEvent onComplete;
 
 		mixin UnlimitedFreeList;
+		mixin Queue;
 	}
 
 	/**
@@ -232,7 +234,7 @@ private:
 	bool m_receiveContinuously;
 
 	Vector!RecvRequest m_recvRequests; /// Queue of calls to $(D receiveMessage).
-	Vector!(SendRequest*) m_sendRequests; /// Queue of calls to $(D sendMessage).
+	SendRequest.Queue m_sendRequests; /// Queue of calls to $(D sendMessage).
 
 	version (Posix) AsyncNotifier m_notifier;
 
@@ -283,6 +285,7 @@ version (Posix) {
 
 	void processSendRequests()
 	{
+		if (writeBlocked) return;
 		foreach (request; m_sendRequests) {
 			// Try to fit all bytes of the current request's buffer
 			// into the OS send buffer.
@@ -415,9 +418,9 @@ public:
 		assert(m_connectionOriented || { remoteAddress; return true; }().ifThrown(false) || message.hasAddress, "Remote address required");
 		assert(onSend !is null, "Completion callback required");
 	} body {
+		if (m_sendRequests.empty) m_notifier.trigger();
 		auto request = SendRequest.alloc(message, onSend);
-		m_sendRequests ~= request;
-		if (m_sendRequests.length == 1) m_notifier.trigger();
+		m_sendRequests.insertBack(request);
 	}
 
 	///
@@ -612,7 +615,6 @@ public:
 
 		assumeWontThrow(() @trusted {
 			m_recvRequests.reserve(1);
-			m_sendRequests.reserve(1);
 		} ());
 
 		version (Posix) {
