@@ -8,7 +8,8 @@ import memutils.vector;
 import libasync.events;
 import libasync.internals.logging;
 import libasync.internals.socket_compat;
-
+import libasync.internals.freelist;
+import std.stdio : stderr;
 
 import std.socket : Address;
 public import std.socket : SocketType, SocketOSException;
@@ -166,6 +167,8 @@ public:
 	{
 		assert(m_count <= m_buffer.length, "Count of transferred bytes must not exceed the message buffer's length");
 	}
+
+	mixin UnlimitedFreeList;
 }
 
 /++
@@ -215,8 +218,10 @@ private:
 	/// Holds information of a single call to $(D sendMessage).
 	struct SendRequest
 	{
-		NetworkMessage msg;
+		NetworkMessage* msg;
 		OnEvent onComplete;
+
+		mixin UnlimitedFreeList;
 	}
 
 	/**
@@ -227,7 +232,7 @@ private:
 	bool m_receiveContinuously;
 
 	Vector!RecvRequest m_recvRequests; /// Queue of calls to $(D receiveMessage).
-	Vector!SendRequest m_sendRequests; /// Queue of calls to $(D sendMessage).
+	Vector!(SendRequest*) m_sendRequests; /// Queue of calls to $(D sendMessage).
 
 	version (Posix) AsyncNotifier m_notifier;
 
@@ -291,6 +296,8 @@ version (Posix) {
 				break;
 			} else if (sent) {
 				auto dg = request.onComplete;
+				NetworkMessage.free(request.msg);
+				SendRequest.free(request);
 				m_sendRequests.removeFront();
 				dg();
 			} else {
@@ -402,7 +409,7 @@ public:
 	}
 
 	///
-	void sendMessage(ref NetworkMessage message, OnEvent onSend)
+	void sendMessage(NetworkMessage* message, OnEvent onSend)
 	in {
 		assert(!m_passive, "Passive sockets cannot receive");
 		assert(!m_connectionOriented || connected, "Established connection required");
@@ -417,14 +424,14 @@ public:
 	///
 	void send(in ubyte[] buf, OnEvent onSend)
 	{
-		auto message = NetworkMessage(cast(ubyte[]) buf);
+		auto message = NetworkMessage.alloc(cast(ubyte[]) buf);
 		sendMessage(message, onSend);
 	}
 
 	///
 	void sendTo(in ubyte[] buf, NetworkAddress to, OnEvent onSend)
 	{
-		auto message = NetworkMessage(cast(ubyte[]) buf, &to);
+		auto message = NetworkMessage.alloc(cast(ubyte[]) buf, &to);
 		sendMessage(message, onSend);
 	}
 
@@ -551,7 +558,7 @@ private:
 	 * Returns: $(D true) if all of the message's bytes
 	 *          have been transferred.
 	 */
-	version (Posix) bool attemptMessageTransmission(ref NetworkMessage msg)
+	version (Posix) bool attemptMessageTransmission(NetworkMessage* msg)
 	in { assert(!msg.sent, "Message already sent"); }
 	body {
 		size_t sentCount = void;
