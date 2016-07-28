@@ -13,26 +13,26 @@ private:
 	{
 	private:
 		T* head;
-		this(T* head) @safe pure @nogc
+		this(T* head) @safe pure @nogc nothrow
 		{ this.head = head; }
 
 	public:
-		@property bool empty() const @safe pure @nogc
+		@property bool empty() const @safe pure @nogc nothrow
 		{ return !head; }
 
-		@property T* front() @safe pure @nogc
+		@property T* front() @safe pure @nogc nothrow
 		{
 			assert(!empty, T.stringof ~ ".QueueRange.front: Range is empty");
 			return head;
 		}
 
-		void popFront() @safe pure @nogc
+		void popFront() @safe pure @nogc nothrow
 		{
 			assert(!empty, T.stringof ~ ".QueueRange.popFront: Range is empty");
 			head = head.queue.next;
 		}
 
-		@property typeof(this) save() @safe pure @nogc
+		@property typeof(this) save() @safe pure @nogc nothrow
 		{ return this; }
 	}
 
@@ -50,16 +50,16 @@ public:
 		T* head;
 
 	public:
-		@property bool empty() const @safe pure @nogc
+		@property bool empty() const @safe pure @nogc nothrow
 		{ return !head; }
 
-		@property T* front() @safe pure @nogc
+		@property T* front() @safe pure @nogc nothrow
 		{
 			assert(!empty, T.stringof ~ ".Queue.front: Queue is empty");
 			return head;
 		}
 
-		void insertFront(T* obj) @safe pure @nogc
+		void insertFront(T* obj) @safe pure @nogc nothrow
 		{
 			assert(!obj.queue.next, T.stringof ~ ".Queue.insertFront: Already in a queue");
 			assert(!obj.queue.tail, T.stringof ~ ".Queue.insertFront: Already head of a queue");
@@ -72,7 +72,7 @@ public:
 			head = obj;
 		}
 
-		void removeFront() @safe pure @nogc
+		void removeFront() @safe pure @nogc nothrow
 		{
 			assert(!empty, T.stringof ~ ".Queue.removeFront: Queue is empty");
 			auto newHead = head.queue.next;
@@ -82,7 +82,7 @@ public:
 			head = newHead;
 		}
 
-		void insertBack(T* obj) @safe pure @nogc
+		void insertBack(T* obj) @safe pure @nogc nothrow
 		{
 			assert(!obj.queue.next, T.stringof ~ ".Queue.insertBack: Already in a queue");
 			assert(!obj.queue.tail, T.stringof ~ ".Queue.insertBack: Already head of a queue");
@@ -95,7 +95,7 @@ public:
 			}
 		}
 
-		auto opSlice() @safe pure @nogc
+		auto opSlice() @safe pure @nogc nothrow
 		{ return QueueRange(head); }
 	}
 }
