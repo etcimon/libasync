@@ -417,7 +417,12 @@ public:
 		assert(m_connectionOriented || { remoteAddress; return true; }().ifThrown(false) || message.hasAddress, "Remote address required");
 		assert(onSend !is null, "Completion callback required");
 	} body {
-		m_sendRequests ~= SendRequest(message, onSend);
+		stderr.writeln("sendMessage");
+		stderr.writefln("message: %s %s %s", message.m_content, &message.m_content, message.header.msg_iov);
+		auto request = SendRequest.alloc(message, onSend);
+		stderr.writefln("message: %s %s %s", message.m_content, &message.m_content, message.header.msg_iov);
+		m_sendRequests ~= request;
+		stderr.writefln("message: %s %s %s", message.m_content, &message.m_content, message.header.msg_iov);
 		if (m_sendRequests.length == 1) m_notifier.trigger();
 	}
 
