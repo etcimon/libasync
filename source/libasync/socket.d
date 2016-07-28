@@ -229,6 +229,8 @@ private:
 	Vector!RecvRequest m_recvRequests; /// Queue of calls to $(D receiveMessage).
 	Vector!SendRequest m_sendRequests; /// Queue of calls to $(D sendMessage).
 
+	version (Posix) AsyncNotifier m_notifier;
+
 package:
 	EventLoop m_evLoop; /// Event loop of the thread this socket was created by.
 
@@ -280,8 +282,9 @@ version (Posix) {
 			auto request = &m_sendRequests.front();
 
 			if (attemptMessageTransmission(request.msg)) {
+				auto dg = request.onComplete;
 				m_sendRequests.removeFront();
-				request.onComplete();
+				dg();
 			} else if (!writeBlocked) {
 				handleError();
 				kill();
@@ -402,7 +405,7 @@ public:
 		assert(onSend !is null, "Completion callback required");
 	} body {
 		m_sendRequests ~= SendRequest(message, onSend);
-		processSendRequests();
+		if (m_sendRequests.length == 1) m_notifier.trigger();
 	}
 
 	///
@@ -584,7 +587,7 @@ package:
 
 public:
 	///
-	this(EventLoop evLoop, int af, SocketType type, int protocol, fd_t socket = INVALID_SOCKET) @safe
+	this(EventLoop evLoop, int af, SocketType type, int protocol, fd_t socket = INVALID_SOCKET) @trusted
 	in {
 		assert(evLoop !is EventLoop.init);
 		if (socket != INVALID_SOCKET) assert(socket.isSocket);
@@ -603,6 +606,7 @@ public:
 		version (Posix) {
 			readBlocked = true;
 			writeBlocked = true;
+			m_notifier = new AsyncNotifier(evLoop);
 		}
 	}
 
@@ -658,7 +662,14 @@ public:
 	in { assert(m_socket == INVALID_SOCKET); }
 	body {
 		m_socket = m_evLoop.run(this);
-		return m_socket != INVALID_SOCKET;
+		version (Windows) {
+			return m_socket != INVALID_SOCKET;
+		} else version (Posix) {
+			if (m_socket == INVALID_SOCKET) return false;
+			return m_notifier.run({
+				processSendRequests();
+			});
+		}
 	}
 
 	/**
