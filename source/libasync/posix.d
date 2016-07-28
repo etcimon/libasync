@@ -961,23 +961,22 @@ package:
 
 	size_t sendMsg(in fd_t fd, NetworkMessage* msg) {
 		import libasync.internals.socket_compat : sendmsg;
-		import std.stdio : stderr;
 
-		assumeWontThrow(stderr.writefln("Send message on FD %d %s with size %d", fd, msg.header.msg_iov, msg.header.msg_iov.iov_len));
+		.tracef("Send message on FD %d with size %d", fd, msg.header.msg_iov.iov_len);
 		m_status = StatusInfo.init;
 
 		while (true) {
 			auto err = sendmsg(fd, msg.header, 0);
 
-			assumeWontThrow(stderr.writefln("sendmsg system call on FD %d returned %d", fd, err));
+			.tracef("sendmsg system call on FD %d returned %d", fd, err);
 			if (err == SOCKET_ERROR) {
 				m_error = lastError();
 
 				if (m_error == EPosix.EINTR) {
-					assumeWontThrow(stderr.writefln("sendmsg system call on FD %d was interrupted before any transfer occured", fd));
+					.tracef("sendmsg system call on FD %d was interrupted before any transfer occured", fd);
 					continue;
 				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-					assumeWontThrow(stderr.writefln("sendmsg system call on FD %d would have blocked", fd));
+					.tracef("sendmsg system call on FD %d would have blocked", fd);
 					m_status.code = Status.ASYNC;
 					return 0;
 				} else if (m_error == EBADF ||
@@ -991,14 +990,13 @@ package:
 				           m_error == ENOTSOCK ||
 				           m_error == EOPNOTSUPP/+ ||
 				           m_error == EPIPE+/) {
-					assumeWontThrow(stderr.writefln("sendmsg system call on FD %d encountered fatal socket error: %s", fd, this.error));
-					assert(false);
+					assert(false, "sendmsg system call on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ this.error);
 				} else if (catchError!"Send message"(err)) {
-					assumeWontThrow(stderr.writefln("sendmsg system call on FD %d encountered socket error: %s", fd, this.error));
+					.errorf("sendmsg system call on FD %d encountered socket error: %s", fd, this.error);
 					return 0;
 				}
 			} else {
-				assumeWontThrow(stderr.writefln("Sent %d bytes on FD %d", err, fd));
+				.tracef("Sent %d bytes on FD %d", err, fd);
 				m_status.code = Status.OK;
 				return err;
 			}
