@@ -959,24 +959,25 @@ package:
 		}
 	}
 
-	size_t sendMsg(in fd_t fd, in NetworkMessage msg) {
+	size_t sendMsg(in fd_t fd, NetworkMessage* msg) {
 		import libasync.internals.socket_compat : sendmsg;
+		import std.stdio : stderr;
 
-		.tracef("Send message on FD %d with size %d", fd, msg.header.msg_iov.iov_len);
+		assumeWontThrow(stderr.writefln("Send message on FD %d %s with size %d", fd, msg.header.msg_iov, msg.header.msg_iov.iov_len));
 		m_status = StatusInfo.init;
 
 		while (true) {
 			auto err = sendmsg(fd, msg.header, 0);
 
-			.tracef("sendmsg system call on FD %d returned %d", fd, err);
+			assumeWontThrow(stderr.writefln("sendmsg system call on FD %d returned %d", fd, err));
 			if (err == SOCKET_ERROR) {
 				m_error = lastError();
 
 				if (m_error == EPosix.EINTR) {
-					.tracef("sendmsg system call on FD %d was interrupted before any transfer occured", fd);
+					assumeWontThrow(stderr.writefln("sendmsg system call on FD %d was interrupted before any transfer occured", fd));
 					continue;
 				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-					.tracef("sendmsg system call on FD %d would have blocked", fd);
+					assumeWontThrow(stderr.writefln("sendmsg system call on FD %d would have blocked", fd));
 					m_status.code = Status.ASYNC;
 					return 0;
 				} else if (m_error == EBADF ||
@@ -990,13 +991,14 @@ package:
 				           m_error == ENOTSOCK ||
 				           m_error == EOPNOTSUPP/+ ||
 				           m_error == EPIPE+/) {
-					assert(false, "sendmsg system call on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ this.error);
+					assumeWontThrow(stderr.writefln("sendmsg system call on FD %d encountered fatal socket error: %s", fd, this.error));
+					assert(false);
 				} else if (catchError!"Send message"(err)) {
-					.errorf("sendmsg system call on FD %d encountered socket error: %s", fd, this.error);
+					assumeWontThrow(stderr.writefln("sendmsg system call on FD %d encountered socket error: %s", fd, this.error));
 					return 0;
 				}
 			} else {
-				.tracef("Sent %d bytes on FD %d", err, fd);
+				assumeWontThrow(stderr.writefln("Sent %d bytes on FD %d", err, fd));
 				m_status.code = Status.OK;
 				return err;
 			}
