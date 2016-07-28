@@ -278,17 +278,23 @@ version (Posix) {
 
 	void processSendRequests()
 	{
-		while (!writeBlocked && !m_sendRequests.empty) {
-			auto request = &m_sendRequests.front();
+		stderr.writefln("processSendRequests: %s, %s", writeBlocked, m_sendRequests.length);
 
-			if (attemptMessageTransmission(request.msg)) {
+		foreach (request; m_sendRequests) {
+			// Try to fit all bytes of the current request's buffer
+			// into the OS send buffer.
+			auto sent = attemptMessageTransmission(request.msg);
+
+			if (m_evLoop.status.code != Status.OK && !writeBlocked) {
+				handleError();
+				kill();
+				break;
+			} else if (sent) {
 				auto dg = request.onComplete;
 				m_sendRequests.removeFront();
 				dg();
-			} else if (!writeBlocked) {
-				handleError();
-				kill();
-				return;
+			} else {
+				break;
 			}
 		}
 	}
