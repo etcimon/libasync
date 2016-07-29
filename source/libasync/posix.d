@@ -946,7 +946,8 @@ package:
 				           m_error == EINVAL ||
 				           m_error == ENOTCONN ||
 				           m_error == ENOTSOCK) {
-					assert(false, "recvmsg system call message on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ this.error);
+					.errorf("recvmsg system call on FD %d encountered fatal socket error: %s", fd, this.error);
+					assert(false);
 				} else if (catchError!"Receive message"(err)) {
 					.errorf("recvmsg system call on FD %d encountered socket error: %s", fd, this.error);
 					return 0;
@@ -990,7 +991,8 @@ package:
 				           m_error == ENOTSOCK ||
 				           m_error == EOPNOTSUPP/+ ||
 				           m_error == EPIPE+/) {
-					assert(false, "sendmsg system call on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ this.error);
+					.errorf("sendmsg system call on FD %d encountered fatal socket error: %s", fd, this.error);
+					assert(false);
 				} else if (catchError!"Send message"(err)) {
 					.errorf("sendmsg system call on FD %d encountered socket error: %s", fd, this.error);
 					return 0;
