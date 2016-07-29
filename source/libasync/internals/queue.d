@@ -9,6 +9,15 @@ mixin template Queue()
 private:
 	alias T = typeof(this);
 
+	/**
+	 * Iterates over the elements in the queue at the time of the range's creation.
+	 * The range is safe from being invalidated by the following queue mutating operations:
+	 *  - any number of insertFront
+	 *  - any number of insertBack
+	 *  - a single removeFront beyond the current element of the range
+	 * Removing more than one element from the queue the range is iterating over beyond
+	 * the current element of the range results in undefined behaviour.
+	 */
 	struct QueueRange
 	{
 	private:
