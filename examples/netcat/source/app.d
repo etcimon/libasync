@@ -81,7 +81,7 @@ int main(string[] args)
 			return 1;
 		}
 	}
-	
+
 	Address address = void;
 	try address = getAddress(arguments, af);
 	catch (Exception e) {
@@ -277,7 +277,7 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 	}
 	else if (!listener.listen(128)) {
 		stderr.writeln("ncat: ", listener.error);
-		return 1;	
+		return 1;
 	}
 
 	while (running) eventLoop.loop(-1.seconds);
