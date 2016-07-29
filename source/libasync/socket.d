@@ -2,6 +2,7 @@ module libasync.socket;
 
 import std.array;
 import std.exception;
+import std.range;
 
 import memutils.vector;
 
@@ -169,7 +170,7 @@ public:
 		assert(m_count <= m_buffer.length, "Count of transferred bytes must not exceed the message buffer's length");
 	}
 
-	mixin UnlimitedFreeList;
+	mixin FreeList!(1_000 / typeof(this).sizeof);
 }
 
 /++
@@ -186,7 +187,10 @@ final class AsyncSocket
 		// There are no connectionless, not datagram-oriented sockets
 		assert(m_connectionOriented || m_datagramOriented);
 
-		if (m_receiveContinuously) assert(m_recvRequests.length <= 1, "At most one request may be pending while receiving continuously");
+		if (m_receiveContinuously) {
+			auto requests = (cast(RecvRequest.Queue) m_recvRequests)[];
+			assert(requests.empty || requests.dropOne.empty, "At most one receive request may be pending while receiving continuously");
+		}
 	}
 
 private:
@@ -211,9 +215,12 @@ private:
 	/// Holds information of a single call to $(D receiveMessage).
 	struct RecvRequest
 	{
-		NetworkMessage msg;
+		NetworkMessage* msg;
 		OnReceive onComplete;
 		bool exact;
+
+		mixin FreeList!(1_000 / typeof(this).sizeof);
+		mixin Queue;
 	}
 
 	/// Holds information of a single call to $(D sendMessage).
@@ -222,7 +229,7 @@ private:
 		NetworkMessage* msg;
 		OnEvent onComplete;
 
-		mixin UnlimitedFreeList;
+		mixin FreeList!(1_000 / typeof(this).sizeof);
 		mixin Queue;
 	}
 
@@ -233,7 +240,7 @@ private:
 	 */
 	bool m_receiveContinuously;
 
-	Vector!RecvRequest m_recvRequests; /// Queue of calls to $(D receiveMessage).
+	RecvRequest.Queue m_recvRequests; /// Queue of calls to $(D receiveMessage).
 	SendRequest.Queue m_sendRequests; /// Queue of calls to $(D sendMessage).
 
 	version (Posix) AsyncNotifier m_notifier;
@@ -257,34 +264,58 @@ package:
 version (Posix) {
 	void processReceiveRequests()
 	{
-		while (!readBlocked && !m_recvRequests.empty) {
-			auto request = &m_recvRequests.front();
+		void complete(RecvRequest* request)
+		{
+			auto transferred = request.msg.transferred;
+			if (m_receiveContinuously) {
+				request.msg.count = 0;
+				request.onComplete(transferred);
+			} else {
+				auto dg = request.onComplete;
+				m_recvRequests.removeFront();
+				NetworkMessage.free(request.msg);
+				RecvRequest.free(request);
+				dg(transferred);
+			}
+		}
+
+		if (readBlocked) return;
+		foreach (request; m_recvRequests) {
+			// Try to fit all bytes available in the OS receive buffer
+			// into the current request's buffer.
 			auto received = attemptMessageReception(request.msg);
-			if (!received && !readBlocked) {
+
+			if (m_evLoop.status.code != Status.OK && !readBlocked) {
 				handleError();
 				kill();
 				return;
-			}
-
-			if (request.exact) {
+			} else if (request.exact) {
 				if (request.msg.receivedAll) {
-					auto transferred = request.msg.transferred;
-					if (!m_receiveContinuously) m_recvRequests.removeFront();
-					else request.msg.count = 0;
-					request.onComplete(transferred);
-				} else break;
+					complete(request);
+				} else {
+					break;
+				}
 			// New bytes or zero-sized connectionless datagram
-			} else if (received || !m_connectionOriented) {
-				auto transferred = request.msg.transferred;
-				if (!m_receiveContinuously) m_recvRequests.removeFront();
-				else request.msg.count = 0;
-				request.onComplete(transferred);
-			} else break;
+			} else if (received || !m_connectionOriented && !readBlocked) {
+				complete(request);
+			} else {
+				break;
+			}
 		}
+		if (!m_recvRequests.empty) m_notifier.trigger();
 	}
 
 	void processSendRequests()
 	{
+		void complete(SendRequest* request)
+		{
+			auto dg = request.onComplete;
+			NetworkMessage.free(request.msg);
+			SendRequest.free(request);
+			m_sendRequests.removeFront();
+			dg();
+		}
+
 		if (writeBlocked) return;
 		foreach (request; m_sendRequests) {
 			// Try to fit all bytes of the current request's buffer
@@ -294,17 +325,14 @@ version (Posix) {
 			if (m_evLoop.status.code != Status.OK && !writeBlocked) {
 				handleError();
 				kill();
-				break;
+				return;
 			} else if (sent) {
-				auto dg = request.onComplete;
-				NetworkMessage.free(request.msg);
-				SendRequest.free(request);
-				m_sendRequests.removeFront();
-				dg();
+				complete(request);
 			} else {
 				break;
 			}
 		}
+		if (!m_sendRequests.empty) m_notifier.trigger();
 	}
 } else version (Windows) {
 	void processReceiveRequests(bool overlappedCompleted = false)
@@ -373,7 +401,7 @@ public:
 	alias OnAccept = nothrow void delegate(typeof(this) peer);
 
 	///
-	void receiveMessage(ref NetworkMessage message, OnReceive onRecv, bool exact)
+	void receiveMessage(NetworkMessage* message, OnReceive onRecv, bool exact)
 	in {
 		assert(!m_passive, "Passive sockets cannot receive");
 		assert(!m_connectionOriented || connected, "Established connection required");
@@ -382,30 +410,30 @@ public:
 		assert(m_connectionOriented || !exact, "Connectionless datagram sockets must receive one datagram at a time");
 		assert(onRecv !is null, "Completion callback required");
 		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
-	}
-	body {
-		m_recvRequests ~= RecvRequest(message, onRecv, exact);
-		processReceiveRequests();
+	} body {
+		if (m_recvRequests.empty) m_notifier.trigger();
+		auto request = RecvRequest.alloc(message, onRecv, exact);
+		m_recvRequests.insertBack(request);
 	}
 
 	///
 	void receive(ref ubyte[] buf, OnReceive onRecv)
 	{
-		auto message = NetworkMessage(buf);
+		auto message = NetworkMessage.alloc(buf);
 		receiveMessage(message, onRecv, false);
 	}
 
 	///
 	void receiveExactly(ref ubyte[] buf, OnReceive onRecv)
 	{
-		auto message = NetworkMessage(buf);
+		auto message = NetworkMessage.alloc(buf);
 		receiveMessage(message, onRecv, true);
 	}
 
 	///
 	void receiveFrom(ref ubyte[] buf, ref NetworkAddress from, OnReceive onRecv)
 	{
-		auto message = NetworkMessage(buf, &from);
+		auto message = NetworkMessage.alloc(buf, &from);
 		receiveMessage(message, onRecv, false);
 	}
 
@@ -523,7 +551,7 @@ private:
 	 * not enough bytes available in the OS receive buffer.
 	 * Returns: $(D true) if any bytes were transferred.
 	 */
-	version (Posix) bool attemptMessageReception(ref NetworkMessage msg)
+	version (Posix) bool attemptMessageReception(NetworkMessage* msg)
 	in {
 		assert(m_connectionOriented && !msg.receivedAll || !msg.receivedAny, "Message already received");
 	} body {
@@ -613,10 +641,6 @@ public:
 		m_connectionOriented = type.isConnectionOriented;
 		m_datagramOriented = type.isDatagramOriented;
 
-		assumeWontThrow(() @trusted {
-			m_recvRequests.reserve(1);
-		} ());
-
 		version (Posix) {
 			readBlocked = true;
 			writeBlocked = true;
@@ -681,6 +705,8 @@ public:
 		} else version (Posix) {
 			if (m_socket == INVALID_SOCKET) return false;
 			return m_notifier.run({
+				.trace("Notifier triggered");
+				processReceiveRequests();
 				processSendRequests();
 			});
 		}

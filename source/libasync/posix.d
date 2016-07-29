@@ -923,7 +923,7 @@ package:
 		return cast(uint) ret;
 	}
 
-	size_t recvMsg(in fd_t fd, ref NetworkMessage msg)
+	size_t recvMsg(in fd_t fd, NetworkMessage* msg)
 	{
 		import libasync.internals.socket_compat : recvmsg, msghdr, iovec, sockaddr_storage;
 
