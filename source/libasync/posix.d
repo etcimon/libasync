@@ -923,7 +923,7 @@ package:
 		return cast(uint) ret;
 	}
 
-	size_t recvMsg(in fd_t fd, ref NetworkMessage msg)
+	size_t recvMsg(in fd_t fd, NetworkMessage* msg)
 	{
 		import libasync.internals.socket_compat : recvmsg, msghdr, iovec, sockaddr_storage;
 
@@ -946,7 +946,8 @@ package:
 				           m_error == EINVAL ||
 				           m_error == ENOTCONN ||
 				           m_error == ENOTSOCK) {
-					assert(false, "recvmsg system call message on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ this.error);
+					.errorf("recvmsg system call on FD %d encountered fatal socket error: %s", fd, this.error);
+					assert(false);
 				} else if (catchError!"Receive message"(err)) {
 					.errorf("recvmsg system call on FD %d encountered socket error: %s", fd, this.error);
 					return 0;
@@ -959,7 +960,7 @@ package:
 		}
 	}
 
-	size_t sendMsg(in fd_t fd, in NetworkMessage msg) {
+	size_t sendMsg(in fd_t fd, NetworkMessage* msg) {
 		import libasync.internals.socket_compat : sendmsg;
 
 		.tracef("Send message on FD %d with size %d", fd, msg.header.msg_iov.iov_len);
@@ -990,7 +991,8 @@ package:
 				           m_error == ENOTSOCK ||
 				           m_error == EOPNOTSUPP/+ ||
 				           m_error == EPIPE+/) {
-					assert(false, "sendmsg system call on FD " ~ fd.to!string ~ " encountered fatal socket error: " ~ this.error);
+					.errorf("sendmsg system call on FD %d encountered fatal socket error: %s", fd, this.error);
+					assert(false);
 				} else if (catchError!"Send message"(err)) {
 					.errorf("sendmsg system call on FD %d encountered socket error: %s", fd, this.error);
 					return 0;

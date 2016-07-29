@@ -1,0 +1,22 @@
+{
+    "name": "sender",
+    "description": "Performs continuous sends as IPv6/TCP client",
+    "copyright": "Copyright © 2016, Moritz Maxeiner",
+    "authors": ["Moritz Maxeiner"],
+    "dependencies": {
+        "libasync": { "path": "../../" },
+    },
+
+    "targetName": "sender",
+    "buildTypes": {
+        "release": {
+            "versions": ["StdLoggerDisableTrace",
+                         "StdLoggerDisableInfo",
+                         "StdLoggerDisableWarning"]
+        },
+        "informative": {
+            "versions": ["StdLoggerDisableTrace"],
+            "buildSettings": ["releaseMode", "optimize", "inline"]
+        }
+    }
+}
