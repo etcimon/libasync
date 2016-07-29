@@ -30,12 +30,13 @@ int main(string[] args)
 
 	auto client = new AsyncSocket(eventLoop, AddressFamily.INET6, SocketType.STREAM);
 
-	void delegate() send = void;
-	send = {
-		client.send(cast(ubyte[]) "Hello, world!\n", send);
-	};
+	void delegate() send_1, send_2, send_3 = void;
 
-	client.onConnect = { send(); };
+	send_1 = { client.send(cast(ubyte[]) "Hello, world 1!\n", send_2); };
+	send_2 = { client.send(cast(ubyte[]) "Hello, world 2!\n", send_3); };
+	send_3 = { client.send(cast(ubyte[]) "Hello, world 3!\n", send_1); };
+
+	client.onConnect = { send_1(); send_2(); send_3(); };
 
 	client.onClose = { running = false; };
 
