@@ -95,11 +95,11 @@ int main(string[] args)
 		case Listen:
 			return listenMode(address, af, type);
 		case Connect:
-			return connectMode(address, af, type);
+			return connectMode(NetworkAddress(address), af, type);
 	}
 }
 
-int connectMode(Address remote, AddressFamily af, SocketType type)
+int connectMode(NetworkAddress remote, AddressFamily af, SocketType type)
 {
 	auto running = true;
 
@@ -118,7 +118,7 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 	if (client.connectionOriented) {
 		send = (data) => client.send(data, { if (client.alive) doOffThread(readAndSend); });
 	} else {
-		send = (data) => client.sendTo(cast(ubyte[]) input, NetworkAddress(remote), { if (client.alive) doOffThread(readAndSend); });
+		send = (data) => client.sendTo(cast(ubyte[]) input, remote, { if (client.alive) doOffThread(readAndSend); });
 	}
 
 
@@ -159,7 +159,7 @@ int connectMode(Address remote, AddressFamily af, SocketType type)
 		return 1;
 	}
 
-	if (client.connectionOriented && !client.connect(remote.name, remote.nameLen)) {
+	if (client.connectionOriented && !client.connect(remote)) {
 		stderr.writeln("ncat: ", client.error);
 		return 1;
 	} else version (Posix) if (af == AddressFamily.UNIX) {
