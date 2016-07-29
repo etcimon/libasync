@@ -1237,11 +1237,11 @@ package:
 		return dispatchConnectForCOASocket(peer);
 	}
 
-	void recvMsg(AsyncSocket socket, ref NetworkMessage msg)
+	void recvMsg(AsyncSocket socket, NetworkMessage* msg)
 	{
 		auto overlapped = AsyncOverlapped.alloc();
 		overlapped.socketReq.transceive.socket = socket;
-		overlapped.socketReq.transceive.msg = &msg;
+		overlapped.socketReq.transceive.msg = msg;
 
 		auto err = WSARecvFrom(socket.handle,
 		                       msg.buffers,
@@ -1264,11 +1264,11 @@ package:
 		}
 	}
 
-	void sendMsg(AsyncSocket socket, ref NetworkMessage msg)
+	void sendMsg(AsyncSocket socket, NetworkMessage* msg)
 	{
 		auto overlapped = AsyncOverlapped.alloc();
 		overlapped.socketReq.transceive.socket = socket;
-		overlapped.socketReq.transceive.msg = &msg;
+		overlapped.socketReq.transceive.msg = msg;
 
 		auto err = WSASendTo(socket.handle,
 		                     msg.buffers,
@@ -2521,7 +2521,7 @@ nothrow extern(System)
 		AsyncOverlapped.free(overlapped);
 		if (error == 0) {
 			msg.count = msg.count + sentCount;
-			try socket.processSendRequests();
+			try socket.processSendRequests(true);
 			catch (Exception e) {
 				.error(e.msg);
 				eventLoop.setInternalError!"del@AsyncSocket.WRITE"(Status.ABORT);

@@ -337,12 +337,35 @@ version (Posix) {
 } else version (Windows) {
 	void processReceiveRequests(bool overlappedCompleted = false)
 	{
-		auto request = &m_recvRequests.front();
+		void complete(RecvRequest* request)
+		{
+			auto transferred = request.msg.transferred;
+			if (m_receiveContinuously) {
+				request.msg.count = 0;
+				request.onComplete(transferred);
+			} else {
+				auto dg = request.onComplete;
+				m_recvRequests.removeFront();
+				NetworkMessage.free(request.msg);
+				RecvRequest.free(request);
+				dg(transferred);
+			}
+		}
+
+		void next(ref RecvRequest* request)
+		{
+			if (!m_recvRequests.empty) {
+				request = m_recvRequests.front();
+				m_evLoop.m_evLoop.recvMsg(this, request.msg);
+			}
+		}
+
+		auto request = m_recvRequests.front();
 		if (overlappedCompleted) {
 			assert(request.msg.receivedAny || !m_connectionOriented);
 			if (request.exact) {
 				if (request.msg.receivedAll) {
-					auto transferred = request.msg.transferred;
+					/+auto transferred = request.msg.transferred;
 					if (!m_receiveContinuously) m_recvRequests.removeFront();
 					else request.msg.count = 0;
 					request.onComplete(transferred);
@@ -350,13 +373,15 @@ version (Posix) {
 					if (!m_recvRequests.empty) {
 						request = &m_recvRequests.front();
 						m_evLoop.m_evLoop.recvMsg(this, request.msg);
-					}
+					}+/
+					complete(request);
+					next(request);
 				} else {
 					m_evLoop.m_evLoop.recvMsg(this, request.msg);
 				}
 			// At least one byte received or zero-sized connectionless datagram
 			} else {
-				auto transferred = request.msg.transferred;
+				/+auto transferred = request.msg.transferred;
 				if (!m_receiveContinuously) m_recvRequests.removeFront();
 				else request.msg.count = 0;
 				request.onComplete(transferred);
@@ -364,26 +389,49 @@ version (Posix) {
 				if (!m_recvRequests.empty) {
 					request = &m_recvRequests.front();
 					m_evLoop.m_evLoop.recvMsg(this, request.msg);
-				}
+				}+/
+				complete(request);
+				next(request);
 			}
-		} else if (m_recvRequests.length == 1) {
+		//} else if (m_recvRequests.length == 1) {
+		} else if (!m_recvRequests.empty && m_recvRequests[].dropOne.empty) {
 			m_evLoop.m_evLoop.recvMsg(this, request.msg);
 		}
 	}
 
 	void processSendRequests(bool overlappedCompleted = false)
 	{
-		auto request = &m_sendRequests.front();
-		if (overlappedCompleted) {
-			assert(request.msg.sent);
+		void complete(SendRequest* request)
+		{
+			auto dg = request.onComplete;
+			NetworkMessage.free(request.msg);
+			SendRequest.free(request);
 			m_sendRequests.removeFront();
-			request.onComplete();
+			dg();
+		}
 
+		void next(ref SendRequest* request)
+		{
 			if (!m_sendRequests.empty) {
-				request = &m_sendRequests.front();
+				request = m_sendRequests.front();
 				m_evLoop.m_evLoop.sendMsg(this, request.msg);
 			}
-		} else if (m_sendRequests.length == 1) {
+		}
+
+		auto request = m_sendRequests.front();
+		if (overlappedCompleted) {
+			/+assert(request.msg.sent);
+			m_sendRequests.removeFront();
+			request.onComplete();+/
+			complete(request);
+
+			/+if (!m_sendRequests.empty) {
+				request = &m_sendRequests.front();
+				m_evLoop.m_evLoop.sendMsg(this, request.msg);
+			}+/
+			next(request);
+		//} else if (m_sendRequests.length == 1) {
+		} else if (!m_sendRequests.empty && m_sendRequests[].dropOne.empty) {
 			m_evLoop.m_evLoop.sendMsg(this, request.msg);
 		}
 	}
@@ -411,9 +459,10 @@ public:
 		assert(onRecv !is null, "Completion callback required");
 		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
 	} body {
-		if (m_recvRequests.empty) m_notifier.trigger();
+		version (Posix) if (m_recvRequests.empty) m_notifier.trigger();
 		auto request = RecvRequest.alloc(message, onRecv, exact);
 		m_recvRequests.insertBack(request);
+		version (Windows) processReceiveRequests();
 	}
 
 	///
@@ -446,9 +495,10 @@ public:
 		assert(m_connectionOriented || { remoteAddress; return true; }().ifThrown(false) || message.hasAddress, "Remote address required");
 		assert(onSend !is null, "Completion callback required");
 	} body {
-		if (m_sendRequests.empty) m_notifier.trigger();
+		version (Posix) if (m_sendRequests.empty) m_notifier.trigger();
 		auto request = SendRequest.alloc(message, onSend);
 		m_sendRequests.insertBack(request);
+		version (Windows) processSendRequests();
 	}
 
 	///
