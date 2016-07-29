@@ -12,9 +12,17 @@ private:
 	struct QueueRange
 	{
 	private:
-		T* head;
+		T* head, tail, next;
+
 		this(T* head) @safe pure @nogc nothrow
-		{ this.head = head; }
+		{
+			if (head) {
+				assert(head.queue.tail, T.stringof ~ ".QueueRange.this: Not head of a queue");
+				this.head = head;
+				tail = this.head.queue.tail;
+				next = this.head.queue.next;
+			}
+		}
 
 	public:
 		@property bool empty() const @safe pure @nogc nothrow
@@ -29,7 +37,9 @@ private:
 		void popFront() @safe pure @nogc nothrow
 		{
 			assert(!empty, T.stringof ~ ".QueueRange.popFront: Range is empty");
-			head = head.queue.next;
+			head = next;
+			if (!empty && head != tail) next = head.queue.next;
+			else next = null;
 		}
 
 		@property typeof(this) save() @safe pure @nogc nothrow
