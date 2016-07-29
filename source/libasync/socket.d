@@ -111,13 +111,13 @@ package:
 	{ return cast(Header*) &m_header; }
 
 public:
-	this(ubyte[] content, NetworkAddress* addr = null) @safe pure @nogc nothrow
+	this(ubyte[] content, inout NetworkAddress* addr = null) @safe pure @nogc nothrow
 	{
 		if (addr is null) {
 			name = null;
 			nameLength = 0;
 		} else {
-			name = addr.sockAddr;
+			delegate () @trusted { name = cast(sockaddr*) addr.sockAddr; } ();
 			nameLength = addr.sockAddrLen;
 		}
 
@@ -459,7 +459,7 @@ public:
 	}
 
 	///
-	void sendTo(in ubyte[] buf, NetworkAddress to, OnEvent onSend)
+	void sendTo(in ubyte[] buf, const ref NetworkAddress to, OnEvent onSend)
 	{
 		auto message = NetworkMessage.alloc(cast(ubyte[]) buf, &to);
 		sendMessage(message, onSend);
