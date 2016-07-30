@@ -1,22 +1,19 @@
 {
-    "name": "sender",
-    "description": "Performs continuous sends as IPv6/TCP client",
+    "name": "transceiver",
+    "description": "Receive/Send data continuously",
     "copyright": "Copyright © 2016, Moritz Maxeiner",
     "authors": ["Moritz Maxeiner"],
     "dependencies": {
         "libasync": { "path": "../../" },
+        "docopt": "~>0.6.1-b.5"
     },
 
-    "targetName": "sender",
+    "targetName": "transceiver",
     "buildTypes": {
         "release": {
             "versions": ["StdLoggerDisableTrace",
                          "StdLoggerDisableInfo",
                          "StdLoggerDisableWarning"]
-        },
-        "informative": {
-            "versions": ["StdLoggerDisableTrace"],
-            "buildSettings": ["releaseMode", "optimize", "inline"]
         }
     }
 }
