@@ -1283,15 +1283,30 @@ package:
 		auto overlapped = AsyncOverlapped.alloc();
 		overlapped.socket.receive = request;
 
-		auto err = WSARecvFrom(request.socket.handle,
-		                       request.msg.buffers,
-		                       cast(DWORD) request.msg.bufferCount,
-		                       null,
-		                       &request.msg.header.msg_flags,
-		                       request.msg.name,
-		                       &request.msg.header.msg_namelen,
-		                       cast(const(WSAOVERLAPPEDX*)) overlapped,
-		                       cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedReceiveComplete);
+		int err = void;
+		if (request.msg.name) {
+			.tracef("WSARecvFrom on FD %s with buffer size %s",
+			        request.socket.handle, request.msg.header.msg_iov.len);
+			err = WSARecvFrom(request.socket.handle,
+			                  request.msg.buffers,
+			                  cast(DWORD) request.msg.bufferCount,
+			                  null,
+			                  &request.msg.header.msg_flags,
+			                  request.msg.name,
+			                  &request.msg.header.msg_namelen,
+			                  cast(const(WSAOVERLAPPEDX*)) overlapped,
+			                  cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedReceiveComplete);
+		} else {
+			.tracef("WSARecv on FD %s with buffer size %s",
+			        request.socket.handle, request.msg.header.msg_iov.len);
+			err = WSARecv(request.socket.handle,
+			              request.msg.buffers,
+			              cast(DWORD) request.msg.bufferCount,
+			              null,
+			              &request.msg.header.msg_flags,
+			              cast(const(WSAOVERLAPPEDX*)) overlapped,
+			              cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedReceiveComplete);
+		}
 		if (err == SOCKET_ERROR) {
 			m_error = WSAGetLastErrorSafe();
 			if (m_error == WSA_IO_PENDING) return;
@@ -1318,7 +1333,7 @@ package:
 				return;
 			}
 
-			.errorf("WSARecv on FD %d encountered socket error: %s", socket.handle, this.error);
+			.errorf("WSARecv* on FD %d encountered socket error: %s", socket.handle, this.error);
 			m_status.code = Status.ABORT;
 			socket.handleError();
 		}
@@ -1326,20 +1341,35 @@ package:
 
 	void submitRequest(AsyncSocket.SendRequest* request)
 	{
-		.tracef("Send message on FD %d with size %d", request.socket.handle, request.msg.header.msg_iov.len);
-
 		auto overlapped = AsyncOverlapped.alloc();
 		overlapped.socket.send = request;
 
-		auto err = WSASendTo(request.socket.handle,
-		                     request.msg.buffers,
-		                     cast(DWORD) request.msg.bufferCount,
-		                     null,
-		                     request.msg.header.msg_flags,
-		                     request.msg.name,
-		                     request.msg.nameLength,
-		                     cast(const(WSAOVERLAPPEDX*)) overlapped,
-		                     cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedSendComplete);
+		int err = void;
+		if (request.msg.name) {
+			.tracef("WSASendTo on FD %s for %s with buffer size %s",
+			        request.socket.handle,
+			        NetworkAddress(request.msg.name, request.msg.header.msg_namelen),
+			        request.msg.header.msg_iov.len);
+			err = WSASendTo(request.socket.handle,
+		                    request.msg.buffers,
+		                    cast(DWORD) request.msg.bufferCount,
+		                    null,
+		                    request.msg.header.msg_flags,
+		                    request.msg.name,
+		                    request.msg.nameLength,
+		                    cast(const(WSAOVERLAPPEDX*)) overlapped,
+		                    cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedSendComplete);
+		} else {
+			.tracef("WSASend on FD %s with buffer size %s", request.socket.handle, request.msg.header.msg_iov.len);
+			err = WSASend(request.socket.handle,
+		                    request.msg.buffers,
+		                    cast(DWORD) request.msg.bufferCount,
+		                    null,
+		                    request.msg.header.msg_flags,
+		                    cast(const(WSAOVERLAPPEDX*)) overlapped,
+		                    cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedSendComplete);
+		}
+
 		if (err == SOCKET_ERROR) {
 			m_error = WSAGetLastErrorSafe();
 			if (m_error == WSA_IO_PENDING) return;
@@ -1366,7 +1396,7 @@ package:
 				return;
 			}
 
-			.errorf("WSASend call on FD %d encountered socket error: %s", socket.handle, this.error);
+			.errorf("WSASend* on FD %d encountered socket error: %s", socket.handle, this.error);
 			m_status.code = Status.ABORT;
 			socket.handleError();
 		}
