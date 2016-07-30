@@ -240,10 +240,16 @@ int listenMode(Address local, AddressFamily af, SocketType type)
 		};
 
 		client.onClose = { running = false; };
-		client.onError = { stderr.writeln("ncat: ", client.error).collectException(); };
+		client.onError = {
+			stderr.writeln("ncat: ", client.error).collectException();
+			running = false;
+		};
 	};
 
-	listener.onError = { stderr.writeln("ncat: ", listener.error).collectException(); };
+	listener.onError = {
+		stderr.writeln("ncat: ", listener.error).collectException();
+		running = false;
+	};
 
 	if(!listener.run()) {
 		stderr.writeln("ncat: ", listener.error);
