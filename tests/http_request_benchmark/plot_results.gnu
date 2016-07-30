@@ -11,7 +11,7 @@ set ylabel 'Time required for completion in nanoseconds'
 set yrange [0:300000]
 
 cd 'results'
-results = system('ls *.dat')
+results = system('ls */*.dat')
 do for [result in results] {
 	set output sprintf('%s.svg', result[:strlen(result)-4])
 	plot result index 0 t 'AsyncSocket' with linespoints ls 1, \
