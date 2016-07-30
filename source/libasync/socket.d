@@ -170,7 +170,7 @@ public:
 		assert(m_count <= m_buffer.length, "Count of transferred bytes must not exceed the message buffer's length");
 	}
 
-	mixin FreeList!(1_000 / typeof(this).sizeof);
+	mixin FreeList!(1_000);
 }
 
 /++

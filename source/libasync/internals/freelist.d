@@ -22,7 +22,7 @@ private:
 		}
 		T* next;
 	}
-	static FreeListInfo freelist;
+	FreeListInfo freelist;
 
 public:
 	import std.exception : assumeWontThrow;
