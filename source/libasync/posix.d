@@ -112,6 +112,9 @@ private:
 
 	}
 
+	package AsyncSocket.RecvRequest.Queue m_completedSocketReceives;
+	package AsyncSocket.SendRequest.Queue m_completedSocketSends;
+
 package:
 
 	/// workaround for IDE indent bug on too big files
@@ -278,13 +281,11 @@ package:
 	bool loop(Duration timeout = 0.seconds)
 		//in { assert(Fiber.getThis() is null); }
 	{
-
 		import libasync.internals.memory;
-		bool success = true;
-		int num;
+
+		int num = void;
 
 		static if (EPOLL) {
-
 			static align(1) epoll_event[] events;
 			if (events is null)
 			{
@@ -293,338 +294,411 @@ package:
 					assert(false, "Could not allocate events array: " ~ e.msg);
 				}
 			}
-			int timeout_ms;
-			if (timeout == 0.seconds) // return immediately
-				timeout_ms = 0;
-			else if (timeout == -1.seconds) // wait indefinitely
-				timeout_ms = -1;
-			else timeout_ms = cast(int)timeout.total!"msecs";
-			/// Retrieve pending events
-			num = epoll_wait(m_epollfd, cast(epoll_event*)&events[0], 128, timeout_ms);
-			assert(events !is null && events.length <= 128);
-
-
-		}
-		else /* if KQUEUE */ {
+		} else /* if KQUEUE */ {
 			import core.sys.posix.time : time_t;
 			import core.sys.posix.config : c_long;
+
 			static kevent_t[] events;
 			if (events.length == 0) {
 				try events = allocArray!kevent_t(manualAllocator(), 128);
 				catch (Exception e) { assert(false, "Could not allocate events array"); }
 			}
+		}
 
-			if (timeout != -1.seconds) {
-				time_t secs = timeout.split!("seconds", "nsecs")().seconds;
-				c_long ns = timeout.split!("seconds", "nsecs")().nsecs;
-				auto tspec = libasync.internals.kqueue.timespec(secs, ns);
+		auto waitForEvents(Duration timeout)
+		{
+			static if (EPOLL) {
+				int timeout_ms;
+				if (timeout == 0.seconds) // return immediately
+					timeout_ms = 0;
+				else if (timeout == -1.seconds) // wait indefinitely
+					timeout_ms = -1;
+				else timeout_ms = cast(int) timeout.total!"msecs";
+				/// Retrieve pending events
+				scope (exit) assert(events !is null && events.length <= 128);
+				return epoll_wait(m_epollfd, cast(epoll_event*) &events[0], 128, timeout_ms);
+			} else /* if KQUEUE */ {
+				if (timeout != -1.seconds) {
+					time_t secs = timeout.split!("seconds", "nsecs")().seconds;
+					c_long ns = timeout.split!("seconds", "nsecs")().nsecs;
+					auto tspec = libasync.internals.kqueue.timespec(secs, ns);
 
-				num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, &tspec);
-			} else {
-				num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, null);
+					return kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, &tspec);
+				} else {
+					return kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, null);
+				}
 			}
 		}
 
-		static Tuple!(int, Status)[] errors = [	tuple(EINTR, Status.EVLOOP_TIMEOUT) ];
+		auto handleEvents()
+		{
+			bool success = true;
 
-		if (catchEvLoopErrors!"event_poll'ing"(num, errors))
-			return false;
+			static Tuple!(int, Status)[] errors = [	tuple(EINTR, Status.EVLOOP_TIMEOUT) ];
 
-		if (num > 0)
-			static if (LOG) log("Got " ~ num.to!string ~ " event(s)");
+			if (catchEvLoopErrors!"event_poll'ing"(num, errors))
+				return false;
 
-		foreach(i; 0 .. num) {
-			success = false;
-			m_status = StatusInfo.init;
-			static if (EPOLL)
-			{
-				epoll_event _event = events[i];
-				static if (LOG) try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch {}
-				EventInfo* info = cast(EventInfo*) _event.data.ptr;
-				int event_flags = cast(int) _event.events;
-			}
-			else /* if KQUEUE */
-			{
-				kevent_t _event = events[i];
-				EventInfo* info = cast(EventInfo*) _event.udata;
-				//log("Got info");
-				int event_flags = (_event.filter << 16) | (_event.flags & 0xffff);
-				//log("event flags");
-			}
+			if (num > 0)
+				static if (LOG) log("Got " ~ num.to!string ~ " event(s)");
 
-			//if (info.owner != m_instanceId)
-			//	static if (LOG) try log("Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
-			//	catch{}
-			//log("owner");
-			switch (info.evType) {
-				case EventType.Event:
-					if (info.fd == 0)
-						break;
+			foreach(i; 0 .. num) {
+				success = false;
+				m_status = StatusInfo.init;
+				static if (EPOLL)
+				{
+					epoll_event _event = events[i];
+					static if (LOG) try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch {}
+					EventInfo* info = cast(EventInfo*) _event.data.ptr;
+					int event_flags = cast(int) _event.events;
+				}
+				else /* if KQUEUE */
+				{
+					kevent_t _event = events[i];
+					EventInfo* info = cast(EventInfo*) _event.udata;
+					//log("Got info");
+					int event_flags = (_event.filter << 16) | (_event.flags & 0xffff);
+					//log("event flags");
+				}
 
-					import core.sys.posix.unistd : close;
-					success = onEvent(info.fd, info.evObj.eventHandler, event_flags);
-
-					if (!success) {
-						close(info.fd);
-						assumeWontThrow(ThreadMem.free(info));
-					}
-					break;
-				case EventType.Socket:
-
-					import core.sys.posix.unistd : close;
-
-					auto socket = info.evObj.socket;
-
-					if (socket.passive) {
-						success = onCOPSocketEvent(socket, event_flags);
-						if (!success && (m_status.code == Status.ABORT || m_status.code == Status.ERROR)) {
-							close(info.fd);
-							socket.handleError();
-							assumeWontThrow(ThreadMem.free(info));
-							socket.evInfo = null;
-						}
-					} else if (socket.connectionOriented) {
-						void abortCOASocket(bool graceful) nothrow {
-							void cleanup() nothrow {
-								trace("!cleanup");
-
-								if (socket.connected) {
-									closeSocket(info.fd, true, true);
-								}
-							}
-
-							// Close the connection after an unexpected socket error
-							if (graceful) {
-								try socket.handleClose(); catch(Exception e) .error("Socket close handler failed: ", e.toString());
-								cleanup();
-							}
-							// Kill the connection after an internal error
-							else {
-								cleanup();
-								socket.handleError();
-							}
-
-							assumeWontThrow(ThreadMem.free(info));
-							socket.evInfo = null;
-						}
-
-						success = onCOASocketEvent(socket, event_flags);
-						if (!success && m_status.code == Status.ABORT) {
-							abortCOASocket(true);
-						}
-						else if (!success && m_status.code == Status.ERROR) {
-							abortCOASocket(false);
-						}
-					} else {
-						success = onCLSocketEvent(socket, event_flags);
-						if (!success && (m_status.code == Status.ABORT || m_status.code == Status.ERROR)) {
-							close(info.fd);
-							socket.handleError();
-							assumeWontThrow(ThreadMem.free(info));
-							socket.evInfo = null;
-						}
-					}
-					break;
-				case EventType.TCPAccept:
-					if (info.fd == 0)
-						break;
-					success = onTCPAccept(info.fd, info.evObj.tcpAcceptHandler, event_flags);
-					break;
-
-				case EventType.Notifier:
-
-					static if (LOG) log("Got notifier!");
-					try info.evObj.notifierHandler();
-					catch (Exception e) {
-						setInternalError!"notifierHandler"(Status.ERROR);
-					}
-					break;
-
-				case EventType.DirectoryWatcher:
-					static if (LOG) log("Got DirectoryWatcher event!");
-					static if (!EPOLL) {
-						// in KQUEUE all events will be consumed here, because they must be pre-processed
-						try {
-							DWFileEvent fevent;
-							if (_event.fflags & (NOTE_LINK | NOTE_WRITE))
-								fevent = DWFileEvent.CREATED;
-							else if (_event.fflags & NOTE_DELETE)
-								fevent = DWFileEvent.DELETED;
-							else if (_event.fflags & (NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE))
-								fevent = DWFileEvent.MODIFIED;
-							else if (_event.fflags & NOTE_RENAME)
-								fevent = DWFileEvent.MOVED_FROM;
-							else if (_event.fflags & NOTE_RENAME)
-								fevent = DWFileEvent.MOVED_TO;
-							else
-								assert(false, "No event found?");
-
-							DWFolderInfo fi = m_dwFolders.get(cast(fd_t)_event.ident, DWFolderInfo.init);
-
-							if (fi == DWFolderInfo.init) {
-								DWFileInfo tmp = m_dwFiles.get(cast(fd_t)_event.ident, DWFileInfo.init);
-								assert(tmp != DWFileInfo.init, "The event loop returned an invalid file's file descriptor for the directory watcher");
-								fi = m_dwFolders.get(cast(fd_t) tmp.folder, DWFolderInfo.init);
-								assert(fi != DWFolderInfo.init, "The event loop returned an invalid folder file descriptor for the directory watcher");
-							}
-
-							// all recursive events will be generated here
-							if (!compareFolderFiles(fi, fevent)) {
-								continue;
-							}
-
-						} catch (Exception e) {
-							static if (LOG) log("Could not process DirectoryWatcher event: " ~ e.msg);
+				//if (info.owner != m_instanceId)
+				//	static if (LOG) try log("Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
+				//	catch{}
+				//log("owner");
+				switch (info.evType) {
+					case EventType.Event:
+						if (info.fd == 0)
 							break;
+
+						import core.sys.posix.unistd : close;
+						success = onEvent(info.fd, info.evObj.eventHandler, event_flags);
+
+						if (!success) {
+							close(info.fd);
+							assumeWontThrow(ThreadMem.free(info));
 						}
+						break;
+					case EventType.Socket:
 
-					}
+						import core.sys.posix.unistd : close;
 
-					try info.evObj.dwHandler();
-					catch (Exception e) {
-						setInternalError!"dwHandler"(Status.ERROR);
-					}
-					break;
+						auto socket = info.evObj.socket;
 
-				case EventType.Timer:
-					static if (LOG) try log("Got timer! " ~ info.fd.to!string); catch {}
-					static if (EPOLL) {
-						static long val;
-						import core.sys.posix.unistd : read;
-						read(info.evObj.timerHandler.ctxt.id, &val, long.sizeof);
-					} else {
-					}
-					try info.evObj.timerHandler();
-					catch (Exception e) {
-						setInternalError!"timerHandler"(Status.ERROR);
-					}
-					static if (!EPOLL) {
-						auto ctxt = info.evObj.timerHandler.ctxt;
-						if (ctxt && ctxt.oneShot && !ctxt.rearmed) {
-							kevent_t __event;
-							EV_SET(&__event, ctxt.id, EVFILT_TIMER, EV_DELETE, 0, 0, null);
-							int err = kevent(m_kqueuefd, &__event, 1, null, 0, null);
-							if (catchError!"kevent_del(timer)"(err))
-								return false;
+						if (socket.passive) {
+							success = onCOPSocketEvent(socket, event_flags);
+							if (!success && (m_status.code == Status.ABORT || m_status.code == Status.ERROR)) {
+								close(info.fd);
+								socket.handleError();
+								assumeWontThrow(ThreadMem.free(info));
+								socket.evInfo = null;
+							}
+						} else if (socket.connectionOriented) {
+							void abortCOASocket(bool graceful) nothrow {
+								void cleanup() nothrow {
+									trace("!cleanup");
+
+									if (socket.connected) {
+										closeSocket(info.fd, true, true);
+									}
+								}
+
+								// Close the connection after an unexpected socket error
+								if (graceful) {
+									try socket.handleClose(); catch(Exception e) .error("Socket close handler failed: ", e.toString());
+									cleanup();
+								}
+								// Kill the connection after an internal error
+								else {
+									cleanup();
+									socket.handleError();
+								}
+
+								assumeWontThrow(ThreadMem.free(info));
+								socket.evInfo = null;
+							}
+
+							success = onCOASocketEvent(socket, event_flags);
+							if (!success && m_status.code == Status.ABORT) {
+								abortCOASocket(true);
+							}
+							else if (!success && m_status.code == Status.ERROR) {
+								abortCOASocket(false);
+							}
+						} else {
+							success = onCLSocketEvent(socket, event_flags);
+							if (!success && (m_status.code == Status.ABORT || m_status.code == Status.ERROR)) {
+								close(info.fd);
+								socket.handleError();
+								assumeWontThrow(ThreadMem.free(info));
+								socket.evInfo = null;
+							}
 						}
-					}
-					break;
+						break;
+					case EventType.TCPAccept:
+						if (info.fd == 0)
+							break;
+						success = onTCPAccept(info.fd, info.evObj.tcpAcceptHandler, event_flags);
+						break;
 
-				case EventType.Signal:
-					static if (LOG) try log("Got signal!"); catch {}
+					case EventType.Notifier:
 
-					static if (EPOLL) {
-
-						static if (LOG) try log("Got signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch {}
-						import core.sys.linux.sys.signalfd : signalfd_siginfo;
-						import core.sys.posix.unistd : read;
-						signalfd_siginfo fdsi;
-						fd_t err = cast(fd_t)read(info.fd, &fdsi, fdsi.sizeof);
-						shared AsyncSignal sig = cast(shared AsyncSignal) cast(void*) fdsi.ssi_ptr;
-
-						try sig.handler();
+						static if (LOG) log("Got notifier!");
+						try info.evObj.notifierHandler();
 						catch (Exception e) {
-							setInternalError!"signal handler"(Status.ERROR);
+							setInternalError!"notifierHandler"(Status.ERROR);
 						}
+						break;
 
+					case EventType.DirectoryWatcher:
+						static if (LOG) log("Got DirectoryWatcher event!");
+						static if (!EPOLL) {
+							// in KQUEUE all events will be consumed here, because they must be pre-processed
+							try {
+								DWFileEvent fevent;
+								if (_event.fflags & (NOTE_LINK | NOTE_WRITE))
+									fevent = DWFileEvent.CREATED;
+								else if (_event.fflags & NOTE_DELETE)
+									fevent = DWFileEvent.DELETED;
+								else if (_event.fflags & (NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE))
+									fevent = DWFileEvent.MODIFIED;
+								else if (_event.fflags & NOTE_RENAME)
+									fevent = DWFileEvent.MOVED_FROM;
+								else if (_event.fflags & NOTE_RENAME)
+									fevent = DWFileEvent.MOVED_TO;
+								else
+									assert(false, "No event found?");
 
-					}
-					else /* if KQUEUE */
-					{
-						static AsyncSignal[] sigarr;
+								DWFolderInfo fi = m_dwFolders.get(cast(fd_t)_event.ident, DWFolderInfo.init);
 
-						if (sigarr.length == 0) {
-							try sigarr = new AsyncSignal[32];
-							catch (Exception e) { assert(false, "Could not allocate signals array"); }
-						}
+								if (fi == DWFolderInfo.init) {
+									DWFileInfo tmp = m_dwFiles.get(cast(fd_t)_event.ident, DWFileInfo.init);
+									assert(tmp != DWFileInfo.init, "The event loop returned an invalid file's file descriptor for the directory watcher");
+									fi = m_dwFolders.get(cast(fd_t) tmp.folder, DWFolderInfo.init);
+									assert(fi != DWFolderInfo.init, "The event loop returned an invalid folder file descriptor for the directory watcher");
+								}
 
-						bool more = popSignals(sigarr);
-						foreach (AsyncSignal sig; sigarr)
-						{
-							shared AsyncSignal ptr = cast(shared AsyncSignal) sig;
-							if (ptr is null)
+								// all recursive events will be generated here
+								if (!compareFolderFiles(fi, fevent)) {
+									continue;
+								}
+
+							} catch (Exception e) {
+								static if (LOG) log("Could not process DirectoryWatcher event: " ~ e.msg);
 								break;
-							try (cast(shared AsyncSignal)sig).handler();
+							}
+
+						}
+
+						try info.evObj.dwHandler();
+						catch (Exception e) {
+							setInternalError!"dwHandler"(Status.ERROR);
+						}
+						break;
+
+					case EventType.Timer:
+						static if (LOG) try log("Got timer! " ~ info.fd.to!string); catch {}
+						static if (EPOLL) {
+							static long val;
+							import core.sys.posix.unistd : read;
+							read(info.evObj.timerHandler.ctxt.id, &val, long.sizeof);
+						} else {
+						}
+						try info.evObj.timerHandler();
+						catch (Exception e) {
+							setInternalError!"timerHandler"(Status.ERROR);
+						}
+						static if (!EPOLL) {
+							auto ctxt = info.evObj.timerHandler.ctxt;
+							if (ctxt && ctxt.oneShot && !ctxt.rearmed) {
+								kevent_t __event;
+								EV_SET(&__event, ctxt.id, EVFILT_TIMER, EV_DELETE, 0, 0, null);
+								int err = kevent(m_kqueuefd, &__event, 1, null, 0, null);
+								if (catchError!"kevent_del(timer)"(err))
+									return false;
+							}
+						}
+						break;
+
+					case EventType.Signal:
+						static if (LOG) try log("Got signal!"); catch {}
+
+						static if (EPOLL) {
+
+							static if (LOG) try log("Got signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch {}
+							import core.sys.linux.sys.signalfd : signalfd_siginfo;
+							import core.sys.posix.unistd : read;
+							signalfd_siginfo fdsi;
+							fd_t err = cast(fd_t)read(info.fd, &fdsi, fdsi.sizeof);
+							shared AsyncSignal sig = cast(shared AsyncSignal) cast(void*) fdsi.ssi_ptr;
+
+							try sig.handler();
 							catch (Exception e) {
 								setInternalError!"signal handler"(Status.ERROR);
 							}
+
+
 						}
-					}
-					break;
+						else /* if KQUEUE */
+						{
+							static AsyncSignal[] sigarr;
 
-				case EventType.UDPSocket:
-					import core.sys.posix.unistd : close;
-					success = onUDPTraffic(info.fd, info.evObj.udpHandler, event_flags);
+							if (sigarr.length == 0) {
+								try sigarr = new AsyncSignal[32];
+								catch (Exception e) { assert(false, "Could not allocate signals array"); }
+							}
 
-					nothrow void abortHandler(bool graceful) {
-
-						close(info.fd);
-						info.evObj.udpHandler.conn.socket = 0;
-						try info.evObj.udpHandler(UDPEvent.ERROR);
-						catch (Exception e) { }
-						try ThreadMem.free(info);
-						catch (Exception e){ assert(false, "Error freeing resources"); }
-					}
-
-					if (!success && m_status.code == Status.ABORT) {
-						abortHandler(true);
-
-					}
-					else if (!success && m_status.code == Status.ERROR) {
-						abortHandler(false);
-					}
-					break;
-				case EventType.TCPTraffic:
-					assert(info.evObj.tcpEvHandler.conn !is null, "TCP Connection invalid");
-
-					success = onTCPTraffic(info.fd, info.evObj.tcpEvHandler, event_flags, info.evObj.tcpEvHandler.conn);
-
-					nothrow void abortTCPHandler(bool graceful) {
-
-						nothrow void closeAll() {
-							static if (LOG) try log("closeAll()"); catch {}
-							if (info.evObj.tcpEvHandler.conn.connected)
-								closeSocket(info.fd, true, true);
-
-							info.evObj.tcpEvHandler.conn.socket = 0;
+							bool more = popSignals(sigarr);
+							foreach (AsyncSignal sig; sigarr)
+							{
+								shared AsyncSignal ptr = cast(shared AsyncSignal) sig;
+								if (ptr is null)
+									break;
+								try (cast(shared AsyncSignal)sig).handler();
+								catch (Exception e) {
+									setInternalError!"signal handler"(Status.ERROR);
+								}
+							}
 						}
+						break;
 
-						/// Close the connection after an unexpected socket error
-						if (graceful) {
-							try info.evObj.tcpEvHandler(TCPEvent.CLOSE);
-							catch (Exception e) { static if(LOG) log("Close failure"); }
-							closeAll();
-						}
+					case EventType.UDPSocket:
+						import core.sys.posix.unistd : close;
+						success = onUDPTraffic(info.fd, info.evObj.udpHandler, event_flags);
 
-						/// Kill the connection after an internal error
-						else {
-							try info.evObj.tcpEvHandler(TCPEvent.ERROR);
-							catch (Exception e) { static if(LOG) log("Error failure"); }
-							closeAll();
-						}
+						nothrow void abortHandler(bool graceful) {
 
-						if (info.evObj.tcpEvHandler.conn.inbound) {
-							static if (LOG) log("Freeing inbound connection FD#" ~ info.fd.to!string);
-							try ThreadMem.free(info.evObj.tcpEvHandler.conn);
+							close(info.fd);
+							info.evObj.udpHandler.conn.socket = 0;
+							try info.evObj.udpHandler(UDPEvent.ERROR);
+							catch (Exception e) { }
+							try ThreadMem.free(info);
 							catch (Exception e){ assert(false, "Error freeing resources"); }
 						}
-						try ThreadMem.free(info);
-						catch (Exception e){ assert(false, "Error freeing resources"); }
-					}
 
-					if (!success && m_status.code == Status.ABORT) {
-						abortTCPHandler(true);
-					}
-					else if (!success && m_status.code == Status.ERROR) {
-						abortTCPHandler(false);
-					}
-					break;
-				default:
-					break;
+						if (!success && m_status.code == Status.ABORT) {
+							abortHandler(true);
+
+						}
+						else if (!success && m_status.code == Status.ERROR) {
+							abortHandler(false);
+						}
+						break;
+					case EventType.TCPTraffic:
+						assert(info.evObj.tcpEvHandler.conn !is null, "TCP Connection invalid");
+
+						success = onTCPTraffic(info.fd, info.evObj.tcpEvHandler, event_flags, info.evObj.tcpEvHandler.conn);
+
+						nothrow void abortTCPHandler(bool graceful) {
+
+							nothrow void closeAll() {
+								static if (LOG) try log("closeAll()"); catch {}
+								if (info.evObj.tcpEvHandler.conn.connected)
+									closeSocket(info.fd, true, true);
+
+								info.evObj.tcpEvHandler.conn.socket = 0;
+							}
+
+							/// Close the connection after an unexpected socket error
+							if (graceful) {
+								try info.evObj.tcpEvHandler(TCPEvent.CLOSE);
+								catch (Exception e) { static if(LOG) log("Close failure"); }
+								closeAll();
+							}
+
+							/// Kill the connection after an internal error
+							else {
+								try info.evObj.tcpEvHandler(TCPEvent.ERROR);
+								catch (Exception e) { static if(LOG) log("Error failure"); }
+								closeAll();
+							}
+
+							if (info.evObj.tcpEvHandler.conn.inbound) {
+								static if (LOG) log("Freeing inbound connection FD#" ~ info.fd.to!string);
+								try ThreadMem.free(info.evObj.tcpEvHandler.conn);
+								catch (Exception e){ assert(false, "Error freeing resources"); }
+							}
+							try ThreadMem.free(info);
+							catch (Exception e){ assert(false, "Error freeing resources"); }
+						}
+
+						if (!success && m_status.code == Status.ABORT) {
+							abortTCPHandler(true);
+						}
+						else if (!success && m_status.code == Status.ERROR) {
+							abortTCPHandler(false);
+						}
+						break;
+					default:
+						break;
+				}
+
 			}
 
+			return success;
 		}
-		return success;
+
+		if (m_completedSocketSends.empty && m_completedSocketReceives.empty) {
+			num = waitForEvents(timeout);
+			return handleEvents();
+		} else {
+			num = waitForEvents(0.seconds);
+			if (num != 0 && !handleEvents()) return false;
+
+			foreach (request; m_completedSocketReceives) {
+				if (!request.socket.connected) {
+					NetworkMessage.free(request.msg);
+					AsyncSocket.RecvRequest.free(request);
+					m_completedSocketReceives.removeFront();
+					continue;
+				}
+
+				auto transferred = request.msg.transferred;
+
+				if (request.socket.receiveContinuously) {
+					request.msg.count = 0;
+					m_completedSocketReceives.removeFront();
+					try request.onComplete(transferred); catch (Exception e) {
+						.error(e.msg);
+						setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
+						return false;
+					}
+					//submitRequest(request);
+					request.socket.m_recvRequests.insertBack(request);
+					request.socket.processReceiveRequests();
+				} else {
+					auto dg = request.onComplete;
+					NetworkMessage.free(request.msg);
+					AsyncSocket.RecvRequest.free(request);
+					m_completedSocketReceives.removeFront();
+					try dg(transferred); catch (Exception e) {
+						.error(e.msg);
+						setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
+						return false;
+					}
+				}
+			}
+
+			foreach (request; m_completedSocketSends) {
+				if (!request.socket.connected) {
+					NetworkMessage.free(request.msg);
+					AsyncSocket.SendRequest.free(request);
+					m_completedSocketSends.removeFront();
+					continue;
+				}
+
+				auto dg = request.onComplete;
+				NetworkMessage.free(request.msg);
+				AsyncSocket.SendRequest.free(request);
+				m_completedSocketSends.removeFront();
+				try dg(); catch (Exception e) {
+					.error(e.msg);
+					setInternalError!"del@AsyncSocket.WRITE"(Status.ABORT);
+					return false;
+				}
+			}
+
+			return true;
+		}
 	}
 
 	bool setOption(T)(fd_t fd, TCPOption option, in T value) {
@@ -980,19 +1054,19 @@ package:
 					.tracef("sendmsg system call on FD %d would have blocked", fd);
 					m_status.code = Status.ASYNC;
 					return 0;
+				} else if (m_error == ECONNRESET ||
+				           m_error == EPIPE) {
+					return 0;
 				} else if (m_error == EBADF ||
-				           /+m_error == ECONNRESET ||+/
 				           m_error == EDESTADDRREQ ||
 				           m_error == EFAULT ||
 				           m_error == EINVAL ||
 				           m_error == EISCONN ||
-				           m_error == EMSGSIZE ||
-				           /+m_error == ENOTCONN ||+/
 				           m_error == ENOTSOCK ||
-				           m_error == EOPNOTSUPP/+ ||
-				           m_error == EPIPE+/) {
+				           m_error == EOPNOTSUPP) {
 					.errorf("sendmsg system call on FD %d encountered fatal socket error: %s", fd, this.error);
 					assert(false);
+				// ENOTCONN, EMSGSIZE
 				} else if (catchError!"Send message"(err)) {
 					.errorf("sendmsg system call on FD %d encountered socket error: %s", fd, this.error);
 					return 0;
@@ -2161,24 +2235,14 @@ private:
 			tracef("Read on FD %d", socket.handle);
 
 			socket.readBlocked = false;
-			try socket.processReceiveRequests();
-			catch (Exception e) {
-				.error(e.msg);
-				setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
-				return false;
-			}
+			socket.processReceiveRequests();
 		}
 
 		if (write) {
 			tracef("Write on FD %d", socket.handle);
 
 			socket.writeBlocked = false;
-			try socket.processSendRequests();
-			catch (Exception e) {
-				.error(e.msg);
-				setInternalError!"del@AsyncSocket.WRITE"(Status.ABORT);
-				return false;
-			}
+			socket.processSendRequests();
 		}
 
 		if (error) {
@@ -2215,59 +2279,8 @@ private:
 
 		tracef("AsyncSocket events: (read: %s, write: %s, error: %s, connect: %s, close: %s)", read, write, error, connect, close);
 
-		if (error) {
-			tracef("Error on FD %d", socket.handle);
-
-			auto err = cast(error_t) socket.lastError;
-			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
-			socket.handleError();
-			return false;
-		}
-
-		if (connect) {
-			tracef("Connect on FD %d", socket.handle);
-
-			socket.connected = true;
-			socket.readBlocked = false;
-			socket.writeBlocked = false;
-			try socket.handleConnect();
-			catch (Exception e) {
-				.error(e.msg);
-				setInternalError!"del@AsyncSocket.CONNECT"(Status.ABORT);
-				return false;
-			}
-			read = false;
-			write = false;
-		}
-
-		if (write && socket.connected && !socket.disconnecting && socket.writeBlocked) {
-			tracef("Write on FD %d", socket.handle);
-
-			socket.writeBlocked = false;
-			try socket.processSendRequests();
-			catch (Exception e) {
-				.error(e.msg);
-				setInternalError!"del@AsyncSocket.WRITE"(Status.ABORT);
-				return false;
-			}
-		}
-
-		if (read && socket.connected && !socket.disconnecting && socket.readBlocked) {
-			tracef("Read on FD %d", socket.handle);
-
-			socket.readBlocked = false;
-			try socket.processReceiveRequests();
-			catch (Exception e) {
-				.error(e.msg);
-				setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
-				return false;
-			}
-		}
-
-		if (close && socket.connected && !socket.disconnecting)
+		auto attemptToClose()
 		{
-			tracef("Close on FD %d", socket.handle);
-
 			try socket.handleClose();
 			catch (Exception e) {
 				.error(e.msg);
@@ -2291,6 +2304,58 @@ private:
 				}
 			}
 			return true;
+		}
+
+		if (error) {
+			tracef("Error on FD %d", socket.handle);
+
+			auto err = cast(error_t) socket.lastError;
+			if (err == ECONNRESET ||
+			    err == EPIPE) {
+				return attemptToClose();
+			}
+
+			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
+			socket.handleError();
+			return false;
+		}
+
+		if (connect) {
+			tracef("Connect on FD %d", socket.handle);
+
+			socket.connected = true;
+			socket.readBlocked = false;
+			socket.writeBlocked = false;
+			try socket.handleConnect();
+			catch (Exception e) {
+				.error(e.msg);
+				setInternalError!"del@AsyncSocket.CONNECT"(Status.ABORT);
+				return false;
+			}
+			read = false;
+			write = false;
+		}
+
+		if ((/+read ||+/ write) && socket.connected && !socket.disconnecting && socket.writeBlocked) {
+			tracef("Write on FD %d", socket.handle);
+
+			socket.writeBlocked = false;
+			socket.processSendRequests();
+		}/+ else {
+			read = true;
+		}+/
+
+		if (read && socket.connected && !socket.disconnecting && socket.readBlocked) {
+			tracef("Read on FD %d", socket.handle);
+
+			socket.readBlocked = false;
+			socket.processReceiveRequests();
+		}
+
+		if (close && socket.connected && !socket.disconnecting)
+		{
+			tracef("Close on FD %d", socket.handle);
+			return attemptToClose();
 		}
 
 		return true;

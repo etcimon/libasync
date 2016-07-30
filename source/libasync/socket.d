@@ -11,7 +11,6 @@ import libasync.internals.logging;
 import libasync.internals.socket_compat;
 import libasync.internals.freelist;
 import libasync.internals.queue;
-import std.stdio : stderr;
 
 import std.socket : Address;
 public import std.socket : SocketType, SocketOSException;
@@ -219,10 +218,10 @@ private:
 	 */
 	bool m_receiveContinuously;
 
-	RecvRequest.Queue m_recvRequests; /// Queue of calls to $(D receiveMessage).
+	package RecvRequest.Queue m_recvRequests; /// Queue of calls to $(D receiveMessage).
 	SendRequest.Queue m_sendRequests; /// Queue of calls to $(D sendMessage).
 
-	version (Posix) AsyncNotifier m_notifier;
+	//version (Posix) AsyncNotifier m_notifier;
 
 package:
 	EventLoop m_evLoop; /// Event loop of the thread this socket was created by.
@@ -264,23 +263,8 @@ package:
 	}
 
 version (Posix) {
-	void processReceiveRequests()
+	void processReceiveRequests() nothrow
 	{
-		void complete(RecvRequest* request)
-		{
-			auto transferred = request.msg.transferred;
-			if (m_receiveContinuously) {
-				request.msg.count = 0;
-				request.onComplete(transferred);
-			} else {
-				auto dg = request.onComplete;
-				m_recvRequests.removeFront();
-				NetworkMessage.free(request.msg);
-				RecvRequest.free(request);
-				dg(transferred);
-			}
-		}
-
 		if (readBlocked) return;
 		foreach (request; m_recvRequests) {
 			// Try to fit all bytes available in the OS receive buffer
@@ -293,31 +277,23 @@ version (Posix) {
 				return;
 			} else if (request.exact) {
 				if (request.msg.receivedAll) {
-					complete(request);
+					m_recvRequests.removeFront();
+					m_evLoop.m_evLoop.m_completedSocketReceives.insertBack(request);
 				} else {
 					break;
 				}
 			// New bytes or zero-sized connectionless datagram
 			} else if (received || !m_connectionOriented && !readBlocked) {
-				complete(request);
+				m_recvRequests.removeFront();
+				m_evLoop.m_evLoop.m_completedSocketReceives.insertBack(request);
 			} else {
 				break;
 			}
 		}
-		if (!m_recvRequests.empty) m_notifier.trigger();
 	}
 
-	void processSendRequests()
+	void processSendRequests() nothrow
 	{
-		void complete(SendRequest* request)
-		{
-			auto dg = request.onComplete;
-			NetworkMessage.free(request.msg);
-			SendRequest.free(request);
-			m_sendRequests.removeFront();
-			dg();
-		}
-
 		if (writeBlocked) return;
 		foreach (request; m_sendRequests) {
 			// Try to fit all bytes of the current request's buffer
@@ -329,12 +305,12 @@ version (Posix) {
 				kill();
 				return;
 			} else if (sent) {
-				complete(request);
+				m_sendRequests.removeFront();
+				m_evLoop.m_evLoop.m_completedSocketSends.insertBack(request);
 			} else {
 				break;
 			}
 		}
-		if (!m_sendRequests.empty) m_notifier.trigger();
 	}
 }
 
@@ -362,8 +338,8 @@ public:
 	} body {
 		auto request = RecvRequest.alloc(this, message, onRecv, exact);
 		version (Posix) {
-			if (m_recvRequests.empty) m_notifier.trigger();
 			m_recvRequests.insertBack(request);
+			processReceiveRequests();
 		} else version (Windows) {
 			m_evLoop.m_evLoop.submitRequest(request);
 		}
@@ -401,8 +377,8 @@ public:
 	} body {
 		auto request = SendRequest.alloc(this, message, onSend);
 		version (Posix) {
-			if (m_sendRequests.empty) m_notifier.trigger();
 			m_sendRequests.insertBack(request);
+			processSendRequests();
 		} else version (Windows) {
 			m_evLoop.m_evLoop.submitRequest(request);
 		}
@@ -601,7 +577,6 @@ public:
 		version (Posix) {
 			readBlocked = true;
 			writeBlocked = true;
-			m_notifier = new AsyncNotifier(evLoop);
 		}
 	}
 
@@ -657,16 +632,7 @@ public:
 	in { assert(m_socket == INVALID_SOCKET); }
 	body {
 		m_socket = m_evLoop.run(this);
-		version (Windows) {
-			return m_socket != INVALID_SOCKET;
-		} else version (Posix) {
-			if (m_socket == INVALID_SOCKET) return false;
-			return m_notifier.run({
-				.trace("Notifier triggered");
-				processReceiveRequests();
-				processSendRequests();
-			});
-		}
+		return m_socket != INVALID_SOCKET;
 	}
 
 	/**
