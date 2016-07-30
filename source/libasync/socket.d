@@ -212,27 +212,6 @@ private:
 	OnError m_onError;   /// See_Also: onError
 	OnAccept m_onAccept; /// See_Also: onAccept
 
-	/// Holds information of a single call to $(D receiveMessage).
-	struct RecvRequest
-	{
-		NetworkMessage* msg;
-		OnReceive onComplete;
-		bool exact;
-
-		mixin FreeList!(1_000 / typeof(this).sizeof);
-		mixin Queue;
-	}
-
-	/// Holds information of a single call to $(D sendMessage).
-	struct SendRequest
-	{
-		NetworkMessage* msg;
-		OnEvent onComplete;
-
-		mixin FreeList!(1_000 / typeof(this).sizeof);
-		mixin Queue;
-	}
-
 	/**
 	 * If disabled: Every call to $(D receiveMessage) will be processed only once.
 	 * After enabling: The first call to $(D receiveMessage) will be processed repeatedly.
@@ -260,6 +239,29 @@ package:
 	void handleAccept(typeof(this) peer) nothrow
 	in { assert(m_onAccept !is null); }
 	body { m_onAccept(peer); }
+
+	/// Holds information of a single call to $(D receiveMessage).
+	struct RecvRequest
+	{
+		AsyncSocket socket;
+		NetworkMessage* msg;
+		OnReceive onComplete;
+		bool exact;
+
+		mixin FreeList!(1_000);
+		mixin Queue;
+	}
+
+	/// Holds information of a single call to $(D sendMessage).
+	struct SendRequest
+	{
+		AsyncSocket socket;
+		NetworkMessage* msg;
+		OnEvent onComplete;
+
+		mixin FreeList!(1_000);
+		mixin Queue;
+	}
 
 version (Posix) {
 	void processReceiveRequests()
@@ -334,108 +336,7 @@ version (Posix) {
 		}
 		if (!m_sendRequests.empty) m_notifier.trigger();
 	}
-} else version (Windows) {
-	void processReceiveRequests(bool overlappedCompleted = false)
-	{
-		void complete(RecvRequest* request)
-		{
-			auto transferred = request.msg.transferred;
-			if (m_receiveContinuously) {
-				request.msg.count = 0;
-				request.onComplete(transferred);
-			} else {
-				auto dg = request.onComplete;
-				m_recvRequests.removeFront();
-				NetworkMessage.free(request.msg);
-				RecvRequest.free(request);
-				dg(transferred);
-			}
-		}
-
-		void next(ref RecvRequest* request)
-		{
-			if (!m_recvRequests.empty) {
-				request = m_recvRequests.front();
-				m_evLoop.m_evLoop.recvMsg(this, request.msg);
-			}
-		}
-
-		auto request = m_recvRequests.front();
-		if (overlappedCompleted) {
-			assert(request.msg.receivedAny || !m_connectionOriented);
-			if (request.exact) {
-				if (request.msg.receivedAll) {
-					/+auto transferred = request.msg.transferred;
-					if (!m_receiveContinuously) m_recvRequests.removeFront();
-					else request.msg.count = 0;
-					request.onComplete(transferred);
-
-					if (!m_recvRequests.empty) {
-						request = &m_recvRequests.front();
-						m_evLoop.m_evLoop.recvMsg(this, request.msg);
-					}+/
-					complete(request);
-					next(request);
-				} else {
-					m_evLoop.m_evLoop.recvMsg(this, request.msg);
-				}
-			// At least one byte received or zero-sized connectionless datagram
-			} else {
-				/+auto transferred = request.msg.transferred;
-				if (!m_receiveContinuously) m_recvRequests.removeFront();
-				else request.msg.count = 0;
-				request.onComplete(transferred);
-
-				if (!m_recvRequests.empty) {
-					request = &m_recvRequests.front();
-					m_evLoop.m_evLoop.recvMsg(this, request.msg);
-				}+/
-				complete(request);
-				next(request);
-			}
-		//} else if (m_recvRequests.length == 1) {
-		} else if (!m_recvRequests.empty && m_recvRequests[].dropOne.empty) {
-			m_evLoop.m_evLoop.recvMsg(this, request.msg);
-		}
-	}
-
-	void processSendRequests(bool overlappedCompleted = false)
-	{
-		void complete(SendRequest* request)
-		{
-			auto dg = request.onComplete;
-			NetworkMessage.free(request.msg);
-			SendRequest.free(request);
-			m_sendRequests.removeFront();
-			dg();
-		}
-
-		void next(ref SendRequest* request)
-		{
-			if (!m_sendRequests.empty) {
-				request = m_sendRequests.front();
-				m_evLoop.m_evLoop.sendMsg(this, request.msg);
-			}
-		}
-
-		auto request = m_sendRequests.front();
-		if (overlappedCompleted) {
-			/+assert(request.msg.sent);
-			m_sendRequests.removeFront();
-			request.onComplete();+/
-			complete(request);
-
-			/+if (!m_sendRequests.empty) {
-				request = &m_sendRequests.front();
-				m_evLoop.m_evLoop.sendMsg(this, request.msg);
-			}+/
-			next(request);
-		//} else if (m_sendRequests.length == 1) {
-		} else if (!m_sendRequests.empty && m_sendRequests[].dropOne.empty) {
-			m_evLoop.m_evLoop.sendMsg(this, request.msg);
-		}
-	}
-} else { static assert(false, "Platform unsupported"); }
+}
 
 public:
 	/// Generic callback type to handle events without additional parameters
@@ -459,10 +360,13 @@ public:
 		assert(onRecv !is null, "Completion callback required");
 		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
 	} body {
-		version (Posix) if (m_recvRequests.empty) m_notifier.trigger();
-		auto request = RecvRequest.alloc(message, onRecv, exact);
-		m_recvRequests.insertBack(request);
-		version (Windows) processReceiveRequests();
+		auto request = RecvRequest.alloc(this, message, onRecv, exact);
+		version (Posix) {
+			if (m_recvRequests.empty) m_notifier.trigger();
+			m_recvRequests.insertBack(request);
+		} else version (Windows) {
+			m_evLoop.m_evLoop.submitRequest(request);
+		}
 	}
 
 	///
@@ -495,10 +399,13 @@ public:
 		assert(m_connectionOriented || { remoteAddress; return true; }().ifThrown(false) || message.hasAddress, "Remote address required");
 		assert(onSend !is null, "Completion callback required");
 	} body {
-		version (Posix) if (m_sendRequests.empty) m_notifier.trigger();
-		auto request = SendRequest.alloc(message, onSend);
-		m_sendRequests.insertBack(request);
-		version (Windows) processSendRequests();
+		auto request = SendRequest.alloc(this, message, onSend);
+		version (Posix) {
+			if (m_sendRequests.empty) m_notifier.trigger();
+			m_sendRequests.insertBack(request);
+		} else version (Windows) {
+			m_evLoop.m_evLoop.submitRequest(request);
+		}
 	}
 
 	///
@@ -789,12 +696,12 @@ public:
 	{ return m_evLoop.connect(this, addr, addrlen); }
 
 	///
-	bool bind(NetworkAddress addr)
-	{ return bind(addr.sockAddr, addr.sockAddrLen); }
+	bool bind(const ref NetworkAddress addr)
+	{ return bind(cast(sockaddr*) addr.sockAddr, addr.sockAddrLen); }
 
 	///
-	bool connect(NetworkAddress to)
-	{ return connect(to.sockAddr, to.sockAddrLen); }
+	bool connect(const ref NetworkAddress to)
+	{ return connect(cast(sockaddr*) to.sockAddr, to.sockAddrLen); }
 
 	///
 	bool listen(int backlog)
@@ -811,10 +718,10 @@ public:
 	///
 	@property void receiveContinuously(bool toggle) @safe pure
 	in {
-		if (!m_receiveContinuously && toggle) assert(m_recvRequests.empty, "Cannot start receiving continuously when there are still pending receives");
+		version (Posix) if (!m_receiveContinuously && toggle) assert(m_recvRequests.empty, "Cannot start receiving continuously when there are still pending receives");
 	} body {
 		if (m_receiveContinuously == toggle) return;
-		if (!toggle && !m_recvRequests.empty) assumeWontThrow(m_recvRequests.removeFront());
+		version (Posix) if (!toggle && !m_recvRequests.empty) assumeWontThrow(m_recvRequests.removeFront());
 		m_receiveContinuously = toggle;
 	}
 
