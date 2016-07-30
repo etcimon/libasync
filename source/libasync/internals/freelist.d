@@ -44,9 +44,11 @@ public:
 			static if (Args.length > 0) {
 				emplace!(T)(obj, args);
 			}
+			.tracef(T.stringof ~ ".FreeList.alloc: Pulled %s", obj);
 		// Otherwise, allocate a new instance.
 		} else {
 			obj = assumeWontThrow(ThreadMem.alloc!T(args));
+			.tracef(T.stringof ~ ".FreeList.alloc: Allocated %s", obj);
 		}
 
 		return obj;
@@ -55,17 +57,20 @@ public:
 	static void free(T* obj) @trusted nothrow
 	{
 		static if (isIntegral!(typeof(Limit))) {
-			if (freelist.count <= Limit) {
+			if (freelist.count <= Limit / T.sizeof) {
 				obj.freelist.next = freelist.head;
 				freelist.head = obj;
 				freelist.count += 1;
+				.tracef(T.stringof ~ ".FreeList.free: Pushed %s", obj);
 			} else {
+				.tracef(T.stringof ~ ".FreeList.free: Deallocating %s", obj);
 				assumeWontThrow(ThreadMem.free(obj));
 			}
 		} else {
 			obj.freelist.next = freelist.head;
 			freelist.head = obj;
 			freelist.count += 1;
+			.tracef(T.stringof ~ ".FreeList.free: Pushed %s", obj);
 		}
 	}
 }
