@@ -1294,15 +1294,33 @@ package:
 		                       cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedReceiveComplete);
 		if (err == SOCKET_ERROR) {
 			m_error = WSAGetLastErrorSafe();
+			if (m_error == WSA_IO_PENDING) return;
+
+			auto socket = request.socket;
+			AsyncOverlapped.free(overlapped);
+			NetworkMessage.free(request.msg);
+			AsyncSocket.RecvRequest.free(request);
+
 			// TODO: Possibly deal with WSAEWOULDBLOCK, which supposedly signals
 			//       too many pending overlapped I/O requests.
-			if (m_error != WSA_IO_PENDING) {
-				.errorf("WSARecvFrom on FD %d encountered socket error: %s", request.socket.handle, this.error);
-				m_status.code = Status.ABORT;
-				request.socket.handleError();
-				// TODO: Move this above the handleError?
-				AsyncOverlapped.free(overlapped);
+			if (m_error == WSAECONNRESET ||
+			    m_error == WSAECONNABORTED ||
+			    m_error == WSAENOTSOCK) {
+				try request.socket.handleClose();
+				catch (Exception e) {
+					.error(e.msg);
+					setInternalError!"del@AsyncSocket.CLOSE"(Status.ABORT);
+				}
+
+				*socket.connected = false;
+
+				closesocket(socket.handle);
+				return;
 			}
+
+			.errorf("WSARecv on FD %d encountered socket error: %s", socket.handle, this.error);
+			m_status.code = Status.ABORT;
+			socket.handleError();
 		}
 	}
 
@@ -1324,15 +1342,33 @@ package:
 		                     cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedSendComplete);
 		if (err == SOCKET_ERROR) {
 			m_error = WSAGetLastErrorSafe();
+			if (m_error == WSA_IO_PENDING) return;
+
+			auto socket = request.socket;
+			AsyncOverlapped.free(overlapped);
+			NetworkMessage.free(request.msg);
+			AsyncSocket.SendRequest.free(request);
+
 			// TODO: Possibly deal with WSAEWOULDBLOCK, which supposedly signals
 			//       too many pending overlapped I/O requests.
-			if (m_error != WSA_IO_PENDING) {
-				.errorf("WSASendTo on FD %d encountered socket error: %s", request.socket.handle, this.error);
-				m_status.code = Status.ABORT;
-				request.socket.handleError();
-				// TODO: Move this above the handleError?
-				AsyncOverlapped.free(overlapped);
+			if (m_error == WSAECONNRESET ||
+			    m_error == WSAECONNABORTED ||
+			    m_error == WSAENOTSOCK) {
+				try socket.handleClose();
+				catch (Exception e) {
+					.error(e.msg);
+					setInternalError!"del@AsyncSocket.CLOSE"(Status.ABORT);
+				}
+
+				*socket.connected = false;
+
+				closesocket(socket.handle);
+				return;
 			}
+
+			.errorf("WSASend call on FD %d encountered socket error: %s", socket.handle, this.error);
+			m_status.code = Status.ABORT;
+			socket.handleError();
 		}
 	}
 
@@ -2471,7 +2507,12 @@ nothrow extern(System)
 				eventLoop.m_completedSocketReceives.insertBack(request);
 				return;
 			}
-		} else if (error == WSAECONNRESET || error == WSAECONNABORTED) {
+		}
+
+		NetworkMessage.free(request.msg);
+		AsyncSocket.RecvRequest.free(request);
+
+		if (error == WSAECONNRESET || error == WSAECONNABORTED) {
 			try socket.handleClose();
 			catch (Exception e) {
 				.error(e.msg);
@@ -2517,7 +2558,12 @@ nothrow extern(System)
 			assert(request.msg.sent);
 			eventLoop.m_completedSocketSends.insertBack(request);
 			return;
-		} else if (error == WSAECONNRESET || error == WSAECONNABORTED) {
+		}
+
+		NetworkMessage.free(request.msg);
+		AsyncSocket.SendRequest.free(request);
+
+		if (error == WSAECONNRESET || error == WSAECONNABORTED) {
 			try socket.handleClose();
 			catch (Exception e) {
 				.error(e.msg);
