@@ -9,6 +9,7 @@ import core.time;
 import std.datetime : Clock;
 import std.string : format;
 import std.stdio : stderr, File;
+import std.file : mkdirRecurse;
 import std.exception : enforce, collectException;
 import std.traits : isInstanceOf;
 
@@ -27,13 +28,21 @@ immutable bufferSize = 64 * 1024;
 immutable repetitions = 1 << 12;
 immutable averageWindowSize = 1000;
 
-immutable dataFilenameFormat = "results/runtimes_%s.dat";
+version (Windows)      immutable dataPath = "results/windows";
+else version (linux)   immutable dataPath = "results/linux";
+else version (OSX)     immutable dataPath = "results/osx";
+else version (FreeBSD) immutable dataPath = "results/freebsd";
+else                   immutable dataPath = "results/unknown";
+
+immutable dataFilenameFormat = dataPath ~ "/runtimes_%s.dat";
 
 EventLoop g_eventLoop = void;
 bool g_running = void;
 
 void main()
 {
+	mkdirRecurse(dataPath);
+
 	auto serverAddress = getServerAddress();
 	g_eventLoop = getThreadEventLoop();
 
