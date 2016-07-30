@@ -1,7 +1,5 @@
 module libasync.internals.queue;
 
-import core.stdc.stdio : printf;
-
 mixin template Queue()
 {
 	static if (!is(typeof(this) == struct)) static assert(false, "Queue only works on structs");
@@ -78,9 +76,11 @@ public:
 			return head;
 		}
 
-		void insertFront(T* obj) @safe pure @nogc nothrow
+		void insertFront(T* obj) @safe pure /+@nogc+/ nothrow
 		{
+			assert(obj, T.stringof ~ ".Queue.insertFront: Null elements are forbidden");
 			assert(!obj.queue.next, T.stringof ~ ".Queue.insertFront: Already in a queue");
+			assert(head != obj, T.stringof ~ ".Queue.insertBack: Already head of this queue");
 			assert(!obj.queue.tail, T.stringof ~ ".Queue.insertFront: Already head of a queue");
 			if (empty) obj.queue.tail = obj;
 			else {
@@ -89,11 +89,13 @@ public:
 				obj.queue.next = head;
 			}
 			head = obj;
+			debug .tracef(T.stringof ~ ".Queue.insertFront: Inserted %s", obj);
 		}
 
-		void removeFront() @safe pure @nogc nothrow
+		void removeFront() @safe pure /+@nogc+/ nothrow
 		{
 			assert(!empty, T.stringof ~ ".Queue.removeFront: Queue is empty");
+			debug .tracef(T.stringof ~ ".Queue.removeFront: Removing %s", head);
 			auto newHead = head.queue.next;
 			if (newHead) newHead.queue.tail = head.queue.tail;
 			head.queue.next = null;
@@ -101,10 +103,12 @@ public:
 			head = newHead;
 		}
 
-		void insertBack(T* obj) @safe pure @nogc nothrow
+		void insertBack(T* obj) @safe pure /+@nogc+/ nothrow
 		{
+			assert(obj, T.stringof ~ ".Queue.insertBack: Null elements are forbidden");
 			assert(!obj.queue.next, T.stringof ~ ".Queue.insertBack: Already in a queue");
 			assert(!obj.queue.tail, T.stringof ~ ".Queue.insertBack: Already head of a queue");
+			assert(head != obj, T.stringof ~ ".Queue.insertBack: Duplicate elements are forbidden");
 			if (empty) {
 				obj.queue.tail = obj;
 				head = obj;
@@ -112,6 +116,7 @@ public:
 				head.queue.tail.queue.next = obj;
 				head.queue.tail = obj;
 			}
+			debug .tracef(T.stringof ~ ".Queue.insertBack: Inserted %s", obj);
 		}
 
 		auto opSlice() @safe pure @nogc nothrow
