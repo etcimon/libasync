@@ -273,73 +273,10 @@ public:
 	/// socket on which `listen` succeeded
 	alias OnAccept = nothrow void delegate(typeof(this) peer);
 
-	///
-	void receiveMessage(NetworkMessage* message, AsyncReceiveRequest.OnComplete onReceive, bool exact)
-	in {
-		assert(!m_passive, "Passive sockets cannot receive");
-		assert(!m_connectionOriented || connected, "Established connection required");
-		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
-		assert(!m_receiveContinuously || m_pendingReceives.empty, "Cannot receive message manually while receiving continuously");
-		assert(m_connectionOriented || !exact, "Connectionless datagram sockets must receive one datagram at a time");
-		assert(onReceive !is null, "Completion callback required");
-		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
-	} body {
-		auto request = AsyncReceiveRequest.alloc(this, message, onReceive, exact);
-		m_evLoop.submitRequest(request);
-	}
-
-	///
-	void receive(ref ubyte[] buf, AsyncReceiveRequest.OnComplete onReceive)
-	{
-		auto message = NetworkMessage.alloc(buf);
-		receiveMessage(message, onReceive, false);
-	}
-
-	///
-	void receiveExactly(ref ubyte[] buf, AsyncReceiveRequest.OnComplete onReceive)
-	{
-		auto message = NetworkMessage.alloc(buf);
-		receiveMessage(message, onReceive, true);
-	}
-
-	///
-	void receiveFrom(ref ubyte[] buf, ref NetworkAddress from, AsyncReceiveRequest.OnComplete onReceive)
-	{
-		auto message = NetworkMessage.alloc(buf, &from);
-		receiveMessage(message, onReceive, false);
-	}
-
-	///
-	void sendMessage(NetworkMessage* message, AsyncSendRequest.OnComplete onSend)
-	in {
-		assert(!m_passive, "Passive sockets cannot receive");
-		assert(!m_connectionOriented || connected, "Established connection required");
-		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
-		assert(m_connectionOriented || { remoteAddress; return true; }().ifThrown(false) || message.hasAddress, "Remote address required");
-		assert(onSend !is null, "Completion callback required");
-	} body {
-		auto request = AsyncSendRequest.alloc(this, message, onSend);
-		m_evLoop.submitRequest(request);
-	}
-
-	///
-	void send(in ubyte[] buf, OnEvent onSend)
-	{
-		auto message = NetworkMessage.alloc(cast(ubyte[]) buf);
-		sendMessage(message, onSend);
-	}
-
-	///
-	void sendTo(in ubyte[] buf, const ref NetworkAddress to, OnEvent onSend)
-	{
-		auto message = NetworkMessage.alloc(cast(ubyte[]) buf, &to);
-		sendMessage(message, onSend);
-	}
-
 	/// Same as `kill` on connection-less sockets; on connection-oriented sockets,
 	/// additionally call the previously provided onClose callback.
 	/// See_Also: kill, onClose
-	bool close()
+	bool close() nothrow
 	{
 		scope (exit) if (m_connectionOriented && !m_passive && m_onClose !is null) m_onClose();
 		return kill();
@@ -601,6 +538,69 @@ public:
 		if (m_receiveContinuously == toggle) return;
 		version (Posix) if (!toggle && !m_pendingReceives.empty) assumeWontThrow(m_pendingReceives.removeFront());
 		m_receiveContinuously = toggle;
+	}
+
+	///
+	void receiveMessage(NetworkMessage* message, AsyncReceiveRequest.OnComplete onReceive, bool exact)
+	in {
+		assert(!m_passive, "Passive sockets cannot receive");
+		assert(!m_connectionOriented || connected, "Established connection required");
+		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
+		assert(!m_receiveContinuously || m_pendingReceives.empty, "Cannot receive message manually while receiving continuously");
+		assert(m_connectionOriented || !exact, "Connectionless datagram sockets must receive one datagram at a time");
+		assert(onReceive !is null, "Completion callback required");
+		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
+	} body {
+		auto request = AsyncReceiveRequest.alloc(this, message, onReceive, exact);
+		m_evLoop.submitRequest(request);
+	}
+
+	///
+	void receive(ref ubyte[] buf, AsyncReceiveRequest.OnComplete onReceive)
+	{
+		auto message = NetworkMessage.alloc(buf);
+		receiveMessage(message, onReceive, false);
+	}
+
+	///
+	void receiveExactly(ref ubyte[] buf, AsyncReceiveRequest.OnComplete onReceive)
+	{
+		auto message = NetworkMessage.alloc(buf);
+		receiveMessage(message, onReceive, true);
+	}
+
+	///
+	void receiveFrom(ref ubyte[] buf, ref NetworkAddress from, AsyncReceiveRequest.OnComplete onReceive)
+	{
+		auto message = NetworkMessage.alloc(buf, &from);
+		receiveMessage(message, onReceive, false);
+	}
+
+	///
+	void sendMessage(NetworkMessage* message, AsyncSendRequest.OnComplete onSend)
+	in {
+		assert(!m_passive, "Passive sockets cannot receive");
+		assert(!m_connectionOriented || connected, "Established connection required");
+		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
+		assert(m_connectionOriented || assumeWontThrow({ remoteAddress; return true; }().ifThrown(false)) || message.hasAddress, "Remote address required");
+		assert(onSend !is null, "Completion callback required");
+	} body {
+		auto request = AsyncSendRequest.alloc(this, message, onSend);
+		m_evLoop.submitRequest(request);
+	}
+
+	///
+	void send(in ubyte[] buf, OnEvent onSend)
+	{
+		auto message = NetworkMessage.alloc(cast(ubyte[]) buf);
+		sendMessage(message, onSend);
+	}
+
+	///
+	void sendTo(in ubyte[] buf, const ref NetworkAddress to, OnEvent onSend)
+	{
+		auto message = NetworkMessage.alloc(cast(ubyte[]) buf, &to);
+		sendMessage(message, onSend);
 	}
 
 	/// Removes the socket from the event loop, shutting it down if necessary,
