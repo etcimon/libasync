@@ -439,23 +439,26 @@ public:
 	@property bool passive() const @safe pure @nogc
 	{ return m_passive; }
 
-	///
+	/// Type of callback triggered when a connection-oriented socket completes connecting
 	alias OnConnect = void delegate();
 
-	/// Sets callback for when an active connection-oriented socket connects.
+	/// Sets this socket's $(D OnConnect) callback.
 	@property void onConnect(OnConnect onConnect) @safe pure @nogc
 	in { assert(m_connectionOriented); }
 	body { m_onConnect = onConnect; }
 
-	///
+	/// Type of callback triggered when a connection-oriented socket completes disconnecting
 	alias OnClose = void delegate();
 
-	/// Sets callback for when an active connection-oriented socket disconnects.
+	/// Sets this socket's $(D OnClose) callback.
 	@property void onClose(OnClose onClose) @safe pure @nogc
 	in { assert(m_connectionOriented); }
 	body { m_onClose = onClose; }
 
-	///
+	/// Type of callback triggered when a socker error occured, leaving socket in
+	/// an unusable state; the underlying OS handle has either already or will
+	/// soon be destroyed and must not be used anymore; this also means that any
+	/// of this socket's methods relying on the OS handle may not be called anymore.
 	alias OnError = void delegate();
 
 	/// Sets callback for when a socket error has occurred.
@@ -528,6 +531,8 @@ public:
 		return m_evLoop.listen(this, backlog);
 	}
 
+	/// Whether the socket is automatically resubmitting the current receive request
+	/// upon its successful completion.
 	@property bool receiveContinuously() const @safe pure @nogc
 	{ return m_receiveContinuously; }
 
