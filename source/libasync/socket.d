@@ -231,8 +231,8 @@ private:
 	 */
 	bool m_passive;
 
-	OnEvent m_onConnect; /// See_Also: onConnect
-	OnEvent m_onClose;   /// See_Also: onClose
+	OnConnect m_onConnect; /// See_Also: onConnect
+	OnClose m_onClose;   /// See_Also: onClose
 	OnError m_onError;   /// See_Also: onError
 	OnAccept m_onAccept; /// See_Also: onAccept
 
@@ -245,42 +245,13 @@ private:
 
 	version (Posix) {
 		package AsyncReceiveRequest.Queue m_pendingReceives; /// Queue of calls to $(D receiveMessage).
-		package AsyncSendRequest.Queue m_pendingSends; /// Queue of requests initiated by $(D sendMessage).
+		package AsyncSendRequest.Queue m_pendingSends;       /// Queue of requests initiated by $(D sendMessage).
 	}
 
 package:
-	EventLoop m_evLoop; /// Event loop of the thread this socket was created by.
-
-	void handleError() nothrow
-	{ if (m_onError !is null) m_onError(); }
-
-	void handleConnect()
-	{ if (m_onConnect !is null) m_onConnect(); }
-
-	void handleClose()
-	{ if (m_onClose !is null) m_onClose(); }
-
-	void handleAccept(typeof(this) peer) nothrow
-	in { assert(m_onAccept !is null); }
-	body { m_onAccept(peer); }
+	EventLoop m_evLoop; /// Event loop of the thread this socket was created on.
 
 public:
-	/// Generic callback type to handle events without additional parameters
-	alias OnEvent = void delegate();
-	///
-	alias OnError = nothrow void delegate();
-	/// Callback type to handle the successful acceptance of a peer on a
-	/// socket on which `listen` succeeded
-	alias OnAccept = nothrow void delegate(typeof(this) peer);
-
-	/// Same as `kill` on connection-less sockets; on connection-oriented sockets,
-	/// additionally call the previously provided onClose callback.
-	/// See_Also: kill, onClose
-	bool close() nothrow
-	{
-		scope (exit) if (m_connectionOriented && !m_passive && m_onClose !is null) m_onClose();
-		return kill();
-	}
 
 	///
 	@property NetworkAddress localAddress() const @trusted
@@ -350,6 +321,19 @@ nothrow:
 
 package:
 	mixin COSocketMixins;
+
+	void handleError()
+	{ if (m_onError !is null) m_onError(); }
+
+	void handleConnect()
+	{ if (m_onConnect !is null) m_onConnect(); }
+
+	void handleClose()
+	{ if (m_onClose !is null) m_onClose(); }
+
+	void handleAccept(typeof(this) peer)
+	in { assert(m_onAccept !is null); }
+	body { m_onAccept(peer); }
 
 	///
 	@property SocketInfo info() const @safe pure @nogc
@@ -455,19 +439,32 @@ public:
 	@property bool passive() const @safe pure @nogc
 	{ return m_passive; }
 
+	///
+	alias OnConnect = void delegate();
+
 	/// Sets callback for when an active connection-oriented socket connects.
-	@property void onConnect(OnEvent onConnect) @safe pure @nogc 
+	@property void onConnect(OnConnect onConnect) @safe pure @nogc
 	in { assert(m_connectionOriented); }
 	body { m_onConnect = onConnect; }
 
+	///
+	alias OnClose = void delegate();
+
 	/// Sets callback for when an active connection-oriented socket disconnects.
-	@property void onClose(OnEvent onClose) @safe pure @nogc
+	@property void onClose(OnClose onClose) @safe pure @nogc
 	in { assert(m_connectionOriented); }
 	body { m_onClose = onClose; }
+
+	///
+	alias OnError = void delegate();
 
 	/// Sets callback for when a socket error has occurred.
 	@property void onError(OnError onError) @safe pure @nogc
 	{ m_onError = onError; }
+
+	/// Callback type to handle the successful acceptance of a peer on a
+	/// socket on which `listen` succeeded
+	alias OnAccept = void delegate(typeof(this) peer);
 
 	/// Sets callback for when a passive connection-oriented socket
 	/// accepts a new connection request from a remote socket.
@@ -590,17 +587,26 @@ public:
 	}
 
 	///
-	void send(in ubyte[] buf, OnEvent onSend)
+	void send(in ubyte[] buf, AsyncSendRequest.OnComplete onSend)
 	{
 		auto message = NetworkMessage.alloc(cast(ubyte[]) buf);
 		sendMessage(message, onSend);
 	}
 
 	///
-	void sendTo(in ubyte[] buf, const ref NetworkAddress to, OnEvent onSend)
+	void sendTo(in ubyte[] buf, const ref NetworkAddress to, AsyncSendRequest.OnComplete onSend)
 	{
 		auto message = NetworkMessage.alloc(cast(ubyte[]) buf, &to);
 		sendMessage(message, onSend);
+	}
+
+	/// Same as `kill` on connection-less sockets; on connection-oriented sockets,
+	/// additionally call the previously provided onClose callback.
+	/// See_Also: kill, onClose
+	bool close()
+	{
+		scope (exit) if (m_connectionOriented && !m_passive && m_onClose !is null) m_onClose();
+		return kill();
 	}
 
 	/// Removes the socket from the event loop, shutting it down if necessary,

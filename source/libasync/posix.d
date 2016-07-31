@@ -404,7 +404,7 @@ package:
 
 								// Close the connection after an unexpected socket error
 								if (graceful) {
-									try socket.handleClose(); catch(Exception e) .error("Socket close handler failed: ", e.toString());
+									socket.handleClose();
 									cleanup();
 								}
 								// Kill the connection after an internal error
@@ -2403,14 +2403,9 @@ private:
 
 		tracef("AsyncSocket events: (read: %s, write: %s, error: %s, connect: %s, close: %s)", read, write, error, connect, close);
 
-		auto attemptToClose()
+		auto peerGone()
 		{
-			try socket.handleClose();
-			catch (Exception e) {
-				.error(e.msg);
-				setInternalError!"del@AsyncSocket.CLOSE"(Status.ABORT);
-				return false;
-			}
+			socket.handleClose();
 
 			// Careful here, the delegate might have closed the connection already
 			if (socket.connected) {
@@ -2436,7 +2431,8 @@ private:
 			auto err = cast(error_t) socket.lastError;
 			if (err == ECONNRESET ||
 			    err == EPIPE) {
-				return attemptToClose();
+				peerGone();
+				return true;
 			}
 
 			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
@@ -2450,12 +2446,7 @@ private:
 			socket.connected = true;
 			socket.readBlocked = false;
 			socket.writeBlocked = false;
-			try socket.handleConnect();
-			catch (Exception e) {
-				.error(e.msg);
-				setInternalError!"del@AsyncSocket.CONNECT"(Status.ABORT);
-				return false;
-			}
+			socket.handleConnect();
 			read = false;
 			write = false;
 		}
@@ -2479,7 +2470,8 @@ private:
 		if (close && socket.connected && !socket.disconnecting)
 		{
 			tracef("Close on FD %d", socket.handle);
-			return attemptToClose();
+			peerGone();
+			return true;
 		}
 
 		return true;
