@@ -245,10 +245,9 @@ package:
 			if (m_status.code != Status.OK) return false;
 
 			foreach (request; m_completedSocketReceives) {
-				auto transferred = request.message.transferred;
 				if (request.socket.receiveContinuously) {
 					m_completedSocketReceives.removeFront();
-					request.onComplete(transferred);
+					request.onComplete(request.message.transferred);
 					if (request.socket.receiveContinuously && request.socket.alive) {
 						request.message.count = 0;
 						submitRequest(request);
@@ -258,19 +257,17 @@ package:
 					}
 				} else {
 					m_completedSocketReceives.removeFront();
-					auto onComplete = request.onComplete;
+					request.onComplete(request.message.transferred);
 					NetworkMessage.free(request.message);
 					AsyncReceiveRequest.free(request);
-					onComplete(transferred);
 				}
 			}
 
 			foreach (request; m_completedSocketSends) {
 				m_completedSocketSends.removeFront();
-				auto onComplete = request.onComplete;
+				request.onComplete();
 				NetworkMessage.free(request.message);
 				AsyncSendRequest.free(request);
-				onComplete();
 			}
 
 			return true;
