@@ -10,6 +10,8 @@ import libasync.internals.freelist;
 import libasync.internals.queue;
 
 public import std.socket : SocketType, SocketOSException;
+public import libasync.internals.socket_compat :
+	SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM, SOCK_RAW, SOCK_RDM;
 
 /// Returns `true` if the given type of socket is connection-oriented.
 /// Standards: Conforms to IEEE Std 1003.1, 2013 Edition
@@ -432,16 +434,15 @@ package:
 		return code;
 	}
 
-public:
-	///
-	this(EventLoop evLoop, int af, SocketType type, int protocol, fd_t socket = INVALID_SOCKET) @trusted
+	/// Create a new asynchronous socket from an existing operating system handle.
+	this(EventLoop evLoop, int domain, SocketType type, int protocol, fd_t socket) @safe @nogc
 	in {
 		assert(evLoop !is EventLoop.init);
 		if (socket != INVALID_SOCKET) assert(socket.isSocket);
 	} body {
 		m_evLoop = evLoop;
 		m_preInitializedSocket = socket;
-		m_info = SocketInfo(af, type, protocol);
+		m_info = SocketInfo(domain, type, protocol);
 		m_connectionOriented = type.isConnectionOriented;
 		m_datagramOriented = type.isDatagramOriented;
 
@@ -450,6 +451,53 @@ public:
 			writeBlocked = true;
 		}
 	}
+
+public:
+
+	/**
+	 * Create a new asynchronous socket within domain $(D_PARAM domain)
+	 * of type $(D_PARAM type) and using protocol $(D_PARAM protocol).
+	 * See_Also:
+	 *     http://pubs.opengroup.org/onlinepubs/9699919799/functions/socket.html
+	 */
+	this(EventLoop evLoop, int domain, SocketType type, int protocol) @safe @nogc
+	{ this(evLoop, domain, type, protocol, INVALID_SOCKET); }
+
+	/**
+	 *  Convenience constructor for when there is only one protocol
+	 *  supporting both $(D_PARAM domain) and $(D_PARAM type).
+	 */
+	this(EventLoop eventLoop, int domain, SocketType type) @safe @nogc
+	{ this(eventLoop, domain, type, 0); }
+
+	/**
+	 *  Convenience constructor if avoiding $(D_PSYMBOL SocketType) is preferred.
+	 *  Supports only
+	 *    $(D_PSYMBOL SOCK_STREAM),
+	 *    $(D_PSYMBOL SOCK_SEQPACKET),
+	 *    $(D_PSYMBOL SOCK_DGRAM),
+	 *    $(D_PSYMBOL SOCK_RAW), and
+	 *    $(D_PSYMBOL SOCK_RDM).
+	 */
+	this(EventLoop evLoop, int domain, int type, int protocol) @safe @nogc
+	{
+		auto socketType = { switch(type) {
+			case SOCK_STREAM:    return SocketType.STREAM;
+			case SOCK_SEQPACKET: return SocketType.SEQPACKET;
+			case SOCK_DGRAM:     return SocketType.DGRAM;
+			case SOCK_RAW:       return SocketType.RAW;
+			case SOCK_RDM:       return SocketType.RDM;
+			default:             assert(false, "Unsupported socket type");
+		}}();
+		this(evLoop, domain, socketType, protocol);
+	}
+
+	/**
+	 *  Convenience constructor for when there is only one protocol
+	 *  supporting both $(D_PARAM domain) and $(D_PARAM type).
+	 */
+	this(EventLoop evLoop, int domain, int type) @safe @nogc
+	{ this(evLoop, domain, type, 0); }
 
 	/// The underlying OS socket descriptor
 	@property fd_t handle() @safe pure @nogc
@@ -469,13 +517,6 @@ public:
 	/// See_Also: listen
 	@property bool passive() const @safe pure @nogc
 	{ return m_passive; }
-
-	/**
-	 *  Convenience constructor for when there is only one protocol
-	 *  supporting both $(D_PARAM af) and $(D_PARAM type).
-	 */
-	this(EventLoop eventLoop, int af, SocketType type) @safe
-	{ this(eventLoop, af, type, 0); }
 
 	/// Sets callback for when an active connection-oriented socket connects.
 	@property void onConnect(OnEvent onConnect) @safe pure @nogc 
