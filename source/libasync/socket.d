@@ -532,7 +532,11 @@ public:
 	@property bool receiveContinuously() const @safe pure @nogc
 	{ return m_receiveContinuously; }
 
-	///
+	/// Toggles automatic resubmission of the current receive request upon its successful completion.
+	/// Enabling this primes the socket so that the next $(D receiveMessage) will exhibit the behaviour.
+	/// Any further calls to $(D receiveMessage) while active are forbidden; may only be disabled again
+	/// in the completion callback provided with the $(D receiveMessage) that started it.
+	/// After disabling, may not be reenabled in the same callback.
 	@property void receiveContinuously(bool toggle) @safe pure
 	in {
 		version (Posix) assert(m_pendingReceives.empty, "Cannot start/stop receiving continuously when there are still pending receive requests");
