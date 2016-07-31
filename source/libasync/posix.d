@@ -599,22 +599,13 @@ package:
 			if (num != 0 && !handleEvents()) return false;
 
 			foreach (request; m_completedSocketReceives) {
-				if (!request.socket.connected) {
-					m_completedSocketReceives.removeFront();
-					NetworkMessage.free(request.message);
-					AsyncReceiveRequest.free(request);
-					continue;
-				}
-
 				auto transferred = request.message.transferred;
-
 				if (request.socket.receiveContinuously) {
 					m_completedSocketReceives.removeFront();
 					request.onComplete(transferred);
 					if (request.socket.receiveContinuously && request.socket.alive) {
 						request.message.count = 0;
-						request.socket.m_pendingReceives.insertBack(request);
-						processPendingReceives(request.socket);
+						submitRequest(request);
 					} else {
 						NetworkMessage.free(request.message);
 						AsyncReceiveRequest.free(request);
