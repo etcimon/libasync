@@ -646,9 +646,9 @@ package:
 
 			foreach (request; m_completedSocketReceives) {
 				if (!request.socket.connected) {
+					m_completedSocketReceives.removeFront();
 					NetworkMessage.free(request.message);
 					AsyncReceiveRequest.free(request);
-					m_completedSocketReceives.removeFront();
 					continue;
 				}
 
@@ -661,26 +661,26 @@ package:
 					request.socket.m_pendingReceives.insertBack(request);
 					processPendingReceives(request.socket);
 				} else {
+					m_completedSocketReceives.removeFront();
 					auto onComplete = request.onComplete;
 					NetworkMessage.free(request.message);
 					AsyncReceiveRequest.free(request);
-					m_completedSocketReceives.removeFront();
 					onComplete(transferred);
 				}
 			}
 
 			foreach (request; m_completedSocketSends) {
 				if (!request.socket.connected) {
+					m_completedSocketSends.removeFront();
 					NetworkMessage.free(request.message);
 					AsyncSendRequest.free(request);
-					m_completedSocketSends.removeFront();
 					continue;
 				}
 
+				m_completedSocketSends.removeFront();
 				auto onComplete = request.onComplete;
 				NetworkMessage.free(request.message);
 				AsyncSendRequest.free(request);
-				m_completedSocketSends.removeFront();
 				onComplete();
 			}
 

@@ -245,10 +245,10 @@ package:
 			if (m_status.code != Status.OK) return false;
 
 			foreach (request; m_completedSocketSends) {
+				m_completedSocketSends.removeFront();
 				auto onComplete = request.onComplete;
 				NetworkMessage.free(request.message);
 				AsyncSendRequest.free(request);
-				m_completedSocketSends.removeFront();
 				onComplete();
 			}
 
@@ -260,10 +260,10 @@ package:
 					request.onComplete(transferred);
 					submitRequest(request);
 				} else {
+					m_completedSocketReceives.removeFront();
 					auto onComplete = request.onComplete;
 					NetworkMessage.free(request.message);
 					AsyncReceiveRequest.free(request);
-					m_completedSocketReceives.removeFront();
 					onComplete(transferred);
 				}
 			}
