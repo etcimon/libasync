@@ -454,6 +454,7 @@ public:
 	/// an unusable state; the underlying OS handle has either already or will
 	/// soon be destroyed and must not be used anymore; this also means that any
 	/// of this socket's methods relying on the OS handle may not be called anymore.
+	/// Furthermore, after the callback completes the socket will be $(D kill)ed.
 	alias OnError = void delegate();
 
 	/// Sets callback for when a socket error has occurred.
@@ -621,9 +622,9 @@ public:
 		return m_evLoop.kill(this, forced);
 	}
 
-	/// Checks whether the associated OS handle refers to a valid socket.
+	/// Returns whether the socket has not yet been killed.
 	@property bool alive() @safe @nogc {
-		return m_socket.isSocket();
+		return m_socket != INVALID_SOCKET;
 	}
 
 	/// Provides access to event loop information

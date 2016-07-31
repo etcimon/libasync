@@ -244,20 +244,12 @@ package:
 		if (signal == WAIT_IO_COMPLETION) {
 			if (m_status.code != Status.OK) return false;
 
-			foreach (request; m_completedSocketSends) {
-				m_completedSocketSends.removeFront();
-				auto onComplete = request.onComplete;
-				NetworkMessage.free(request.message);
-				AsyncSendRequest.free(request);
-				onComplete();
-			}
-
 			foreach (request; m_completedSocketReceives) {
 				auto transferred = request.message.transferred;
 				if (request.socket.receiveContinuously) {
 					m_completedSocketReceives.removeFront();
 					request.onComplete(transferred);
-					if (request.socket.receiveContinuously) {
+					if (request.socket.receiveContinuously && request.socket.alive) {
 						request.message.count = 0;
 						submitRequest(request);
 					} else {
@@ -271,6 +263,14 @@ package:
 					AsyncReceiveRequest.free(request);
 					onComplete(transferred);
 				}
+			}
+
+			foreach (request; m_completedSocketSends) {
+				m_completedSocketSends.removeFront();
+				auto onComplete = request.onComplete;
+				NetworkMessage.free(request.message);
+				AsyncSendRequest.free(request);
+				onComplete();
 			}
 
 			return true;
@@ -1125,7 +1125,7 @@ package:
 				return true;
 			} else {
 				m_status.code = Status.ABORT;
-				ctxt.handleError();
+				ctxt.kill();
 				return false;
 			}
 		}

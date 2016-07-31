@@ -268,7 +268,7 @@ mixin template RunKill()
 
 		auto fd = ctxt.handle;
 
-		if (ctxt.connectionOriented && !ctxt.passive) {
+		if (ctxt.connectionOriented && !ctxt.passive && ctxt.connected) {
 			bool has_socket = fd != INVALID_SOCKET;
 			ctxt.disconnecting = true;
 

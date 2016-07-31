@@ -379,59 +379,13 @@ package:
 						}
 						break;
 					case EventType.Socket:
-
-						import core.sys.posix.unistd : close;
-
 						auto socket = info.evObj.socket;
-
 						if (socket.passive) {
 							success = onCOPSocketEvent(socket, event_flags);
-							if (!success && (m_status.code == Status.ABORT || m_status.code == Status.ERROR)) {
-								close(info.fd);
-								socket.handleError();
-								assumeWontThrow(ThreadMem.free(info));
-								socket.evInfo = null;
-							}
 						} else if (socket.connectionOriented) {
-							void abortCOASocket(bool graceful) nothrow {
-								void cleanup() nothrow {
-									trace("!cleanup");
-
-									if (socket.connected) {
-										closeSocket(info.fd, true, true);
-									}
-								}
-
-								// Close the connection after an unexpected socket error
-								if (graceful) {
-									socket.handleClose();
-									cleanup();
-								}
-								// Kill the connection after an internal error
-								else {
-									cleanup();
-									socket.handleError();
-								}
-
-								assumeWontThrow(ThreadMem.free(info));
-								socket.evInfo = null;
-							}
-
 							success = onCOASocketEvent(socket, event_flags);
-							if (!success && m_status.code == Status.ABORT) {
-								abortCOASocket(true);
-							}
-							else if (!success && m_status.code == Status.ERROR) {
-								abortCOASocket(false);
-							}
 						} else {
 							success = onCLSocketEvent(socket, event_flags);
-							if (!success && (m_status.code == Status.ABORT || m_status.code == Status.ERROR)) {
-								close(info.fd);
-								socket.handleError();
-								assumeWontThrow(ThreadMem.free(info));
-								socket.evInfo = null;
-							}
 						}
 						break;
 					case EventType.TCPAccept:
@@ -657,7 +611,7 @@ package:
 				if (request.socket.receiveContinuously) {
 					m_completedSocketReceives.removeFront();
 					request.onComplete(transferred);
-					if (request.socket.receiveContinuously) {
+					if (request.socket.receiveContinuously && request.socket.alive) {
 						request.message.count = 0;
 						request.socket.m_pendingReceives.insertBack(request);
 						processPendingReceives(request.socket);
@@ -675,13 +629,6 @@ package:
 			}
 
 			foreach (request; m_completedSocketSends) {
-				if (!request.socket.connected) {
-					m_completedSocketSends.removeFront();
-					NetworkMessage.free(request.message);
-					AsyncSendRequest.free(request);
-					continue;
-				}
-
 				m_completedSocketSends.removeFront();
 				auto onComplete = request.onComplete;
 				NetworkMessage.free(request.message);
@@ -2368,6 +2315,7 @@ private:
 			auto err = cast(error_t) socket.lastError;
 			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
 			socket.handleError();
+			socket.kill();
 			return false;
 		}
 
@@ -2396,40 +2344,20 @@ private:
 
 		tracef("AsyncSocket events: (read: %s, write: %s, error: %s, connect: %s, close: %s)", read, write, error, connect, close);
 
-		auto peerGone()
-		{
-			socket.handleClose();
-
-			// Careful here, the delegate might have closed the connection already
-			if (socket.connected) {
-				closeSocket(socket.handle, !socket.disconnecting, socket.connected);
-
-				m_status.code = Status.ABORT;
-				socket.disconnecting = true;
-				socket.connected = false;
-				socket.writeBlocked = true;
-				socket.readBlocked = true;
-
-				if (socket.evInfo !is null) {
-					assumeWontThrow(ThreadMem.free(socket.evInfo));
-					socket.evInfo = null;
-				}
-			}
-			return true;
-		}
-
 		if (error) {
 			tracef("Error on FD %d", socket.handle);
 
 			auto err = cast(error_t) socket.lastError;
 			if (err == ECONNRESET ||
 			    err == EPIPE) {
-				peerGone();
+				socket.handleClose();
+				socket.kill();
 				return true;
 			}
 
 			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
 			socket.handleError();
+			socket.kill();
 			return false;
 		}
 
@@ -2463,7 +2391,8 @@ private:
 		if (close && socket.connected && !socket.disconnecting)
 		{
 			tracef("Close on FD %d", socket.handle);
-			peerGone();
+			socket.handleClose();
+			socket.kill();
 			return true;
 		}
 
@@ -2517,6 +2446,7 @@ private:
 							m_status.text = "AsyncSocket.ERROR";
 							m_status.code = Status.ABORT;
 							socket.handleError();
+							socket.kill();
 							return false;
 						}
 					}
@@ -2549,6 +2479,7 @@ private:
 			auto err = cast(error_t) socket.lastError;
 			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
 			socket.handleError();
+			socket.kill();
 			return false;
 		}
 
