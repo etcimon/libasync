@@ -286,7 +286,7 @@ public:
 	}
 
 	/// Get a socket option (taken from std.socket).
-	/// Returns: The number of bytes written to $(D_PARAM result).
+	/// Returns: The number of bytes written to $(D result).
 	//returns the length, in bytes, of the actual result - very different from getsockopt()
 	int getOption(int level, int option, void[] result) @trusted const
 	{
@@ -376,8 +376,8 @@ package:
 public:
 
 	/**
-	 * Create a new asynchronous socket within domain $(D_PARAM domain)
-	 * of type $(D_PARAM type) and using protocol $(D_PARAM protocol).
+	 * Create a new asynchronous socket within domain $(D domain)
+	 * of type $(D type) and using protocol $(D protocol).
 	 * See_Also:
 	 *     http://pubs.opengroup.org/onlinepubs/9699919799/functions/socket.html
 	 */
@@ -386,19 +386,19 @@ public:
 
 	/**
 	 *  Convenience constructor for when there is only one protocol
-	 *  supporting both $(D_PARAM domain) and $(D_PARAM type).
+	 *  supporting both $(D domain) and $(D type).
 	 */
 	this(EventLoop eventLoop, int domain, SocketType type) @safe @nogc
 	{ this(eventLoop, domain, type, 0); }
 
 	/**
-	 *  Convenience constructor if avoiding $(D_PSYMBOL SocketType) is preferred.
+	 *  Convenience constructor if avoiding $(D SocketType) is preferred.
 	 *  Supports only
-	 *    $(D_PSYMBOL SOCK_STREAM),
-	 *    $(D_PSYMBOL SOCK_SEQPACKET),
-	 *    $(D_PSYMBOL SOCK_DGRAM),
-	 *    $(D_PSYMBOL SOCK_RAW), and
-	 *    $(D_PSYMBOL SOCK_RDM).
+	 *    $(D SOCK_STREAM),
+	 *    $(D SOCK_SEQPACKET),
+	 *    $(D SOCK_DGRAM),
+	 *    $(D SOCK_RAW), and
+	 *    $(D SOCK_RDM).
 	 */
 	this(EventLoop evLoop, int domain, int type, int protocol) @safe @nogc
 	{
@@ -415,7 +415,7 @@ public:
 
 	/**
 	 *  Convenience constructor for when there is only one protocol
-	 *  supporting both $(D_PARAM domain) and $(D_PARAM type).
+	 *  supporting both $(D domain) and $(D type).
 	 */
 	this(EventLoop evLoop, int domain, int type) @safe @nogc
 	{ this(evLoop, domain, type, 0); }
@@ -482,8 +482,8 @@ public:
 	}
 
 	/**
-	 * Assigns the network address pointed to by $(D_PARAM addr),
-	 * with $(D_PARAM addrlen) specifying the size, in bytes, of
+	 * Assigns the network address pointed to by $(D addr),
+	 * with $(D addrlen) specifying the size, in bytes, of
 	 * this address, as the local name of this socket.
 	 * Returns: $(D true) if the binding was successful.
 	 * See_Also:
@@ -492,9 +492,13 @@ public:
 	bool bind(sockaddr* addr, socklen_t addrlen)
 	{ return m_evLoop.bind(this, addr, addrlen); }
 
+	/// Convenience method.
+	bool bind(const ref NetworkAddress addr)
+	{ return bind(cast(sockaddr*) addr.sockAddr, addr.sockAddrLen); }
+
 	/**
-	 * Assigns the network address pointed to by $(D_PARAM addr),
-	 * with $(D_PARAM addrlen) specifying the size, n bytes, of
+	 * Assigns the network address pointed to by $(D addr),
+	 * with $(D addrlen) specifying the size, n bytes, of
 	 * this address, as the name of the remote socket.
 	 * For connection-oriented sockets, also start establishing a
 	 * connection with that socket and call $(D onConnect) once it has.
@@ -507,16 +511,16 @@ public:
 	bool connect(sockaddr* addr, socklen_t addrlen)
 	{ return m_evLoop.connect(this, addr, addrlen); }
 
-	///
-	bool bind(const ref NetworkAddress addr)
-	{ return bind(cast(sockaddr*) addr.sockAddr, addr.sockAddrLen); }
-
-	///
+	/// Convenience method.
 	bool connect(const ref NetworkAddress to)
 	{ return connect(cast(sockaddr*) to.sockAddr, to.sockAddrLen); }
 
-	///
-	bool listen(int backlog)
+	/**
+	 * Marks the socket as passive and enables acceptance of incoming connections
+	 * into instances of $(D AsyncSocket), which will be passed to the
+	 * callback that must have been provided via $(D onAccept) beforehand.
+	 */
+	bool listen(int backlog = SOMAXCONN)
 	in { assert(m_onAccept !is null); }
 	body
 	{

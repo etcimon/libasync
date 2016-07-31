@@ -216,6 +216,9 @@ extern(System) nothrow
 	}
 	alias sockaddr SOCKADDR;
 
+	enum SOMAXCONN = 0x7fffffff;
+	auto SOMAXCONN_HINT(int b) { return -b; }
+
 	enum _SS_MAXSIZE = 128;           // Maximum size
 	enum _SS_ALIGNSIZE = long.sizeof; // Desired alignment
 
