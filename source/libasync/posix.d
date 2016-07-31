@@ -112,8 +112,8 @@ private:
 
 	}
 
-	package AsyncSocket.RecvRequest.Queue m_completedSocketReceives;
-	package AsyncSocket.SendRequest.Queue m_completedSocketSends;
+	package AsyncReceiveRequest.Queue m_completedSocketReceives;
+	package AsyncSendRequest.Queue m_completedSocketSends;
 
 package:
 
@@ -646,31 +646,30 @@ package:
 
 			foreach (request; m_completedSocketReceives) {
 				if (!request.socket.connected) {
-					NetworkMessage.free(request.msg);
-					AsyncSocket.RecvRequest.free(request);
+					NetworkMessage.free(request.message);
+					AsyncReceiveRequest.free(request);
 					m_completedSocketReceives.removeFront();
 					continue;
 				}
 
-				auto transferred = request.msg.transferred;
+				auto transferred = request.message.transferred;
 
 				if (request.socket.receiveContinuously) {
-					request.msg.count = 0;
+					request.message.count = 0;
 					m_completedSocketReceives.removeFront();
 					try request.onComplete(transferred); catch (Exception e) {
 						.error(e.msg);
 						setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
 						return false;
 					}
-					//submitRequest(request);
-					request.socket.m_recvRequests.insertBack(request);
-					request.socket.processReceiveRequests();
+					request.socket.m_pendingReceives.insertBack(request);
+					processPendingReceives(request.socket);
 				} else {
-					auto dg = request.onComplete;
-					NetworkMessage.free(request.msg);
-					AsyncSocket.RecvRequest.free(request);
+					auto onComplete = request.onComplete;
+					NetworkMessage.free(request.message);
+					AsyncReceiveRequest.free(request);
 					m_completedSocketReceives.removeFront();
-					try dg(transferred); catch (Exception e) {
+					try onComplete(transferred); catch (Exception e) {
 						.error(e.msg);
 						setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
 						return false;
@@ -680,17 +679,17 @@ package:
 
 			foreach (request; m_completedSocketSends) {
 				if (!request.socket.connected) {
-					NetworkMessage.free(request.msg);
-					AsyncSocket.SendRequest.free(request);
+					NetworkMessage.free(request.message);
+					AsyncSendRequest.free(request);
 					m_completedSocketSends.removeFront();
 					continue;
 				}
 
-				auto dg = request.onComplete;
-				NetworkMessage.free(request.msg);
-				AsyncSocket.SendRequest.free(request);
+				auto onComplete = request.onComplete;
+				NetworkMessage.free(request.message);
+				AsyncSendRequest.free(request);
 				m_completedSocketSends.removeFront();
-				try dg(); catch (Exception e) {
+				try onComplete(); catch (Exception e) {
 					.error(e.msg);
 					setInternalError!"del@AsyncSocket.WRITE"(Status.ABORT);
 					return false;
@@ -1674,6 +1673,18 @@ package:
 		}
 	}
 
+	void submitRequest(AsyncReceiveRequest* request)
+	{
+		request.socket.m_pendingReceives.insertBack(request);
+		processPendingReceives(request.socket);
+	}
+
+	void submitRequest(AsyncSendRequest* request)
+	{
+		request.socket.m_pendingSends.insertBack(request);
+		processPendingSends(request.socket);
+	}
+
 	bool broadcast(in fd_t fd, bool b) {
 		m_status = StatusInfo.init;
 
@@ -1766,6 +1777,119 @@ package:
 		static if(LOG) log(m_status);
 	}
 private:
+
+	void processPendingReceives(AsyncSocket socket)
+	{
+		if (socket.readBlocked) return;
+		foreach (request; socket.m_pendingReceives) {
+			// Try to fit all bytes available in the OS receive buffer
+			// into the current request's buffer.
+			auto received = attemptMessageReception(socket, request.message);
+
+			if (status.code != Status.OK && !socket.readBlocked) {
+				socket.handleError();
+				socket.kill();
+				return;
+			} else if (request.exact) {
+				if (request.message.receivedAll) {
+					socket.m_pendingReceives.removeFront();
+					m_completedSocketReceives.insertBack(request);
+				} else {
+					break;
+				}
+			// New bytes or zero-sized connectionless datagram
+			} else if (received || !socket.connectionOriented && !socket.readBlocked) {
+				socket.m_pendingReceives.removeFront();
+				m_completedSocketReceives.insertBack(request);
+			} else {
+				break;
+			}
+		}
+	}
+
+	void processPendingSends(AsyncSocket socket)
+	{
+		if (socket.writeBlocked) return;
+		foreach (request; socket.m_pendingSends) {
+			// Try to fit all bytes of the current request's buffer
+			// into the OS send buffer.
+			auto sent = attemptMessageTransmission(socket, request.message);
+
+			if (status.code != Status.OK && !socket.writeBlocked) {
+				socket.handleError();
+				socket.kill();
+				return;
+			} else if (sent) {
+				socket.m_pendingSends.removeFront();
+				m_completedSocketSends.insertBack(request);
+			} else {
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Appends as much of the bytes currently available in the OS receive
+	 * buffer to the given message's transferred bytes as the message's
+	 * buffer's remaining free bytes and the state of the OS receive buffer
+	 * allow for, advancing the message's count of transferred bytes in the process.
+	 * Sets $(D readBlocked) on indication by the OS that there were
+	 * not enough bytes available in the OS receive buffer.
+	 * Returns: $(D true) if any bytes were transferred.
+	 */
+	bool attemptMessageReception(AsyncSocket socket, NetworkMessage* msg)
+	in {
+		assert(socket.connectionOriented && !msg.receivedAll || !msg.receivedAny, "Message already received");
+	} body {
+		bool received;
+		size_t recvCount = void;
+
+		if (socket.datagramOriented) {
+			recvCount = recvMsg(socket.handle, msg);
+			msg.count = msg.count + recvCount;
+			received = received || recvCount > 0;
+		} else do {
+			recvCount = recvMsg(socket.handle, msg);
+			msg.count = msg.count + recvCount;
+			received = received || recvCount > 0;
+		} while (recvCount > 0 && !msg.receivedAll);
+
+		// More bytes may yet become available in the future
+		if (status.code == Status.ASYNC) {
+			socket.readBlocked = true;
+		// Connection was shutdown in an orderly fashion by the remote peer
+		} else if (socket.connectionOriented && status.code == Status.OK && !recvCount) {
+			socket.readBlocked = true;
+		}
+
+		return received;
+	}
+
+	/**
+	 * Transfers as much of the given message's untransferred bytes
+	 * into the OS send buffer as the latter's state allows for,
+	 * advancing the message's count of transferred bytes in the process.
+	 * Sets $(DDOC_MEMBERS writeBlocked) on indication by the OS that
+	 * there was not enough space available in the OS send buffer.
+	 * Returns: $(D true) if all of the message's bytes
+	 *          have been transferred.
+	 */
+	bool attemptMessageTransmission(AsyncSocket socket, NetworkMessage* msg)
+	in { assert(!msg.sent, "Message already sent"); }
+	body {
+		size_t sentCount = void;
+
+		do {
+			sentCount = sendMsg(socket.handle, msg);
+			msg.count = msg.count + sentCount;
+		} while (sentCount > 0 && !msg.sent);
+
+		if (status.code == Status.ASYNC) {
+			socket.writeBlocked = true;
+		}
+
+		return msg.sent;
+	}
 
 	/// For DirectoryWatcher
 	/// In kqueue/vnode, all we get is the folder in which changes occured.
@@ -2235,14 +2359,14 @@ private:
 			tracef("Read on FD %d", socket.handle);
 
 			socket.readBlocked = false;
-			socket.processReceiveRequests();
+			processPendingReceives(socket);
 		}
 
 		if (write) {
 			tracef("Write on FD %d", socket.handle);
 
 			socket.writeBlocked = false;
-			socket.processSendRequests();
+			processPendingSends(socket);
 		}
 
 		if (error) {
@@ -2340,7 +2464,7 @@ private:
 			tracef("Write on FD %d", socket.handle);
 
 			socket.writeBlocked = false;
-			socket.processSendRequests();
+			processPendingSends(socket);
 		}/+ else {
 			read = true;
 		}+/
@@ -2349,7 +2473,7 @@ private:
 			tracef("Read on FD %d", socket.handle);
 
 			socket.readBlocked = false;
-			socket.processReceiveRequests();
+			processPendingReceives(socket);
 		}
 
 		if (close && socket.connected && !socket.disconnecting)

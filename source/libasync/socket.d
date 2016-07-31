@@ -172,6 +172,33 @@ public:
 	mixin FreeList!(1_000);
 }
 
+///
+struct AsyncReceiveRequest
+{
+	AsyncSocket socket;       /// Socket to receive the message on
+	NetworkMessage* message;  /// Storage to receive the message into
+	OnComplete onComplete;    /// Called once the request completed successfully
+	bool exact;               /// Whether the message's buffer should be filled completely
+
+	alias OnComplete = void delegate(ubyte[] data);
+
+	mixin FreeList!(1_000);
+	mixin Queue;
+}
+
+///
+struct AsyncSendRequest
+{
+	AsyncSocket socket;      // Socket to send the message on
+	NetworkMessage* message; // The message to be sent
+	OnComplete onComplete;   // Called once the request completed successfully
+
+	alias OnComplete = void delegate();
+
+	mixin FreeList!(1_000);
+	mixin Queue;
+}
+
 /++
  + 
  +/
@@ -186,8 +213,8 @@ final class AsyncSocket
 		// There are no connectionless, not datagram-oriented sockets
 		assert(m_connectionOriented || m_datagramOriented);
 
-		if (m_receiveContinuously) {
-			auto requests = (cast(RecvRequest.Queue) m_recvRequests)[];
+		version (Posix) if (m_receiveContinuously) {
+			auto requests = (cast(AsyncReceiveRequest.Queue) m_pendingReceives)[];
 			assert(requests.empty || requests.dropOne.empty, "At most one receive request may be pending while receiving continuously");
 		}
 	}
@@ -218,10 +245,10 @@ private:
 	 */
 	bool m_receiveContinuously;
 
-	package RecvRequest.Queue m_recvRequests; /// Queue of calls to $(D receiveMessage).
-	SendRequest.Queue m_sendRequests; /// Queue of calls to $(D sendMessage).
-
-	//version (Posix) AsyncNotifier m_notifier;
+	version (Posix) {
+		package AsyncReceiveRequest.Queue m_pendingReceives; /// Queue of calls to $(D receiveMessage).
+		package AsyncSendRequest.Queue m_pendingSends; /// Queue of requests initiated by $(D sendMessage).
+	}
 
 package:
 	EventLoop m_evLoop; /// Event loop of the thread this socket was created by.
@@ -239,135 +266,57 @@ package:
 	in { assert(m_onAccept !is null); }
 	body { m_onAccept(peer); }
 
-	/// Holds information of a single call to $(D receiveMessage).
-	struct RecvRequest
-	{
-		AsyncSocket socket;
-		NetworkMessage* msg;
-		OnReceive onComplete;
-		bool exact;
-
-		mixin FreeList!(1_000);
-		mixin Queue;
-	}
-
-	/// Holds information of a single call to $(D sendMessage).
-	struct SendRequest
-	{
-		AsyncSocket socket;
-		NetworkMessage* msg;
-		OnEvent onComplete;
-
-		mixin FreeList!(1_000);
-		mixin Queue;
-	}
-
-version (Posix) {
-	void processReceiveRequests() nothrow
-	{
-		if (readBlocked) return;
-		foreach (request; m_recvRequests) {
-			// Try to fit all bytes available in the OS receive buffer
-			// into the current request's buffer.
-			auto received = attemptMessageReception(request.msg);
-
-			if (m_evLoop.status.code != Status.OK && !readBlocked) {
-				handleError();
-				kill();
-				return;
-			} else if (request.exact) {
-				if (request.msg.receivedAll) {
-					m_recvRequests.removeFront();
-					m_evLoop.m_evLoop.m_completedSocketReceives.insertBack(request);
-				} else {
-					break;
-				}
-			// New bytes or zero-sized connectionless datagram
-			} else if (received || !m_connectionOriented && !readBlocked) {
-				m_recvRequests.removeFront();
-				m_evLoop.m_evLoop.m_completedSocketReceives.insertBack(request);
-			} else {
-				break;
-			}
-		}
-	}
-
-	void processSendRequests() nothrow
-	{
-		if (writeBlocked) return;
-		foreach (request; m_sendRequests) {
-			// Try to fit all bytes of the current request's buffer
-			// into the OS send buffer.
-			auto sent = attemptMessageTransmission(request.msg);
-
-			if (m_evLoop.status.code != Status.OK && !writeBlocked) {
-				handleError();
-				kill();
-				return;
-			} else if (sent) {
-				m_sendRequests.removeFront();
-				m_evLoop.m_evLoop.m_completedSocketSends.insertBack(request);
-			} else {
-				break;
-			}
-		}
-	}
-}
-
 public:
 	/// Generic callback type to handle events without additional parameters
 	alias OnEvent = void delegate();
 	///
 	alias OnError = nothrow void delegate();
-	/// Callback type to handle the completion of data reception
-	alias OnReceive = void delegate(ubyte[] data);
 	/// Callback type to handle the successful acceptance of a peer on a
 	/// socket on which `listen` succeeded
 	alias OnAccept = nothrow void delegate(typeof(this) peer);
 
 	///
-	void receiveMessage(NetworkMessage* message, OnReceive onRecv, bool exact)
+	void receiveMessage(NetworkMessage* message, AsyncReceiveRequest.OnComplete onReceive, bool exact)
 	in {
 		assert(!m_passive, "Passive sockets cannot receive");
 		assert(!m_connectionOriented || connected, "Established connection required");
 		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
-		assert(!m_receiveContinuously || m_recvRequests.empty, "Cannot receive message manually while receiving continuously");
+		assert(!m_receiveContinuously || m_pendingReceives.empty, "Cannot receive message manually while receiving continuously");
 		assert(m_connectionOriented || !exact, "Connectionless datagram sockets must receive one datagram at a time");
-		assert(onRecv !is null, "Completion callback required");
+		assert(onReceive !is null, "Completion callback required");
 		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
 	} body {
-		auto request = RecvRequest.alloc(this, message, onRecv, exact);
+		auto request = AsyncReceiveRequest.alloc(this, message, onReceive, exact);
 		version (Posix) {
-			m_recvRequests.insertBack(request);
-			processReceiveRequests();
+			m_evLoop.m_evLoop.submitRequest(request);
 		} else version (Windows) {
 			m_evLoop.m_evLoop.submitRequest(request);
 		}
 	}
 
 	///
-	void receive(ref ubyte[] buf, OnReceive onRecv)
+	void receive(ref ubyte[] buf, AsyncReceiveRequest.OnComplete onReceive)
 	{
 		auto message = NetworkMessage.alloc(buf);
-		receiveMessage(message, onRecv, false);
+		receiveMessage(message, onReceive, false);
 	}
 
 	///
-	void receiveExactly(ref ubyte[] buf, OnReceive onRecv)
+	void receiveExactly(ref ubyte[] buf, AsyncReceiveRequest.OnComplete onReceive)
 	{
 		auto message = NetworkMessage.alloc(buf);
-		receiveMessage(message, onRecv, true);
+		receiveMessage(message, onReceive, true);
 	}
 
 	///
-	void receiveFrom(ref ubyte[] buf, ref NetworkAddress from, OnReceive onRecv)
+	void receiveFrom(ref ubyte[] buf, ref NetworkAddress from, AsyncReceiveRequest.OnComplete onReceive)
 	{
 		auto message = NetworkMessage.alloc(buf, &from);
-		receiveMessage(message, onRecv, false);
+		receiveMessage(message, onReceive, false);
 	}
 
 	///
-	void sendMessage(NetworkMessage* message, OnEvent onSend)
+	void sendMessage(NetworkMessage* message, AsyncSendRequest.OnComplete onSend)
 	in {
 		assert(!m_passive, "Passive sockets cannot receive");
 		assert(!m_connectionOriented || connected, "Established connection required");
@@ -375,10 +324,9 @@ public:
 		assert(m_connectionOriented || { remoteAddress; return true; }().ifThrown(false) || message.hasAddress, "Remote address required");
 		assert(onSend !is null, "Completion callback required");
 	} body {
-		auto request = SendRequest.alloc(this, message, onSend);
+		auto request = AsyncSendRequest.alloc(this, message, onSend);
 		version (Posix) {
-			m_sendRequests.insertBack(request);
-			processSendRequests();
+			m_evLoop.m_evLoop.submitRequest(request);
 		} else version (Windows) {
 			m_evLoop.m_evLoop.submitRequest(request);
 		}
@@ -472,71 +420,6 @@ public:
 	{ setOption(level, option, (&value)[0 .. 1]); }
 
 nothrow:
-
-private:
-
-	/**
-	 * Appends as much of the bytes currently available in the OS receive
-	 * buffer to the given message's transferred bytes as the message's
-	 * buffer's remaining free bytes and the state of the OS receive buffer
-	 * allow for, advancing the message's count of transferred bytes in the process.
-	 * Sets $(D readBlocked) on indication by the OS that there were
-	 * not enough bytes available in the OS receive buffer.
-	 * Returns: $(D true) if any bytes were transferred.
-	 */
-	version (Posix) bool attemptMessageReception(NetworkMessage* msg)
-	in {
-		assert(m_connectionOriented && !msg.receivedAll || !msg.receivedAny, "Message already received");
-	} body {
-		bool received;
-		size_t recvCount = void;
-
-		if (m_datagramOriented) {
-			recvCount = m_evLoop.m_evLoop.recvMsg(m_socket, msg);
-			msg.count = msg.count + recvCount;
-			received = received || recvCount > 0;
-		} else do {
-			recvCount = m_evLoop.m_evLoop.recvMsg(m_socket, msg);
-			msg.count = msg.count + recvCount;
-			received = received || recvCount > 0;
-		} while (recvCount > 0 && !msg.receivedAll);
-
-		// More bytes may yet become available in the future
-		if (m_evLoop.status.code == Status.ASYNC) {
-			readBlocked = true;
-		// Connection was shutdown in an orderly fashion by the remote peer
-		} else if (m_connectionOriented && m_evLoop.status.code == Status.OK && !recvCount) {
-			readBlocked = true;
-		}
-
-		return received;
-	}
-
-	/**
-	 * Transfers as much of the given message's untransferred bytes
-	 * into the OS send buffer as the latter's state allows for,
-	 * advancing the message's count of transferred bytes in the process.
-	 * Sets $(DDOC_MEMBERS writeBlocked) on indication by the OS that
-	 * there was not enough space available in the OS send buffer.
-	 * Returns: $(D true) if all of the message's bytes
-	 *          have been transferred.
-	 */
-	version (Posix) bool attemptMessageTransmission(NetworkMessage* msg)
-	in { assert(!msg.sent, "Message already sent"); }
-	body {
-		size_t sentCount = void;
-
-		do {
-			sentCount = m_evLoop.m_evLoop.sendMsg(m_socket, msg);
-			msg.count = msg.count + sentCount;
-		} while (sentCount > 0 && !msg.sent);
-
-		if (m_evLoop.status.code == Status.ASYNC) {
-			writeBlocked = true;
-		}
-
-		return msg.sent;
-	}
 
 package:
 	mixin COSocketMixins;
@@ -684,10 +567,10 @@ public:
 	///
 	@property void receiveContinuously(bool toggle) @safe pure
 	in {
-		version (Posix) if (!m_receiveContinuously && toggle) assert(m_recvRequests.empty, "Cannot start receiving continuously when there are still pending receives");
+		version (Posix) if (!m_receiveContinuously && toggle) assert(m_pendingReceives.empty, "Cannot start receiving continuously when there are still pending receives");
 	} body {
 		if (m_receiveContinuously == toggle) return;
-		version (Posix) if (!toggle && !m_recvRequests.empty) assumeWontThrow(m_recvRequests.removeFront());
+		version (Posix) if (!toggle && !m_pendingReceives.empty) assumeWontThrow(m_pendingReceives.removeFront());
 		m_receiveContinuously = toggle;
 	}
 
