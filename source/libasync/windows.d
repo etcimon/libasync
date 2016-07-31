@@ -2520,19 +2520,9 @@ nothrow extern(System)
 		NetworkMessage.free(request.message);
 		AsyncReceiveRequest.free(request);
 
-		if (error == WSAECONNRESET || error == WSAECONNABORTED) {
+		if (error == WSAECONNRESET || error == WSAECONNABORTED || recvCount == 0) {
 			socket.handleClose();
-
-			*socket.connected = false;
-
-			closesocket(socket.handle);
-			return;
-		} else if (recvCount == 0) {
-			socket.handleClose();
-
-			*socket.connected = false;
-
-			closesocket(socket.handle);
+			socket.kill();
 			return;
 		}
 
@@ -2565,10 +2555,7 @@ nothrow extern(System)
 
 		if (error == WSAECONNRESET || error == WSAECONNABORTED) {
 			socket.handleClose();
-
-			*socket.connected = false;
-
-			closesocket(socket.handle);
+			socket.kill();
 			return;
 		}
 
