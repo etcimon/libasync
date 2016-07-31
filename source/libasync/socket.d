@@ -197,9 +197,29 @@ struct AsyncSendRequest
 	mixin Queue;
 }
 
-/++
- + 
- +/
+/**
+ * Proactor-model inspired asynchronous socket implementation.
+ * In contrast to the common POSIX readiness I/O, both receive
+ * and send operations are modeled as pending and completed
+ * requests, the latter for which a callback - you will need to
+ * provide will be triggered to notify you of said completion.
+ * It is therefore not recommended to keep calling the send or
+ * receive methods in rapid succession, as they will normally not fail
+ * (bugs, memory exhaustion, or the operating system not supporting
+ * further pending requests excluded) to notify you that you should try
+ * again later. They will, however, notify you via the callbacks
+ * you provide once a request has been completed, or once there
+ * has been a socket error (refer to $(D OnError)). It follows
+ * that you should usually have only a small number of requests
+ * pending on a socket at the same time (preferably only a single
+ * receive and a single send) and submit the next request only
+ * once the previous respective one notifies you of its completion.
+ * For connection-oriented, active sockets, connection completion and
+ * disconnection (either locally via $(D onClose) or by the remote peer)
+ * are handled by $(D OnConnect) and $(D OnClose) respectively.
+ * For connection-oriented, passive sockets, accepting of incoming
+ * connections is handled by $(D OnAccept).
+ */
 final class AsyncSocket
 {
 	invariant
@@ -282,7 +302,6 @@ public:
 
 	/// Get a socket option (taken from std.socket).
 	/// Returns: The number of bytes written to $(D result).
-	//returns the length, in bytes, of the actual result - very different from getsockopt()
 	int getOption(int level, int option, void[] result) @trusted const
 	{
 		import libasync.internals.socket_compat : getsockopt;
@@ -494,11 +513,13 @@ public:
 	in { assert(m_connectionOriented); }
 	body { m_onClose = onClose; }
 
-	/// Type of callback triggered when a socker error occured, leaving socket in
-	/// an unusable state; the underlying OS handle has either already or will
-	/// soon be destroyed and must not be used anymore; this also means that any
-	/// of this socket's methods relying on the OS handle may not be called anymore.
-	/// Furthermore, after the callback completes the socket will be $(D kill)ed.
+	/**
+	 * Type of callback triggered when a socker error occured, leaving socket in
+	 * an unusable state; the underlying OS handle has either already or will
+	 * soon be destroyed and must not be used anymore; this also means that any
+	 * of this socket's methods relying on the OS handle may not be called anymore.
+	 * Furthermore, after the callback completes the socket will be $(D kill)ed.
+	 */
 	alias OnError = void delegate();
 
 	/// Sets callback for when a socket error has occurred.
@@ -535,7 +556,7 @@ public:
 	bool bind(sockaddr* addr, socklen_t addrlen)
 	{ return m_evLoop.bind(this, addr, addrlen); }
 
-	/// Convenience method.
+	/// Convenience wrapper.
 	bool bind(const ref NetworkAddress addr)
 	{ return bind(cast(sockaddr*) addr.sockAddr, addr.sockAddrLen); }
 
@@ -554,7 +575,7 @@ public:
 	bool connect(sockaddr* addr, socklen_t addrlen)
 	{ return m_evLoop.connect(this, addr, addrlen); }
 
-	/// Convenience method.
+	/// Convenience wrapper.
 	bool connect(const ref NetworkAddress to)
 	{ return connect(cast(sockaddr*) to.sockAddr, to.sockAddrLen); }
 
@@ -589,40 +610,63 @@ public:
 		m_receiveContinuously = toggle;
 	}
 
-
-	///
-	void receive(ref ubyte[] buf, AsyncReceiveRequest.OnComplete onReceive)
-	/// Convenience
+	/**
+	 * Submits an asynchronous request on this socket to receive $(D data).
+	 * Upon successful reception of at most $(D data.length) bytes $(D onReceive)
+	 * will be called with the received bytes as a slice of $(D data).
+	 * See_Also: receiveExactly, receiveFrom
+	 */
+	void receive(ref ubyte[] data, AsyncReceiveRequest.OnComplete onReceive)
 	{
-		auto message = NetworkMessage.alloc(buf);
+		auto message = NetworkMessage.alloc(data);
 		receiveMessage(message, onReceive, false);
 	}
 
-	///
-	void receiveExactly(ref ubyte[] buf, AsyncReceiveRequest.OnComplete onReceive)
+	/**
+	 * Submits an asynchronous request on this socket to receive $(D data).
+	 * Upon successful reception of exactly $(D data.lengt) bytes $(D onReceive)
+	 * will be called with $(D data).
+	 * See_Also: receive, receiveFrom
+	 */
+	void receiveExactly(ref ubyte[] data, AsyncReceiveRequest.OnComplete onReceive)
 	{
-		auto message = NetworkMessage.alloc(buf);
+		auto message = NetworkMessage.alloc(data);
 		receiveMessage(message, onReceive, true);
 	}
 
-	///
-	void receiveFrom(ref ubyte[] buf, ref NetworkAddress from, AsyncReceiveRequest.OnComplete onReceive)
+	/**
+	 * Submits an asynchronous request on this socket to receive $(D data) $(D from)
+	 * an unknown sender, whose address will also be received.
+	 * Upon successful reception of at most $(D data.length) bytes $(D onReceive)
+	 * will be called with the received bytes as a slice of $(D data) and $(D from)
+	 * will have been set to the sender's address.
+	 * This method may only be called on connectionless sockets, to retrieve the
+	 * remote address on connection-oriented sockets, refer to $(D remoteAddress).
+	 * See_Also: receive, receiveExactly, remoteAddress
+	 */
+	void receiveFrom(ref ubyte[] data, ref NetworkAddress from, AsyncReceiveRequest.OnComplete onReceive)
 	{
-		auto message = NetworkMessage.alloc(buf, &from);
+		auto message = NetworkMessage.alloc(data, &from);
 		receiveMessage(message, onReceive, false);
 	}
 
-	///
-	void send(in ubyte[] buf, AsyncSendRequest.OnComplete onSend)
+	/**
+	 * Submits an asynchronous request on this socket to send $(D data).
+	 * Upon successful transmission $(D onSend) will be called.
+	 */
+	void send(in ubyte[] data, AsyncSendRequest.OnComplete onSend)
 	{
-		auto message = NetworkMessage.alloc(cast(ubyte[]) buf);
+		auto message = NetworkMessage.alloc(cast(ubyte[]) data);
 		sendMessage(message, onSend);
 	}
 
-	///
-	void sendTo(in ubyte[] buf, const ref NetworkAddress to, AsyncSendRequest.OnComplete onSend)
+	/**
+	 * Submits an asynchronous request on this socket to send $(D data) $(D to)
+	 * a specific recipient. Upon successful transmission $(D onSend) will be called.
+	 */
+	void sendTo(in ubyte[] data, const ref NetworkAddress to, AsyncSendRequest.OnComplete onSend)
 	{
-		auto message = NetworkMessage.alloc(cast(ubyte[]) buf, &to);
+		auto message = NetworkMessage.alloc(cast(ubyte[]) data, &to);
 		sendMessage(message, onSend);
 	}
 
