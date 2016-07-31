@@ -107,7 +107,7 @@ void transceive(AsyncSocket socket) nothrow
 	import std.random : randomCover, randomSample, uniform;
 	import std.ascii : letters;
 
-	void delegate() delegate(size_t, size_t, void delegate()) nothrow createSender = (i, n, onComplete) {
+	void delegate() nothrow delegate(size_t, size_t, void delegate() nothrow) nothrow createSender = (i, n, onComplete) {
 		static dataGenerator = generate!(() => cast(ubyte) letters[uniform(0, letters.length)]);
 
 		auto index = assumeWontThrow(i.to!string);
@@ -119,25 +119,27 @@ void transceive(AsyncSocket socket) nothrow
 		data[dataOffset-2..dataOffset] = cast(ubyte[]) ": ";
 		data[$-1] = '\n';
 
-		return delegate void() {
+		return delegate void() nothrow {
 			assumeWontThrow(data[dataOffset..$-1] = dataGenerator.take(n).array);
 			socket.send(data, onComplete);
 		};
 	};
 
-	auto senders = new void delegate()[3];
-	auto onSent = { senders.randomSample(1).front()(); };
+	auto senders = new void delegate() nothrow[3];
+	auto onSent = { assumeWontThrow(senders.randomSample(1).front())(); };
 
 	socket.onConnect = delegate void() nothrow {
 		foreach (i, ref sender; senders) {
 			sender = createSender(i, 2 << (3+i), { onSent(); });
 		}
 
-		if (senders.length > 0) assumeWontThrow(senders.front()());
+		if (senders.length > 0) assumeWontThrow(senders.front())();
 		socket.receiveContinuously = true;
 		socket.receive(g_receiveBuffer, (data) {
-			stdout.rawWrite(data);
-			stdout.flush();
+			try {
+				stdout.rawWrite(data);
+				stdout.flush();
+			} catch (Exception e) {}
 		});
 	};
 	socket.onClose = { g_running = false; };
