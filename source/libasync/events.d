@@ -197,6 +197,14 @@ package:
 		return m_evLoop.run(ctxt);
 	}
 
+	void submitRequest(AsyncReceiveRequest* ctxt) {
+		m_evLoop.submitRequest(ctxt);
+	}
+
+	void submitRequest(AsyncSendRequest* ctxt) {
+		m_evLoop.submitRequest(ctxt);
+	}
+
 	import libasync.internals.socket_compat : sockaddr, socklen_t;
 	bool bind(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
 	{

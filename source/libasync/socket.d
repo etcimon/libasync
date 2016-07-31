@@ -287,11 +287,7 @@ public:
 		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
 	} body {
 		auto request = AsyncReceiveRequest.alloc(this, message, onReceive, exact);
-		version (Posix) {
-			m_evLoop.m_evLoop.submitRequest(request);
-		} else version (Windows) {
-			m_evLoop.m_evLoop.submitRequest(request);
-		}
+		m_evLoop.submitRequest(request);
 	}
 
 	///
@@ -325,11 +321,7 @@ public:
 		assert(onSend !is null, "Completion callback required");
 	} body {
 		auto request = AsyncSendRequest.alloc(this, message, onSend);
-		version (Posix) {
-			m_evLoop.m_evLoop.submitRequest(request);
-		} else version (Windows) {
-			m_evLoop.m_evLoop.submitRequest(request);
-		}
+		m_evLoop.submitRequest(request);
 	}
 
 	///
