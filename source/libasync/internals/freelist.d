@@ -20,6 +20,7 @@ private:
 		} else {
 			static size_t count;
 		}
+		/// Next element in the freelist, if this element is on it.
 		T* next;
 	}
 	FreeListInfo freelist;

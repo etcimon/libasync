@@ -368,6 +368,50 @@ package:
 		}
 	}
 
+	/**
+	 * Submits an asynchronous request on this socket to receive a $(D message).
+	 * Upon successful reception $(D onReceive) will be called with the received data.
+	 * $(D exact) indicates whether successful reception requires the entire buffer
+	 * provided within $(D message) to have been filled. If a socket error occurrs,
+	 * but some data has already been received, then $(D onReceive) will be called
+	 * with that partial data regardless of $(D exact).
+	 * The $(D message) must have been allocated using $(D NetworkMessage.alloc) and
+	 * will be freed with $(D NetworkMessage.free) after the completion callback returns,
+	 * or once an error occurs that prevents said callback from being called.
+	 */
+	void receiveMessage(NetworkMessage* message, AsyncReceiveRequest.OnComplete onReceive, bool exact)
+	in {
+		assert(!m_passive, "Passive sockets cannot receive");
+		assert(!m_connectionOriented || connected, "Established connection required");
+		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
+		version (Posix) assert(!m_receiveContinuously || m_pendingReceives.empty, "Cannot receive message manually while receiving continuously");
+		assert(m_connectionOriented || !exact, "Connectionless datagram sockets must receive one datagram at a time");
+		assert(onReceive !is null, "Completion callback required");
+		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
+	} body {
+		auto request = AsyncReceiveRequest.alloc(this, message, onReceive, exact);
+		m_evLoop.submitRequest(request);
+	}
+
+	/**
+	 * Submits an asynchronous request on this socket to send a $(D message).
+	 * Upon successful transmission $(D onSend) will be called.
+	 * The $(D message) must have been allocated using $(D NetworkMessage.alloc) and
+	 * will be freed with $(D NetworkMessage.free) after the completion callback returns,
+	 * or once an error occurs that prevents said callback from being called.
+	 */
+	void sendMessage(NetworkMessage* message, AsyncSendRequest.OnComplete onSend)
+	in {
+		assert(!m_passive, "Passive sockets cannot receive");
+		assert(!m_connectionOriented || connected, "Established connection required");
+		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
+		assert(m_connectionOriented || assumeWontThrow({ remoteAddress; return true; }().ifThrown(false)) || message.hasAddress, "Remote address required");
+		assert(onSend !is null, "Completion callback required");
+	} body {
+		auto request = AsyncSendRequest.alloc(this, message, onSend);
+		m_evLoop.submitRequest(request);
+	}
+
 public:
 
 	/**
@@ -545,23 +589,10 @@ public:
 		m_receiveContinuously = toggle;
 	}
 
-	///
-	void receiveMessage(NetworkMessage* message, AsyncReceiveRequest.OnComplete onReceive, bool exact)
-	in {
-		assert(!m_passive, "Passive sockets cannot receive");
-		assert(!m_connectionOriented || connected, "Established connection required");
-		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
-		version (Posix) assert(!m_receiveContinuously || m_pendingReceives.empty, "Cannot receive message manually while receiving continuously");
-		assert(m_connectionOriented || !exact, "Connectionless datagram sockets must receive one datagram at a time");
-		assert(onReceive !is null, "Completion callback required");
-		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
-	} body {
-		auto request = AsyncReceiveRequest.alloc(this, message, onReceive, exact);
-		m_evLoop.submitRequest(request);
-	}
 
 	///
 	void receive(ref ubyte[] buf, AsyncReceiveRequest.OnComplete onReceive)
+	/// Convenience
 	{
 		auto message = NetworkMessage.alloc(buf);
 		receiveMessage(message, onReceive, false);
@@ -579,19 +610,6 @@ public:
 	{
 		auto message = NetworkMessage.alloc(buf, &from);
 		receiveMessage(message, onReceive, false);
-	}
-
-	///
-	void sendMessage(NetworkMessage* message, AsyncSendRequest.OnComplete onSend)
-	in {
-		assert(!m_passive, "Passive sockets cannot receive");
-		assert(!m_connectionOriented || connected, "Established connection required");
-		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
-		assert(m_connectionOriented || assumeWontThrow({ remoteAddress; return true; }().ifThrown(false)) || message.hasAddress, "Remote address required");
-		assert(onSend !is null, "Completion callback required");
-	} body {
-		auto request = AsyncSendRequest.alloc(this, message, onSend);
-		m_evLoop.submitRequest(request);
 	}
 
 	///
