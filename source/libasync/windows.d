@@ -1005,7 +1005,7 @@ package:
 		auto fd = ctxt.preInitializedHandle;
 
 		if (fd == INVALID_SOCKET) {
-			fd = WSASocketW(ctxt.info.family, ctxt.info.type, ctxt.info.protocol, null, 0, WSA_FLAG_OVERLAPPED);
+			fd = WSASocketW(ctxt.info.domain, ctxt.info.type, ctxt.info.protocol, null, 0, WSA_FLAG_OVERLAPPED);
 		}
 
 		if (catchErrors!"socket"(fd)) {
@@ -1086,7 +1086,7 @@ package:
 		// ConnectEx requires a bound connection-oriented socket.
 		try ctxt.localAddress; catch (SocketOSException) {
 			NetworkAddress local;
-			switch (ctxt.info.family) {
+			switch (ctxt.info.domain) {
 				case AF_INET:
 					local.addr_ip4.sin_family = AF_INET;
 					local.addr_ip4.sin_addr.s_addr = INADDR_ANY;
@@ -1167,7 +1167,7 @@ package:
 		//   - data to receive from the remote peer at connection acceptance (none used here)
 		//   - local address + 16 bytes
 		//   - remote address + 16 bytes
-		overlapped.socket.accept.buffer = assumeWontThrow(ThreadMem.alloc!(ubyte[])(2 * (16 + (ctxt.info.family == AF_INET6? sockaddr_in6.sizeof : sockaddr_in.sizeof))));
+		overlapped.socket.accept.buffer = assumeWontThrow(ThreadMem.alloc!(ubyte[])(2 * (16 + (ctxt.info.domain == AF_INET6? sockaddr_in6.sizeof : sockaddr_in.sizeof))));
 		overlapped.hEvent = pendingAcceptEvent;
 		return submitAccept(ctxt, overlapped);
 	}
@@ -1175,7 +1175,7 @@ package:
 	bool submitAccept(AsyncSocket socket, AsyncOverlapped* overlapped)
 	{
 	acceptAnother:
-		overlapped.socket.accept.peer = WSASocketW(socket.info.family, socket.info.type, socket.info.protocol, null, 0, WSA_FLAG_OVERLAPPED);
+		overlapped.socket.accept.peer = WSASocketW(socket.info.domain, socket.info.type, socket.info.protocol, null, 0, WSA_FLAG_OVERLAPPED);
 
 		if (catchErrors!"socket"(overlapped.socket.accept.peer)) {
 			.error("Failed to create peer socket: ", error);

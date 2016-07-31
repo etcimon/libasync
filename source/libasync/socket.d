@@ -265,7 +265,7 @@ public:
 		}
 		assert(addrLen <= addr.sockAddrLen,
 			   "POSIX.1-2013 requires sockaddr_storage be able to store any socket address");
-		assert(addr.family == m_info.family, "Inconsistent address family");
+		assert(addr.family == m_info.domain, "Inconsistent address family");
 		return addr;
 	}
 
@@ -281,7 +281,7 @@ public:
 		}
 		assert(addrLen <= addr.sockAddrLen,
 			   "POSIX.1-2013 requires sockaddr_storage be able to store any socket address");
-		assert(addr.family == m_info.family, "Inconsistent address family");
+		assert(addr.family == m_info.domain, "Inconsistent address family");
 		return addr;
 	}
 
@@ -618,12 +618,12 @@ public:
 		return m_evLoop.kill(this, forced);
 	}
 
-	///
+	/// Checks whether the associated OS handle refers to a valid socket.
 	@property bool alive() @safe @nogc {
 		return m_socket.isSocket();
 	}
 
-	///
+	/// Provides access to event loop information
 	mixin DefStatus;
 }
 
@@ -631,7 +631,7 @@ public:
 /// Holds additional information about a socket.
 struct SocketInfo
 {
-	int family;
+	int domain;
 	SocketType type;
 	int protocol;
 }
@@ -816,7 +816,7 @@ version (Posix)
 	import core.sys.windows.winsock2 : SOCKET_ERROR, INVALID_SOCKET;
 }
 
-///
+/// Checks whether the given file descriptor refers to a valid socket.
 bool isSocket(fd_t fd) @trusted @nogc nothrow
 {
 	import libasync.internals.socket_compat : getsockopt, SOL_SOCKET, SO_TYPE;
