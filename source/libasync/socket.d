@@ -616,7 +616,7 @@ public:
 	/// and cleans up the underlying resources.
 	bool kill(bool forced = false)
 	{
-		receiveContinuously = false;
+		m_receiveContinuously = false;
 		scope (exit) m_socket = INVALID_SOCKET;
 		return m_evLoop.kill(this, forced);
 	}

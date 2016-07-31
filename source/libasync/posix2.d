@@ -254,6 +254,18 @@ mixin template RunKill()
 
 		import core.sys.posix.unistd : close;
 
+		foreach (request; ctxt.m_pendingReceives) {
+			ctxt.m_pendingReceives.removeFront();
+			NetworkMessage.free(request.message);
+			AsyncReceiveRequest.free(request);
+		}
+
+		foreach (request; ctxt.m_pendingSends) {
+			ctxt.m_pendingSends.removeFront();
+			NetworkMessage.free(request.message);
+			AsyncSendRequest.free(request);
+		}
+
 		auto fd = ctxt.handle;
 
 		if (ctxt.connectionOriented && !ctxt.passive) {
