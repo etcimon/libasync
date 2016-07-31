@@ -315,7 +315,7 @@ package:
 						AsyncOverlapped.free(overlapped);
 						if (!setupConnectedCOASocket(socket)) return false;
 						socket.handleConnect();
-						return;
+						return true;
 					} else {
 						m_error = WSAGetLastErrorSafe();
 						if (m_error == WSA_IO_INCOMPLETE) {
@@ -1117,7 +1117,7 @@ package:
 			AsyncOverlapped.free(overlapped);
 			if (!setupConnectedCOASocket(ctxt)) return false;
 			ctxt.handleConnect();
-			return;
+			return true;
 		} else {
 			m_error = WSAGetLastErrorSafe();
 			if (m_error == WSA_IO_PENDING) {
@@ -1259,7 +1259,7 @@ package:
 		if (!setupConnectedCOASocket(peer, socket)) return false;
 		socket.handleAccept(peer);
 		peer.handleConnect();
-		return;
+		return true;
 	}
 
 	void submitRequest(AsyncReceiveRequest* request)
