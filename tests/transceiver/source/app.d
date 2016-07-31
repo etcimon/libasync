@@ -120,8 +120,10 @@ void transceive(AsyncSocket socket) nothrow
 		data[$-1] = '\n';
 
 		return delegate void() nothrow {
-			assumeWontThrow(data[dataOffset..$-1] = dataGenerator.take(n).array);
-			socket.send(data, onComplete);
+			if (socket.alive) {
+				assumeWontThrow(data[dataOffset..$-1] = dataGenerator.take(n).array);
+				socket.send(data, onComplete);
+			}
 		};
 	};
 
