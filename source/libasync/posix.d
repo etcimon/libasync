@@ -655,11 +655,16 @@ package:
 				auto transferred = request.message.transferred;
 
 				if (request.socket.receiveContinuously) {
-					request.message.count = 0;
 					m_completedSocketReceives.removeFront();
 					request.onComplete(transferred);
-					request.socket.m_pendingReceives.insertBack(request);
-					processPendingReceives(request.socket);
+					if (request.socket.receiveContinuously) {
+						request.message.count = 0;
+						request.socket.m_pendingReceives.insertBack(request);
+						processPendingReceives(request.socket);
+					} else {
+						NetworkMessage.free(request.message);
+						AsyncReceiveRequest.free(request);
+					}
 				} else {
 					m_completedSocketReceives.removeFront();
 					auto onComplete = request.onComplete;

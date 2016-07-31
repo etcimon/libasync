@@ -255,10 +255,15 @@ package:
 			foreach (request; m_completedSocketReceives) {
 				auto transferred = request.message.transferred;
 				if (request.socket.receiveContinuously) {
-					request.message.count = 0;
 					m_completedSocketReceives.removeFront();
 					request.onComplete(transferred);
-					submitRequest(request);
+					if (request.socket.receiveContinuously) {
+						request.message.count = 0;
+						submitRequest(request);
+					} else {
+						NetworkMessage.free(request.message);
+						AsyncReceiveRequest.free(request);
+					}
 				} else {
 					m_completedSocketReceives.removeFront();
 					auto onComplete = request.onComplete;
