@@ -120,7 +120,7 @@ void transceive(AsyncSocket socket) nothrow
 		data[$-1] = '\n';
 
 		return delegate void() {
-			data[dataOffset..$-1] = dataGenerator.take(n).array;
+			assumeWontThrow(data[dataOffset..$-1] = dataGenerator.take(n).array);
 			socket.send(data, onComplete);
 		};
 	};
@@ -128,12 +128,12 @@ void transceive(AsyncSocket socket) nothrow
 	auto senders = new void delegate()[3];
 	auto onSent = { senders.randomSample(1).front()(); };
 
-	socket.onConnect = {
+	socket.onConnect = delegate void() nothrow {
 		foreach (i, ref sender; senders) {
 			sender = createSender(i, 2 << (3+i), { onSent(); });
 		}
 
-		if (senders.length > 0) senders[0]();
+		if (senders.length > 0) assumeWontThrow(senders.front()());
 		socket.receiveContinuously = true;
 		socket.receive(g_receiveBuffer, (data) {
 			stdout.rawWrite(data);
