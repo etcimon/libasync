@@ -279,7 +279,7 @@ public:
 		assert(!m_passive, "Passive sockets cannot receive");
 		assert(!m_connectionOriented || connected, "Established connection required");
 		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
-		assert(!m_receiveContinuously || m_pendingReceives.empty, "Cannot receive message manually while receiving continuously");
+		version (Posix) assert(!m_receiveContinuously || m_pendingReceives.empty, "Cannot receive message manually while receiving continuously");
 		assert(m_connectionOriented || !exact, "Connectionless datagram sockets must receive one datagram at a time");
 		assert(onReceive !is null, "Completion callback required");
 		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
