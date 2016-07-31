@@ -210,11 +210,6 @@ final class AsyncSocket
 		//  - connectionless, datagram-oriented sockets
 		// There are no connectionless, not datagram-oriented sockets
 		assert(m_connectionOriented || m_datagramOriented);
-
-		version (Posix) if (m_receiveContinuously) {
-			auto requests = (cast(AsyncReceiveRequest.Queue) m_pendingReceives)[];
-			assert(requests.empty || requests.dropOne.empty, "At most one receive request may be pending while receiving continuously");
-		}
 	}
 
 private:
@@ -539,10 +534,9 @@ public:
 	///
 	@property void receiveContinuously(bool toggle) @safe pure
 	in {
-		version (Posix) if (!m_receiveContinuously && toggle) assert(m_pendingReceives.empty, "Cannot start receiving continuously when there are still pending receives");
+		version (Posix) assert(m_pendingReceives.empty, "Cannot start/stop receiving continuously when there are still pending receive requests");
 	} body {
 		if (m_receiveContinuously == toggle) return;
-		version (Posix) if (!toggle && !m_pendingReceives.empty) assumeWontThrow(m_pendingReceives.removeFront());
 		m_receiveContinuously = toggle;
 	}
 
