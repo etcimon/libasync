@@ -178,7 +178,7 @@ struct AsyncReceiveRequest
 	OnComplete onComplete;    /// Called once the request completed successfully
 	bool exact;               /// Whether the message's buffer should be filled completely
 
-	alias OnComplete = void delegate(ubyte[] data);
+	alias OnComplete = void delegate(ubyte[] data) nothrow;
 
 	mixin FreeList!(1_000);
 	mixin Queue;
@@ -191,7 +191,7 @@ struct AsyncSendRequest
 	NetworkMessage* message; // The message to be sent
 	OnComplete onComplete;   // Called once the request completed successfully
 
-	alias OnComplete = void delegate();
+	alias OnComplete = void delegate() nothrow;
 
 	mixin FreeList!(1_000);
 	mixin Queue;

@@ -245,15 +245,11 @@ package:
 			if (m_status.code != Status.OK) return false;
 
 			foreach (request; m_completedSocketSends) {
-				auto dg = request.onComplete;
+				auto onComplete = request.onComplete;
 				NetworkMessage.free(request.message);
 				AsyncSendRequest.free(request);
 				m_completedSocketSends.removeFront();
-				try dg(); catch (Exception e) {
-					.error(e.msg);
-					setInternalError!"del@AsyncSocket.WRITE"(Status.ABORT);
-					return false;
-				}
+				onComplete();
 			}
 
 			foreach (request; m_completedSocketReceives) {
@@ -261,22 +257,14 @@ package:
 				if (request.socket.receiveContinuously) {
 					request.message.count = 0;
 					m_completedSocketReceives.removeFront();
-					try request.onComplete(transferred); catch (Exception e) {
-						.error(e.msg);
-						setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
-						return false;
-					}
+					request.onComplete(transferred);
 					submitRequest(request);
 				} else {
-					auto dg = request.onComplete;
+					auto onComplete = request.onComplete;
 					NetworkMessage.free(request.message);
 					AsyncReceiveRequest.free(request);
 					m_completedSocketReceives.removeFront();
-					try dg(transferred); catch (Exception e) {
-						.error(e.msg);
-						setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
-						return false;
-					}
+					onComplete(transferred);
 				}
 			}
 
@@ -321,7 +309,8 @@ package:
 						m_pendingConnects.remove(socket);
 						AsyncOverlapped.free(overlapped);
 						if (!setupConnectedCOASocket(socket)) return false;
-						return dispatchConnectForCOASocket(socket);
+						socket.handleConnect();
+						return;
 					} else {
 						m_error = WSAGetLastErrorSafe();
 						if (m_error == WSA_IO_INCOMPLETE) {
@@ -1122,7 +1111,8 @@ package:
 		if (ConnectEx(ctxt.handle, addr, addrlen, null, 0, null, &overlapped.overlapped)) {
 			AsyncOverlapped.free(overlapped);
 			if (!setupConnectedCOASocket(ctxt)) return false;
-			return dispatchConnectForCOASocket(ctxt);
+			ctxt.handleConnect();
+			return;
 		} else {
 			m_error = WSAGetLastErrorSafe();
 			if (m_error == WSA_IO_PENDING) {
@@ -1157,18 +1147,6 @@ package:
 				ctxt.handleError();
 				return false;
 			}
-		}
-
-		return true;
-	}
-
-	bool dispatchConnectForCOASocket(AsyncSocket ctxt)
-	{
-		try ctxt.handleConnect();
-		catch (Exception e) {
-			.error(e.msg);
-			setInternalError!"del@AsyncSocket.CONNECT"(Status.ABORT);
-			return false;
 		}
 
 		return true;
@@ -1275,7 +1253,8 @@ package:
 		peer.run();
 		if (!setupConnectedCOASocket(peer, socket)) return false;
 		socket.handleAccept(peer);
-		return dispatchConnectForCOASocket(peer);
+		peer.handleConnect();
+		return;
 	}
 
 	void submitRequest(AsyncReceiveRequest* request)
@@ -1321,11 +1300,7 @@ package:
 			if (m_error == WSAECONNRESET ||
 			    m_error == WSAECONNABORTED ||
 			    m_error == WSAENOTSOCK) {
-				try request.socket.handleClose();
-				catch (Exception e) {
-					.error(e.msg);
-					setInternalError!"del@AsyncSocket.CLOSE"(Status.ABORT);
-				}
+				request.socket.handleClose();
 
 				*socket.connected = false;
 
@@ -1384,11 +1359,7 @@ package:
 			if (m_error == WSAECONNRESET ||
 			    m_error == WSAECONNABORTED ||
 			    m_error == WSAENOTSOCK) {
-				try socket.handleClose();
-				catch (Exception e) {
-					.error(e.msg);
-					setInternalError!"del@AsyncSocket.CLOSE"(Status.ABORT);
-				}
+				socket.handleClose();
 
 				*socket.connected = false;
 
@@ -2543,22 +2514,14 @@ nothrow extern(System)
 		AsyncReceiveRequest.free(request);
 
 		if (error == WSAECONNRESET || error == WSAECONNABORTED) {
-			try socket.handleClose();
-			catch (Exception e) {
-				.error(e.msg);
-				eventLoop.setInternalError!"del@AsyncSocket.CLOSE"(Status.ABORT);
-			}
+			socket.handleClose();
 
 			*socket.connected = false;
 
 			closesocket(socket.handle);
 			return;
 		} else if (recvCount == 0) {
-			try socket.handleClose();
-			catch (Exception e) {
-				.error(e.msg);
-				eventLoop.setInternalError!"del@AsyncSocket.CLOSE"(Status.ABORT);
-			}
+			socket.handleClose();
 
 			*socket.connected = false;
 
@@ -2594,11 +2557,7 @@ nothrow extern(System)
 		AsyncSendRequest.free(request);
 
 		if (error == WSAECONNRESET || error == WSAECONNABORTED) {
-			try socket.handleClose();
-			catch (Exception e) {
-				.error(e.msg);
-				eventLoop.setInternalError!"del@AsyncSocket.CLOSE"(Status.ABORT);
-			}
+			socket.handleClose();
 
 			*socket.connected = false;
 

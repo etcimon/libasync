@@ -657,11 +657,7 @@ package:
 				if (request.socket.receiveContinuously) {
 					request.message.count = 0;
 					m_completedSocketReceives.removeFront();
-					try request.onComplete(transferred); catch (Exception e) {
-						.error(e.msg);
-						setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
-						return false;
-					}
+					request.onComplete(transferred);
 					request.socket.m_pendingReceives.insertBack(request);
 					processPendingReceives(request.socket);
 				} else {
@@ -669,11 +665,7 @@ package:
 					NetworkMessage.free(request.message);
 					AsyncReceiveRequest.free(request);
 					m_completedSocketReceives.removeFront();
-					try onComplete(transferred); catch (Exception e) {
-						.error(e.msg);
-						setInternalError!"del@AsyncSocket.READ"(Status.ABORT);
-						return false;
-					}
+					onComplete(transferred);
 				}
 			}
 
@@ -689,11 +681,7 @@ package:
 				NetworkMessage.free(request.message);
 				AsyncSendRequest.free(request);
 				m_completedSocketSends.removeFront();
-				try onComplete(); catch (Exception e) {
-					.error(e.msg);
-					setInternalError!"del@AsyncSocket.WRITE"(Status.ABORT);
-					return false;
-				}
+				onComplete();
 			}
 
 			return true;
