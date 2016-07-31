@@ -68,8 +68,8 @@ private:
 	@property HANDLE pendingAcceptEvent()
 	{ return m_waitObjects[1]; }
 
-	AsyncSocket.RecvRequest.Queue m_completedSocketReceives;
-	AsyncSocket.SendRequest.Queue m_completedSocketSends;
+	AsyncReceiveRequest.Queue m_completedSocketReceives;
+	AsyncSendRequest.Queue m_completedSocketSends;
 package:
 	@property bool started() const {
 		return m_started;
@@ -246,8 +246,8 @@ package:
 
 			foreach (request; m_completedSocketSends) {
 				auto dg = request.onComplete;
-				NetworkMessage.free(request.msg);
-				AsyncSocket.SendRequest.free(request);
+				NetworkMessage.free(request.message);
+				AsyncSendRequest.free(request);
 				m_completedSocketSends.removeFront();
 				try dg(); catch (Exception e) {
 					.error(e.msg);
@@ -257,9 +257,9 @@ package:
 			}
 
 			foreach (request; m_completedSocketReceives) {
-				auto transferred = request.msg.transferred;
+				auto transferred = request.message.transferred;
 				if (request.socket.receiveContinuously) {
-					request.msg.count = 0;
+					request.message.count = 0;
 					m_completedSocketReceives.removeFront();
 					try request.onComplete(transferred); catch (Exception e) {
 						.error(e.msg);
@@ -269,8 +269,8 @@ package:
 					submitRequest(request);
 				} else {
 					auto dg = request.onComplete;
-					NetworkMessage.free(request.msg);
-					AsyncSocket.RecvRequest.free(request);
+					NetworkMessage.free(request.message);
+					AsyncReceiveRequest.free(request);
 					m_completedSocketReceives.removeFront();
 					try dg(transferred); catch (Exception e) {
 						.error(e.msg);
@@ -1278,32 +1278,32 @@ package:
 		return dispatchConnectForCOASocket(peer);
 	}
 
-	void submitRequest(AsyncSocket.RecvRequest* request)
+	void submitRequest(AsyncReceiveRequest* request)
 	{
 		auto overlapped = AsyncOverlapped.alloc();
 		overlapped.socket.receive = request;
 
 		int err = void;
-		if (request.msg.name) {
+		if (request.message.name) {
 			.tracef("WSARecvFrom on FD %s with buffer size %s",
-			        request.socket.handle, request.msg.header.msg_iov.len);
+			        request.socket.handle, request.message.header.msg_iov.len);
 			err = WSARecvFrom(request.socket.handle,
-			                  request.msg.buffers,
-			                  cast(DWORD) request.msg.bufferCount,
+			                  request.message.buffers,
+			                  cast(DWORD) request.message.bufferCount,
 			                  null,
-			                  &request.msg.header.msg_flags,
-			                  request.msg.name,
-			                  &request.msg.header.msg_namelen,
+			                  &request.message.header.msg_flags,
+			                  request.message.name,
+			                  &request.message.header.msg_namelen,
 			                  cast(const(WSAOVERLAPPEDX*)) overlapped,
 			                  cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedReceiveComplete);
 		} else {
 			.tracef("WSARecv on FD %s with buffer size %s",
-			        request.socket.handle, request.msg.header.msg_iov.len);
+			        request.socket.handle, request.message.header.msg_iov.len);
 			err = WSARecv(request.socket.handle,
-			              request.msg.buffers,
-			              cast(DWORD) request.msg.bufferCount,
+			              request.message.buffers,
+			              cast(DWORD) request.message.bufferCount,
 			              null,
-			              &request.msg.header.msg_flags,
+			              &request.message.header.msg_flags,
 			              cast(const(WSAOVERLAPPEDX*)) overlapped,
 			              cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedReceiveComplete);
 		}
@@ -1313,8 +1313,8 @@ package:
 
 			auto socket = request.socket;
 			AsyncOverlapped.free(overlapped);
-			NetworkMessage.free(request.msg);
-			AsyncSocket.RecvRequest.free(request);
+			NetworkMessage.free(request.message);
+			AsyncReceiveRequest.free(request);
 
 			// TODO: Possibly deal with WSAEWOULDBLOCK, which supposedly signals
 			//       too many pending overlapped I/O requests.
@@ -1339,33 +1339,33 @@ package:
 		}
 	}
 
-	void submitRequest(AsyncSocket.SendRequest* request)
+	void submitRequest(AsyncSendRequest* request)
 	{
 		auto overlapped = AsyncOverlapped.alloc();
 		overlapped.socket.send = request;
 
 		int err = void;
-		if (request.msg.name) {
+		if (request.message.name) {
 			.tracef("WSASendTo on FD %s for %s with buffer size %s",
 			        request.socket.handle,
-			        NetworkAddress(request.msg.name, request.msg.header.msg_namelen),
-			        request.msg.header.msg_iov.len);
+			        NetworkAddress(request.message.name, request.message.header.msg_namelen),
+			        request.message.header.msg_iov.len);
 			err = WSASendTo(request.socket.handle,
-		                    request.msg.buffers,
-		                    cast(DWORD) request.msg.bufferCount,
+		                    request.message.buffers,
+		                    cast(DWORD) request.message.bufferCount,
 		                    null,
-		                    request.msg.header.msg_flags,
-		                    request.msg.name,
-		                    request.msg.nameLength,
+		                    request.message.header.msg_flags,
+		                    request.message.name,
+		                    request.message.nameLength,
 		                    cast(const(WSAOVERLAPPEDX*)) overlapped,
 		                    cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedSendComplete);
 		} else {
-			.tracef("WSASend on FD %s with buffer size %s", request.socket.handle, request.msg.header.msg_iov.len);
+			.tracef("WSASend on FD %s with buffer size %s", request.socket.handle, request.message.header.msg_iov.len);
 			err = WSASend(request.socket.handle,
-		                    request.msg.buffers,
-		                    cast(DWORD) request.msg.bufferCount,
+		                    request.message.buffers,
+		                    cast(DWORD) request.message.bufferCount,
 		                    null,
-		                    request.msg.header.msg_flags,
+		                    request.message.header.msg_flags,
 		                    cast(const(WSAOVERLAPPEDX*)) overlapped,
 		                    cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedSendComplete);
 		}
@@ -1376,8 +1376,8 @@ package:
 
 			auto socket = request.socket;
 			AsyncOverlapped.free(overlapped);
-			NetworkMessage.free(request.msg);
-			AsyncSocket.SendRequest.free(request);
+			NetworkMessage.free(request.message);
+			AsyncSendRequest.free(request);
 
 			// TODO: Possibly deal with WSAEWOULDBLOCK, which supposedly signals
 			//       too many pending overlapped I/O requests.
@@ -2497,8 +2497,8 @@ struct AsyncOverlapped
 		union
 		{
 			Accept accept;
-			AsyncSocket.RecvRequest* receive;
-			AsyncSocket.SendRequest* send;
+			AsyncReceiveRequest* receive;
+			AsyncSendRequest* send;
 		}
 	};
 
@@ -2529,8 +2529,8 @@ nothrow extern(System)
 
 		AsyncOverlapped.free(overlapped);
 		if (error == 0 && recvCount > 0 || !socket.connectionOriented) {
-			request.msg.count = request.msg.count + recvCount;
-			if (request.exact && !request.msg.receivedAll) {
+			request.message.count = request.message.count + recvCount;
+			if (request.exact && !request.message.receivedAll) {
 				eventLoop.submitRequest(request);
 				return;
 			} else {
@@ -2539,8 +2539,8 @@ nothrow extern(System)
 			}
 		}
 
-		NetworkMessage.free(request.msg);
-		AsyncSocket.RecvRequest.free(request);
+		NetworkMessage.free(request.message);
+		AsyncReceiveRequest.free(request);
 
 		if (error == WSAECONNRESET || error == WSAECONNABORTED) {
 			try socket.handleClose();
@@ -2584,14 +2584,14 @@ nothrow extern(System)
 
 		AsyncOverlapped.free(overlapped);
 		if (error == 0) {
-			request.msg.count = request.msg.count + sentCount;
-			assert(request.msg.sent);
+			request.message.count = request.message.count + sentCount;
+			assert(request.message.sent);
 			eventLoop.m_completedSocketSends.insertBack(request);
 			return;
 		}
 
-		NetworkMessage.free(request.msg);
-		AsyncSocket.SendRequest.free(request);
+		NetworkMessage.free(request.message);
+		AsyncSendRequest.free(request);
 
 		if (error == WSAECONNRESET || error == WSAECONNABORTED) {
 			try socket.handleClose();
