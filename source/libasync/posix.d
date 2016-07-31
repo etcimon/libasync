@@ -1727,6 +1727,7 @@ private:
 			auto received = attemptMessageReception(socket, request.message);
 
 			if (status.code != Status.OK && !socket.readBlocked) {
+				if (received) m_completedSocketReceives.insertBack(request);
 				socket.handleError();
 				socket.kill();
 				return;

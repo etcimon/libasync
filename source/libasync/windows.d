@@ -2515,6 +2515,8 @@ nothrow extern(System)
 			}
 		}
 
+		if (recvCount > 0) eventLoop.m_completedSocketReceives.insertBack(request);
+
 		NetworkMessage.free(request.message);
 		AsyncReceiveRequest.free(request);
 
