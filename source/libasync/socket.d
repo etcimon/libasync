@@ -1,10 +1,7 @@
 module libasync.socket;
 
-import std.array;
-import std.exception;
-import std.range;
-
-import memutils.vector;
+import std.exception : assumeWontThrow, ifThrown;
+import std.range : dropOne;
 
 import libasync.events;
 import libasync.internals.logging;
@@ -12,7 +9,6 @@ import libasync.internals.socket_compat;
 import libasync.internals.freelist;
 import libasync.internals.queue;
 
-import std.socket : Address;
 public import std.socket : SocketType, SocketOSException;
 
 /// Returns `true` if the given type of socket is connection-oriented.
@@ -625,7 +621,8 @@ struct NetworkAddress
 			 (cast(ubyte*) &addr_storage)[0 .. addrlen]);
 	}
 
-	this(Address address) @safe pure nothrow @nogc
+	import std.socket : PhobosAddress = Address;
+	this(PhobosAddress address) @safe pure nothrow @nogc
 	{ this(address.name, address.nameLen); }
 
 	@property bool ipv6() const @safe pure nothrow @nogc
