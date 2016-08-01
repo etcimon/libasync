@@ -11,7 +11,13 @@ import libasync.internals.queue;
 
 public import std.socket : SocketType, SocketOSException;
 public import libasync.internals.socket_compat :
-	SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM, SOCK_RAW, SOCK_RDM;
+	SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM, SOCK_RAW, SOCK_RDM,
+	AF_INET, AF_INET6,
+	SOL_SOCKET,
+	SO_REUSEADDR;
+version (Posix) public import libasync.internals.socket_compat :
+	AF_UNIX,
+	SO_REUSEPORT;
 
 /// Returns `true` if the given type of socket is connection-oriented.
 /// Standards: Conforms to IEEE Std 1003.1, 2013 Edition
@@ -171,6 +177,26 @@ public:
 }
 
 ///
+struct AsyncAcceptRequest
+{
+	AsyncSocket socket;    /// Passive socket to accept a peer's connection on
+	AsyncSocket peer;      /// Active accepted peer socket
+	OnComplete onComplete; /// Called once the request completed successfully
+
+	alias OnComplete = void delegate(AsyncSocket peer) nothrow;
+
+	// These are used internally be the Windows event loop, do NOT modify them.
+	version (Windows)
+	{
+		/// Outbut buffer where AcceptEx places local and remote address
+		ubyte[2 * (16 + sockaddr_storage.sizeof)] buffer;
+	}
+
+	mixin FreeList!1_000;
+	mixin Queue;
+}
+
+///
 struct AsyncReceiveRequest
 {
 	AsyncSocket socket;       /// Socket to receive the message on
@@ -180,45 +206,48 @@ struct AsyncReceiveRequest
 
 	alias OnComplete = void delegate(ubyte[] data) nothrow;
 
-	mixin FreeList!(1_000);
+	mixin FreeList!1_000;
 	mixin Queue;
 }
 
 ///
 struct AsyncSendRequest
 {
-	AsyncSocket socket;      // Socket to send the message on
-	NetworkMessage* message; // The message to be sent
-	OnComplete onComplete;   // Called once the request completed successfully
+	AsyncSocket socket;      /// Socket to send the message on
+	NetworkMessage* message; /// The message to be sent
+	OnComplete onComplete;   /// Called once the request completed successfully
 
 	alias OnComplete = void delegate() nothrow;
 
-	mixin FreeList!(1_000);
+	mixin FreeList!1_000;
 	mixin Queue;
 }
 
 /**
  * Proactor-model inspired asynchronous socket implementation.
- * In contrast to the common POSIX readiness I/O, both receive
- * and send operations are modeled as pending and completed
- * requests, the latter for which a callback - you will need to
- * provide will be triggered to notify you of said completion.
- * It is therefore not recommended to keep calling the send or
- * receive methods in rapid succession, as they will normally not fail
+ * In contrast to POSIX.1-2013 readiness I/O - which essentially
+ * describes synchronous socket I/O operations with asynchronous
+ * notification of future blocking behaviour for said operations -
+ * this provides an API for asynchronous socket I/O operations:
+ * The three major socket operations accept, receive, and send
+ * modeled by this API will submit a request for asynchronous
+ * completion; towards that end, each call to these must be provided
+ * with a callback that will be called to notify you of said competion.
+ * It is therefore not recommended to keep calling any of these three
+ * methods in rapid succession, as they will normally not fail
  * (bugs, memory exhaustion, or the operating system not supporting
  * further pending requests excluded) to notify you that you should try
  * again later. They will, however, notify you via the callbacks
  * you provide once a request has been completed, or once there
  * has been a socket error (refer to $(D OnError)). It follows
  * that you should usually have only a small number of requests
- * pending on a socket at the same time (preferably only a single
- * receive and a single send) and submit the next request only
- * once the previous respective one notifies you of its completion.
+ * pending on a socket at the same time (preferably at most only a 
+ * single receive and a single send - respectively a single accept)
+ * and submit the next request only once the previous one
+ * (of the same type) notifies you of its completion.
  * For connection-oriented, active sockets, connection completion and
  * disconnection (either locally via $(D onClose) or by the remote peer)
  * are handled by $(D OnConnect) and $(D OnClose) respectively.
- * For connection-oriented, passive sockets, accepting of incoming
- * connections is handled by $(D OnAccept).
  */
 final class AsyncSocket
 {
@@ -249,7 +278,6 @@ private:
 	OnConnect m_onConnect; /// See_Also: onConnect
 	OnClose m_onClose;   /// See_Also: onClose
 	OnError m_onError;   /// See_Also: onError
-	OnAccept m_onAccept; /// See_Also: onAccept
 
 	/**
 	 * If disabled: Every call to $(D receiveMessage) will be processed only once.
@@ -259,6 +287,7 @@ private:
 	bool m_receiveContinuously;
 
 	version (Posix) {
+		package AsyncAcceptRequest.Queue m_pendingAccepts;   /// Queue of calls to $(D accept).
 		package AsyncReceiveRequest.Queue m_pendingReceives; /// Queue of calls to $(D receiveMessage).
 		package AsyncSendRequest.Queue m_pendingSends;       /// Queue of requests initiated by $(D sendMessage).
 	}
@@ -344,10 +373,6 @@ package:
 
 	void handleClose()
 	{ if (m_onClose !is null) m_onClose(); }
-
-	void handleAccept(typeof(this) peer)
-	in { assert(m_onAccept !is null); }
-	body { m_onAccept(peer); }
 
 	///
 	@property SocketInfo info() const @safe pure @nogc
@@ -525,16 +550,6 @@ public:
 	/// Sets callback for when a socket error has occurred.
 	@property void onError(OnError onError) @safe pure @nogc
 	{ m_onError = onError; }
-
-	/// Callback type to handle the successful acceptance of a peer on a
-	/// socket on which `listen` succeeded
-	alias OnAccept = void delegate(typeof(this) peer);
-
-	/// Sets callback for when a passive connection-oriented socket
-	/// accepts a new connection request from a remote socket.
-	@property void onAccept(OnAccept onAccept) @safe pure @nogc
-	in { assert(m_connectionOriented); }
-	body { m_onAccept = onAccept; }
 	
 	/// Creates the underlying OS socket - if necessary - and
 	/// registers the event handler in the underlying OS event loop.
@@ -581,15 +596,26 @@ public:
 
 	/**
 	 * Marks the socket as passive and enables acceptance of incoming connections
-	 * into instances of $(D AsyncSocket), which will be passed to the
-	 * callback that must have been provided via $(D onAccept) beforehand.
+	 * into instances of $(D AsyncSocket). Only after calling this successfully
+	 * may accept request be submitted via $(D accept).
 	 */
 	bool listen(int backlog = SOMAXCONN)
-	in { assert(m_onAccept !is null); }
-	body
 	{
 		m_passive = true;
 		return m_evLoop.listen(this, backlog);
+	}
+
+	/**
+	 * Submits an asynchronous request on this socket to accept an incoming
+	 * connection. Upon successful acceptance of such a connection $(D onAccept)
+	 * will be called with a new $(D AsyncSocket) representing the peer.
+	 * See_Also: listen
+	 */
+	void accept(AsyncAcceptRequest.OnComplete onAccept)
+	in { assert(m_connectionOriented && m_passive, "Can only accept on connection-oriented, passive sockets"); }
+	body {
+		auto request = AsyncAcceptRequest.alloc(this, null, onAccept);
+		m_evLoop.submitRequest(request);
 	}
 
 	/// Whether the socket is automatically resubmitting the current receive request
@@ -803,6 +829,11 @@ struct NetworkAddress
 	@property inout(sockaddr_in6)* sockAddrInet6() inout pure nothrow
 	in { assert (family == AF_INET6); }
 	body { return &addr_ip6; }
+
+	version (Posix)
+	@property inout(sockaddr_un)* sockAddrUnix() inout pure nothrow
+	in { assert (family == AF_UNIX); }
+	body { return &addr_un; }
 
 	/** Returns a string representation of the IP address
 	*/

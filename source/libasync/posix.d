@@ -112,8 +112,9 @@ private:
 
 	}
 
-	package AsyncReceiveRequest.Queue m_completedSocketReceives;
-	package AsyncSendRequest.Queue m_completedSocketSends;
+	AsyncAcceptRequest.Queue m_completedSocketAccepts;
+	AsyncReceiveRequest.Queue m_completedSocketReceives;
+	AsyncSendRequest.Queue m_completedSocketSends;
 
 package:
 
@@ -591,12 +592,19 @@ package:
 			return success;
 		}
 
-		if (m_completedSocketSends.empty && m_completedSocketReceives.empty) {
+		if (m_completedSocketAccepts.empty && m_completedSocketReceives.empty && m_completedSocketSends.empty) {
 			num = waitForEvents(timeout);
 			return handleEvents();
 		} else {
 			num = waitForEvents(0.seconds);
 			if (num != 0 && !handleEvents()) return false;
+
+			foreach (request; m_completedSocketAccepts) {
+				m_completedSocketAccepts.removeFront();
+				request.peer.run();
+				request.onComplete(request.peer);
+				AsyncAcceptRequest.free(request);
+			}
 
 			foreach (request; m_completedSocketReceives) {
 				if (request.socket.receiveContinuously) {
@@ -1601,6 +1609,12 @@ package:
 		}
 	}
 
+	void submitRequest(AsyncAcceptRequest* request)
+	{
+		request.socket.m_pendingAccepts.insertBack(request);
+		processPendingAccepts(request.socket);
+	}
+
 	void submitRequest(AsyncReceiveRequest* request)
 	{
 		request.socket.m_pendingReceives.insertBack(request);
@@ -1706,6 +1720,26 @@ package:
 	}
 private:
 
+	void processPendingAccepts(AsyncSocket socket)
+	{
+		if (socket.readBlocked) return;
+		foreach (request; socket.m_pendingAccepts) {
+			// Try to accept a single connection on the socket
+			request.peer = attemptConnectionAcceptance(socket);
+
+			if (status.code != Status.OK && !socket.readBlocked) {
+				socket.handleError();
+				socket.kill();
+				return;
+			} else if (request.peer) {
+				socket.m_pendingAccepts.removeFront();
+				m_completedSocketAccepts.insertBack(request);
+			} else {
+				break;
+			}
+		}
+	}
+
 	void processPendingReceives(AsyncSocket socket)
 	{
 		if (socket.readBlocked) return;
@@ -1755,6 +1789,52 @@ private:
 				break;
 			}
 		}
+	}
+
+	AsyncSocket attemptConnectionAcceptance(AsyncSocket socket)
+	{
+		import core.sys.posix.fcntl : O_NONBLOCK;
+		import libasync.internals.socket_compat : accept, accept4, sockaddr_storage, socklen_t;
+
+		fd_t peer = void;
+		sockaddr_storage remote = void;
+		socklen_t remoteLength = remote.sizeof;
+
+		enum common = q{
+			if (peer == SOCKET_ERROR) {
+				m_error = lastError();
+
+				if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+					m_status.code = Status.ASYNC;
+					socket.readBlocked = true;
+					return null;
+				} else if (m_error == EBADF ||
+				           m_error == EINTR ||
+				           m_error == EINVAL ||
+				           m_error == ENOTSOCK ||
+				           m_error == EOPNOTSUPP ||
+				           m_error == EFAULT) {
+					assert(false, "accept{4} system call on FD " ~ socket.handle.to!string ~ " encountered fatal socket error: " ~ this.error);
+				} else if (catchError!"accept"(peer)) {
+					.errorf("accept{4} system call on FD %d encountered socket error: %s", socket.handle, this.error);
+					return null;
+				}
+			}
+		};
+
+		version (linux) {
+			peer = accept4(socket.handle, cast(sockaddr*) &remote, &remoteLength, O_NONBLOCK);
+			mixin(common);
+		} else {
+			peer = accept(socket.handle, cast(sockaddr*) &remote, &remoteLength);
+			mixin(common);
+			if (!setNonBlock(peer)) {
+				.error("Failed to set accepted peer socket non-blocking");
+				return null;
+			}
+		}
+
+		return new AsyncSocket(m_evLoop, remote.ss_family, socket.info.type, socket.info.protocol, peer);
 	}
 
 	/**
@@ -2410,56 +2490,8 @@ private:
 		if (incoming) {
 			tracef("Incoming on FD %d", socket.handle);
 
-			AsyncSocket peer = void;
-			do {
-				fd_t peerSocket = void;
-				sockaddr peerAddress = void;
-				socklen_t peerAddressLength = peerAddress.sizeof;
-
-				enum common = q{
-					if (peerSocket == SOCKET_ERROR) {
-						m_error = lastError();
-
-						if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-							return true;
-						} else if (m_error == EBADF ||
-						           m_error == EINTR ||
-						           m_error == EINVAL ||
-						           m_error == ENOTSOCK ||
-						           m_error == EOPNOTSUPP ||
-						           m_error == EFAULT) {
-							assert(false, "accept{4} system call on FD " ~ socket.handle.to!string ~ " encountered fatal socket error: " ~ this.error);
-						} else {
-							.errorf("accept{4} system call on FD %d encountered socket error: %s", socket.handle, this.error);
-
-							m_status.text = "AsyncSocket.ERROR";
-							m_status.code = Status.ABORT;
-							socket.handleError();
-							socket.kill();
-							return false;
-						}
-					}
-				};
-
-				version (linux) {
-					peerSocket = accept4(socket.handle, &peerAddress, &peerAddressLength, O_NONBLOCK);
-					mixin(common);
-				} else {
-					import core.sys.posix.unistd : close;
-
-					peerSocket = accept(socket.handle, &peerAddress, &peerAddressLength);
-					mixin(common);
-					if (!setNonBlock(peerSocket)) {
-						.error("Failed to set accepted peer socket non-blocking");
-						close(peerSocket);
-						continue;
-					}
-				}
-
-				peer = new AsyncSocket(m_evLoop, peerAddress.sa_family, socket.info.type, socket.info.protocol, peerSocket);
-				peer.run();
-				socket.handleAccept(peer);
-			} while (socket.handle != INVALID_SOCKET);
+			socket.readBlocked = false;
+			processPendingAccepts(socket);
 		}
 
 		if (error) {

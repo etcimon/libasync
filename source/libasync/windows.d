@@ -68,8 +68,10 @@ private:
 	@property HANDLE pendingAcceptEvent()
 	{ return m_waitObjects[1]; }
 
+	AsyncOverlapped.Queue     m_pendingSocketAccepts;
+	AsyncAcceptRequest.Queue  m_completedSocketAccepts;
 	AsyncReceiveRequest.Queue m_completedSocketReceives;
-	AsyncSendRequest.Queue m_completedSocketSends;
+	AsyncSendRequest.Queue    m_completedSocketSends;
 package:
 	@property bool started() const {
 		return m_started;
@@ -327,41 +329,53 @@ package:
 				break;
 			// AcceptEx completion
 			case 1:
-				foreach (ref pendingAccept; m_pendingAccepts.byKeyValue()) {
-					auto socket = pendingAccept.key;
-					auto overlapped = pendingAccept.value;
+				foreach (overlapped; m_pendingSocketAccepts) {
+					auto request = overlapped.accept;
+					auto socket = request.socket;
 
 					if (WSAGetOverlappedResult(socket.handle,
 					                           &overlapped.overlapped,
-					                           &transferred,
-					                           false,
-					                           &flags)) {
-						sockaddr* localAddress, remoteAddress;
-						socklen_t localAddressLength, remoteAddressLength;
-
-						GetAcceptExSockaddrs(overlapped.socket.accept.buffer.ptr,
-						                     0,
-						                     cast(DWORD) overlapped.socket.accept.buffer.length / 2,
-						                     cast(DWORD) overlapped.socket.accept.buffer.length / 2,
-						                     &localAddress,
-						                     &localAddressLength,
-						                     &remoteAddress,
-						                     &remoteAddressLength);
-						if (!onAccept(socket, overlapped.socket.accept.peer, remoteAddress)) {
-							return false;
-						} else if (socket.handle == INVALID_SOCKET) {
-							return true;
-						}
-						return submitAccept(socket, overlapped);
+											   &transferred,
+											   false,
+											   &flags)) {
+						m_pendingSocketAccepts.removeFront();
+						AsyncOverlapped.free(overlapped);
+						m_completedSocketAccepts.insertBack(request);
 					} else {
 						m_error = WSAGetLastErrorSafe();
 						if (m_error == WSA_IO_INCOMPLETE) {
 							continue;
 						} else {
 							m_status.code = Status.ABORT;
+							m_pendingSocketAccepts.removeFront();
+							AsyncOverlapped.free(overlapped);
+							AsyncAcceptRequest.free(request);
 							socket.handleError();
+							socket.kill();
 							return false;
 						}
+					}
+				}
+				foreach (request; m_completedSocketAccepts) {
+					sockaddr* localAddress, remoteAddress;
+					socklen_t localAddressLength, remoteAddressLength;
+
+					GetAcceptExSockaddrs(request.buffer.ptr,
+										 0,
+										 cast(DWORD) request.buffer.length / 2,
+										 cast(DWORD) request.buffer.length / 2,
+										 &localAddress,
+										 &localAddressLength,
+										 &remoteAddress,
+										 &remoteAddressLength);
+
+					m_completedSocketAccepts.removeFront();
+					auto socket = request.socket;
+					if (!onAccept(request, remoteAddress)) {
+						m_status.code = Status.ABORT;
+						socket.handleError();
+						socket.kill();
+						return false;
 					}
 				}
 				break;
@@ -1029,7 +1043,6 @@ package:
 		} else if (ctxt.connectionOriented && !ctxt.passive && ctxt in m_pendingConnects) {
 			auto overlapped = cast(AsyncOverlapped*) m_pendingConnects[ctxt];
 			m_pendingConnects.remove(ctxt);
-			assumeWontThrow(ThreadMem.free(overlapped.socket.accept.buffer));
 			AsyncOverlapped.free(overlapped);
 		}
 
@@ -1163,65 +1176,69 @@ package:
 			.error("Failed to listen on socket: ", error);
 			return false;
 		}
-
-		auto overlapped = AsyncOverlapped.alloc();
-		// AcceptEx requires a buffer large enough for
-		//   - data to receive from the remote peer at connection acceptance (none used here)
-		//   - local address + 16 bytes
-		//   - remote address + 16 bytes
-		overlapped.socket.accept.buffer = assumeWontThrow(ThreadMem.alloc!(ubyte[])(2 * (16 + (ctxt.info.domain == AF_INET6? sockaddr_in6.sizeof : sockaddr_in.sizeof))));
-		overlapped.hEvent = pendingAcceptEvent;
-		return submitAccept(ctxt, overlapped);
+		return true;
 	}
 
-	bool submitAccept(AsyncSocket socket, AsyncOverlapped* overlapped)
+	bool onAccept(AsyncAcceptRequest* request, sockaddr* remoteAddress)
 	{
-	acceptAnother:
-		overlapped.socket.accept.peer = WSASocketW(socket.info.domain, socket.info.type, socket.info.protocol, null, 0, WSA_FLAG_OVERLAPPED);
+		auto socket = request.socket;
+		auto peer = new AsyncSocket(m_evLoop,
+		                            remoteAddress.sa_family,
+		                            socket.info.type,
+		                            socket.info.protocol,
+		                            request.peer);
+		AsyncAcceptRequest.free(request);
+		peer.run();
+		if (!setupConnectedCOASocket(peer, socket)) return false;
+		request.onComplete(peer);
+		peer.handleConnect();
+		return true;
+	}
 
-		if (catchErrors!"socket"(overlapped.socket.accept.peer)) {
-			.error("Failed to create peer socket: ", error);
-			assumeWontThrow(ThreadMem.free(overlapped.socket.accept.buffer));
+	void submitRequest(AsyncAcceptRequest* request)
+	{
+		auto overlapped = AsyncOverlapped.alloc();
+		overlapped.accept = request;
+		overlapped.hEvent = pendingAcceptEvent;
+
+		auto socket = request.socket;
+
+		request.peer = WSASocketW(request.socket.info.domain,
+								  request.socket.info.type,
+								  request.socket.info.protocol,
+								  null, 0, WSA_FLAG_OVERLAPPED);
+
+		if (request.peer == SOCKET_ERROR) {
+			m_error = WSAGetLastErrorSafe();
+
 			AsyncOverlapped.free(overlapped);
-			return false;
+			AsyncAcceptRequest.free(request);
+
+			.errorf("Failed to create peer socket with WSASocket: %s", error);
+			m_status.code = Status.ABORT;
+			socket.handleError();
+			socket.kill();
+			return;
 		}
 
 		DWORD bytesReceived;
 	retry:
 		if (AcceptEx(socket.handle,
-		                   overlapped.socket.accept.peer,
-		                   overlapped.socket.accept.buffer.ptr,
-		                   0,
-		                   cast(DWORD) overlapped.socket.accept.buffer.length / 2,
-		                   cast(DWORD) overlapped.socket.accept.buffer.length / 2,
-		                   &bytesReceived,
-		                   &overlapped.overlapped)) {
-			sockaddr* localAddress, remoteAddress;
-			socklen_t localAddressLength, remoteAddressLength;
-			GetAcceptExSockaddrs(overlapped.socket.accept.buffer.ptr,
-			                     0,
-			                     cast(DWORD) overlapped.socket.accept.buffer.length / 2,
-			                     cast(DWORD) overlapped.socket.accept.buffer.length / 2,
-			                     &localAddress,
-			                     &localAddressLength,
-			                     &remoteAddress,
-			                     &remoteAddressLength);
-			if (onAccept(socket, overlapped.socket.accept.peer, remoteAddress)) {
-				if (socket.handle != INVALID_SOCKET) {
-					goto acceptAnother;
-				} else {
-					return true;
-				}
-			} else {
-				assumeWontThrow(ThreadMem.free(overlapped.socket.accept.buffer));
-				AsyncOverlapped.free(overlapped);
-				return false;
-			}
+		             request.peer,
+		             request.buffer.ptr,
+		             0,
+		             cast(DWORD) request.buffer.length / 2,
+		             cast(DWORD) request.buffer.length / 2,
+		             &bytesReceived,
+		             &overlapped.overlapped)) {
+			AsyncOverlapped.free(overlapped);
+			m_completedSocketAccepts.insertBack(request);
+			return;
 		} else {
 			m_error = WSAGetLastErrorSafe();
 			if (m_error == WSA_IO_PENDING) {
-				m_pendingAccepts[socket] = overlapped;
-				return true;
+				m_pendingSocketAccepts.insertBack(overlapped);
+				return;
 			// AcceptEx documentation states this error happens if "an incoming connection was indicated,
 			// but was subsequently terminated by the remote peer prior to accepting the call".
 			// This means there is no pending accept and we have to call AcceptEx again; this,
@@ -1237,32 +1254,18 @@ package:
 				goto retry;
 			} else {
 				m_status.code = Status.ABORT;
-				socket.handleError();
-				assumeWontThrow(ThreadMem.free(overlapped.socket.accept.buffer));
 				AsyncOverlapped.free(overlapped);
-				return false;
+				AsyncAcceptRequest.free(request);
+				socket.handleError();
+				socket.kill();
 			}
 		}
-	}
-
-	bool onAccept(AsyncSocket socket, fd_t peerSocket, sockaddr* remoteAddress)
-	{
-		auto peer = new AsyncSocket(m_evLoop,
-		                            remoteAddress.sa_family,
-		                            socket.info.type,
-		                            socket.info.protocol,
-		                            peerSocket);
-		peer.run();
-		if (!setupConnectedCOASocket(peer, socket)) return false;
-		socket.handleAccept(peer);
-		peer.handleConnect();
-		return true;
 	}
 
 	void submitRequest(AsyncReceiveRequest* request)
 	{
 		auto overlapped = AsyncOverlapped.alloc();
-		overlapped.socket.receive = request;
+		overlapped.receive = request;
 
 		int err = void;
 		if (request.message.name) {
@@ -1313,13 +1316,14 @@ package:
 			.errorf("WSARecv* on FD %d encountered socket error: %s", socket.handle, this.error);
 			m_status.code = Status.ABORT;
 			socket.handleError();
+			socket.kill();
 		}
 	}
 
 	void submitRequest(AsyncSendRequest* request)
 	{
 		auto overlapped = AsyncOverlapped.alloc();
-		overlapped.socket.send = request;
+		overlapped.send = request;
 
 		int err = void;
 		if (request.message.name) {
@@ -1372,6 +1376,7 @@ package:
 			.errorf("WSASend* on FD %d encountered socket error: %s", socket.handle, this.error);
 			m_status.code = Status.ABORT;
 			socket.handleError();
+			socket.kill();
 		}
 	}
 
@@ -2453,38 +2458,20 @@ struct AsyncOverlapped
 	OVERLAPPED overlapped;
 	align:
 
-	/// Context information for AsyncSocket's requests.
-	struct SocketRequest
-	{
-		/// Information for AcceptEx
-		struct Accept
-		{
-			/// Socket for the new peer; must be created
-			/// before calling AcceptEx.
-			fd_t peer;
-			/// Output buffer for AcceptEx; holds
-			/// remote and local address after completion.
-			ubyte[] buffer;
-		}
-
-		union
-		{
-			Accept accept;
-			AsyncReceiveRequest* receive;
-			AsyncSendRequest* send;
-		}
-	};
-
 	union
 	{
-		SocketRequest socket;
+		AsyncAcceptRequest* accept;
+		AsyncReceiveRequest* receive;
+		AsyncSendRequest* send;
 	}
 
 	@property void hEvent(HANDLE hEvent) @safe pure @nogc nothrow
 	{ overlapped.hEvent = hEvent; }
 
 	import libasync.internals.freelist;
+	static import libasync.internals.queue;
 	mixin FreeList!1_000;
+	mixin libasync.internals.queue.Queue;
 }
 
 nothrow extern(System)
@@ -2493,8 +2480,8 @@ nothrow extern(System)
 	{
 		.tracef("onOverlappedReceiveComplete: error: %s, recvCount: %s, flags: %s", error, recvCount, flags);
 
-		auto socket = overlapped.socket.receive.socket;
-		auto request = overlapped.socket.receive;
+		auto socket = overlapped.receive.socket;
+		auto request = overlapped.receive;
 		auto eventLoop = &socket.m_evLoop.m_evLoop;
 		if (eventLoop.m_status.code != Status.OK) return;
 
@@ -2530,10 +2517,10 @@ nothrow extern(System)
 	void onOverlappedSendComplete(error_t error, DWORD sentCount, AsyncOverlapped* overlapped, DWORD flags)
 	{
 		.tracef("onOverlappedSendComplete: error: %s, sentCount: %s, flags: %s", error, sentCount, flags);
-		.tracef("%s %s", overlapped, overlapped.socket.send);
+		.tracef("%s %s", overlapped, overlapped.send);
 
-		auto socket = overlapped.socket.send.socket;
-		auto request = overlapped.socket.send;
+		auto socket = overlapped.send.socket;
+		auto request = overlapped.send;
 		auto eventLoop = &socket.m_evLoop.m_evLoop;
 		if (eventLoop.m_status.code != Status.OK) return;
 

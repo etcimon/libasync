@@ -197,6 +197,10 @@ package:
 		return m_evLoop.run(ctxt);
 	}
 
+	void submitRequest(AsyncAcceptRequest* ctxt) {
+		m_evLoop.submitRequest(ctxt);
+	}
+
 	void submitRequest(AsyncReceiveRequest* ctxt) {
 		m_evLoop.submitRequest(ctxt);
 	}
