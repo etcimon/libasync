@@ -179,8 +179,9 @@ public:
 ///
 struct AsyncAcceptRequest
 {
-	AsyncSocket socket;    /// Passive socket to accept a peer's connection on
-	AsyncSocket peer;      /// Active accepted peer socket
+	AsyncSocket socket;               /// Passive socket to accept a peer's connection on
+	version (Posix) AsyncSocket peer; /// Active accepted peer socket
+	version (Windows) fd_t peer;      /// Creater peer socket for AcceptEx	
 	OnComplete onComplete; /// Called once the request completed successfully
 
 	alias OnComplete = void delegate(AsyncSocket peer) nothrow;
@@ -614,7 +615,7 @@ public:
 	void accept(AsyncAcceptRequest.OnComplete onAccept)
 	in { assert(m_connectionOriented && m_passive, "Can only accept on connection-oriented, passive sockets"); }
 	body {
-		auto request = AsyncAcceptRequest.alloc(this, null, onAccept);
+		auto request = AsyncAcceptRequest.alloc(this, AsyncAcceptRequest.peer.init, onAccept);
 		m_evLoop.submitRequest(request);
 	}
 
