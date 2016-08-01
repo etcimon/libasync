@@ -64,17 +64,13 @@ bool connect(ref NetworkAddress remote, int af, SocketType type)
 
 bool listen(ref NetworkAddress local, int af, SocketType type)
 {
-	auto running = true;
-	auto eventLoop = getThreadEventLoop();
-	auto listener = new AsyncSocket(eventLoop, af, type);
+	auto listener = new AsyncSocket(g_eventLoop, af, type);
 
 	listener.onError = {
 		stderr.writeln("transceiver: ", listener.error).collectException();
 		g_status = 1;
-		running = false;
+		g_running = false;
 	};
-
-	if (listener.connectionOriented) listener.onAccept = (client) { transceive(client); };
 
 	if(!listener.run()) {
 		stderr.writeln("transceiver: ", listener.error);
@@ -99,10 +95,18 @@ bool listen(ref NetworkAddress local, int af, SocketType type)
 		return false;
 	}
 
+	AsyncAcceptRequest.OnComplete onAccept = void;
+	onAccept = (AsyncSocket client) {
+		transceive(client, true, false);
+		listener.accept(onAccept);
+	};
+
+	listener.accept(onAccept);
+
 	return true;
 }
 
-void transceive(AsyncSocket socket) nothrow
+void transceive(AsyncSocket socket, bool send = true, bool exitOnClose = true) nothrow
 {
 	import std.random : randomCover, randomSample, uniform;
 	import std.ascii : letters;
@@ -127,7 +131,7 @@ void transceive(AsyncSocket socket) nothrow
 		};
 	};
 
-	auto senders = new void delegate() nothrow[3];
+	auto senders = new void delegate() nothrow[1];
 	auto onSent = { assumeWontThrow(senders.randomSample(1).front())(); };
 
 	socket.onConnect = delegate void() nothrow {
@@ -135,7 +139,7 @@ void transceive(AsyncSocket socket) nothrow
 			sender = createSender(i, 2 << (3+i), { onSent(); });
 		}
 
-		if (senders.length > 0) assumeWontThrow(senders.front())();
+		if (send && senders.length > 0) assumeWontThrow(senders.front())();
 		socket.receiveContinuously = true;
 		socket.receive(g_receiveBuffer, (data) {
 			try {
@@ -144,7 +148,7 @@ void transceive(AsyncSocket socket) nothrow
 			} catch (Exception e) {}
 		});
 	};
-	socket.onClose = { g_running = false; };
+	socket.onClose = { if (exitOnClose) g_running = false; };
 	socket.onError = {
 		stderr.writeln("transceiver: ", socket.error).collectException();
 		g_running = false;
