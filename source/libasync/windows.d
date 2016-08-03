@@ -379,10 +379,14 @@ package:
 										 &remoteAddressLength);
 
 					m_completedSocketAccepts.removeFront();
-					auto socket = request.socket;
 					if (!onAccept(request, remoteAddress)) {
-						.warning("Failed to accept incoming connection request while killing listener");
+						m_status.code = Status.ABORT;
+						request.socket.kill();
+						request.socket.handleError();
+						AsyncAcceptRequest.free(request);
+						return false;
 					}
+					AsyncAcceptRequest.free(request);
 				}
 				break;
 			default:
@@ -1060,11 +1064,7 @@ package:
 
 				m_completedSocketAccepts.removeFront();
 				if (!onAccept(request, remoteAddress)) {
-					m_status.code = Status.ABORT;
-					request.socket.kill();
-					request.socket.handleError();
-					AsyncAcceptRequest.free(request);
-					return false;
+					.warning("Failed to accept incoming connection request while killing listener");
 				}
 				AsyncAcceptRequest.free(request);
 			}
@@ -1232,15 +1232,17 @@ package:
 	bool onAccept(AsyncAcceptRequest* request, sockaddr* remoteAddress)
 	{
 		auto socket = request.socket;
-		auto peer = new AsyncSocket(m_evLoop,
+		/+auto peer = new AsyncSocket(m_evLoop,
 		                            remoteAddress.sa_family,
 		                            socket.info.type,
 		                            socket.info.protocol,
 		                            request.peer);
 		AsyncAcceptRequest.free(request);
 		peer.run();
-		request.onComplete(peer);
-		if (!setupConnectedCOASocket(peer, socket)) {
+		request.onComplete(peer);+/
+		auto peer = request.onComplete(request.peer, remoteAddress.sa_family, socket.info.type, socket.info.protocol);
+		AsyncAcceptRequest.free(request);
+		if (!setupConnectedCOASocket(peer, socket) || !peer.run()) {
 			peer.kill();
 			peer.handleError();
 			return false;

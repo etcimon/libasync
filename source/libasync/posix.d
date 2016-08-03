@@ -601,9 +601,17 @@ package:
 
 			foreach (request; m_completedSocketAccepts) {
 				m_completedSocketAccepts.removeFront();
-				request.peer.run();
-				request.onComplete(request.peer);
+				//request.peer.run();
+				//request.onComplete(request.peer);
+				auto socket = request.socket;
+				auto peer = request.onComplete(request.peer, request.family, socket.info.type, socket.info.protocol);
 				AsyncAcceptRequest.free(request);
+				if (!peer.run) {
+					m_status.code = Status.ABORT;
+					peer.kill();
+					peer.handleError();
+					return false;
+				}
 			}
 
 			foreach (request; m_completedSocketReceives) {
@@ -1725,13 +1733,15 @@ private:
 		if (socket.readBlocked) return;
 		foreach (request; socket.m_pendingAccepts) {
 			// Try to accept a single connection on the socket
-			request.peer = attemptConnectionAcceptance(socket);
+			auto result = attemptConnectionAcceptance(socket);
+			request.peer = result[0];
+			request.family = result[1];
 
 			if (status.code != Status.OK && !socket.readBlocked) {
 				socket.kill();
 				socket.handleError();
 				return;
-			} else if (request.peer) {
+			} else if (request.peer != INVALID_SOCKET) {
 				socket.m_pendingAccepts.removeFront();
 				m_completedSocketAccepts.insertBack(request);
 			} else {
@@ -1791,7 +1801,7 @@ private:
 		}
 	}
 
-	AsyncSocket attemptConnectionAcceptance(AsyncSocket socket)
+	auto attemptConnectionAcceptance(AsyncSocket socket)
 	{
 		import core.sys.posix.fcntl : O_NONBLOCK;
 		import libasync.internals.socket_compat : accept, accept4, sockaddr_storage, socklen_t;
@@ -1807,7 +1817,7 @@ private:
 				if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
 					m_status.code = Status.ASYNC;
 					socket.readBlocked = true;
-					return null;
+					return tuple(INVALID_SOCKET, cast(ushort) 0);
 				} else if (m_error == EBADF ||
 				           m_error == EINTR ||
 				           m_error == EINVAL ||
@@ -1817,7 +1827,7 @@ private:
 					assert(false, "accept{4} system call on FD " ~ socket.handle.to!string ~ " encountered fatal socket error: " ~ this.error);
 				} else if (catchError!"accept"(peer)) {
 					.errorf("accept{4} system call on FD %d encountered socket error: %s", socket.handle, this.error);
-					return null;
+					return tuple(INVALID_SOCKET, cast(ushort) 0);
 				}
 			}
 		};
@@ -1830,11 +1840,12 @@ private:
 			mixin(common);
 			if (!setNonBlock(peer)) {
 				.error("Failed to set accepted peer socket non-blocking");
-				return null;
+				return tuple(INVALID_SOCKET, cast(ushort) 0);
 			}
 		}
 
-		return new AsyncSocket(m_evLoop, remote.ss_family, socket.info.type, socket.info.protocol, peer);
+		//return new AsyncSocket(m_evLoop, remote.ss_family, socket.info.type, socket.info.protocol, peer);
+		return tuple(peer, remote.ss_family);
 	}
 
 	/**

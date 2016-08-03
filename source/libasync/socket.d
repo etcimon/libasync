@@ -1,7 +1,6 @@
 module libasync.socket;
 
 import std.exception : assumeWontThrow, ifThrown;
-import std.range : dropOne;
 
 import libasync.events;
 import libasync.internals.logging;
@@ -179,12 +178,24 @@ public:
 ///
 struct AsyncAcceptRequest
 {
-	AsyncSocket socket;               /// Passive socket to accept a peer's connection on
-	version (Posix) AsyncSocket peer; /// Active accepted peer socket
-	version (Windows) fd_t peer;      /// Creater peer socket for AcceptEx	
-	OnComplete onComplete; /// Called once the request completed successfully
+	/// Passive socket to accept a peer's connection on
+	AsyncSocket socket;
+	/**
+	 * Posix:   Active accepted peer socket
+	 * Windows: Creater peer socket for AcceptEx
+	 */
+	fd_t peer;
+	/// Called once the request completed successfully
+	OnComplete onComplete;
+	/// Peer socket family
+	version (Posix) int family;
 
-	alias OnComplete = void delegate(AsyncSocket peer) nothrow;
+	/**
+	 * Must instantiate and return a new $(D AsyncSocket) for the connected peer,
+	 * calling $(D AsyncSocket)'s constructor for existing OS handles in the process
+	 * - the provided arguments are safe to call it with.
+	 */
+	alias OnComplete = AsyncSocket delegate(fd_t peer, int domain, SocketType type, int protocol) nothrow;
 
 	// These are used internally be the Windows event loop, do NOT modify them.
 	version (Windows)
@@ -402,24 +413,6 @@ package:
 		return code;
 	}
 
-	/// Create a new asynchronous socket from an existing operating system handle.
-	this(EventLoop evLoop, int domain, SocketType type, int protocol, fd_t socket) @safe @nogc
-	in {
-		assert(evLoop !is EventLoop.init);
-		if (socket != INVALID_SOCKET) assert(socket.isSocket);
-	} body {
-		m_evLoop = evLoop;
-		m_preInitializedSocket = socket;
-		m_info = SocketInfo(domain, type, protocol);
-		m_connectionOriented = type.isConnectionOriented;
-		m_datagramOriented = type.isDatagramOriented;
-
-		version (Posix) {
-			readBlocked = true;
-			writeBlocked = true;
-		}
-	}
-
 	/**
 	 * Submits an asynchronous request on this socket to receive a $(D message).
 	 * Upon successful reception $(D onReceive) will be called with the received data.
@@ -469,8 +462,31 @@ package:
 public:
 
 	/**
-	 * Create a new asynchronous socket within domain $(D domain)
-	 * of type $(D type) and using protocol $(D protocol).
+	 * Create a new asynchronous socket within $(D domain) of $(D type) using $(D protocol) from an
+	 * existing OS $(D handle). It is your responsibility to ensure that $(D handle) - in addition
+	 * to being a valid socket descriptor - fulfills all requirements to be used by $(D AsyncSocket):
+	 *   POSIX: Must be non-blocking (keyword $(D O_NONBLOCK))
+	 *   Windows: Must be overlapped (keyword $(D WSA_FLAG_OVERLAPPED))
+	 */
+	this(EventLoop evLoop, int domain, SocketType type, int protocol, fd_t handle) @safe @nogc
+	in {
+		assert(evLoop !is EventLoop.init);
+		if (handle != INVALID_SOCKET) assert(handle.isSocket);
+	} body {
+		m_evLoop = evLoop;
+		m_preInitializedSocket = handle;
+		m_info = SocketInfo(domain, type, protocol);
+		m_connectionOriented = type.isConnectionOriented;
+		m_datagramOriented = type.isDatagramOriented;
+
+		version (Posix) {
+			readBlocked = true;
+			writeBlocked = true;
+		}
+	}
+
+	/**
+	 * Create a new asynchronous socket within $(D domain) of $(D type) using $(D protocol).
 	 * See_Also:
 	 *     http://pubs.opengroup.org/onlinepubs/9699919799/functions/socket.html
 	 */
@@ -627,7 +643,7 @@ public:
 		assert(m_connectionOriented && m_passive, "Can only accept on connection-oriented, passive sockets");
 	}
 	body {
-		auto request = AsyncAcceptRequest.alloc(this, AsyncAcceptRequest.peer.init, onAccept);
+		auto request = AsyncAcceptRequest.alloc(this, INVALID_SOCKET, onAccept);
 		m_evLoop.submitRequest(request);
 	}
 

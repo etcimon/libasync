@@ -259,9 +259,10 @@ mixin template RunKill()
 		if (ctxt.connectionOriented && ctxt.passive) {
 			foreach (request; m_completedSocketAccepts) if (request.socket is ctxt) {
 				m_completedSocketAccepts.removeFront();
-				request.peer.run();
-				request.onComplete(request.peer);
+				auto socket = request.socket;
+				auto peer = request.onComplete(request.peer, request.family, socket.info.type, socket.info.protocol);
 				AsyncAcceptRequest.free(request);
+				if (!peer.run) return false;
 			}
 		}
 
