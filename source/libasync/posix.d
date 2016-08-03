@@ -1728,8 +1728,8 @@ private:
 			request.peer = attemptConnectionAcceptance(socket);
 
 			if (status.code != Status.OK && !socket.readBlocked) {
-				socket.handleError();
 				socket.kill();
+				socket.handleError();
 				return;
 			} else if (request.peer) {
 				socket.m_pendingAccepts.removeFront();
@@ -1750,8 +1750,8 @@ private:
 
 			if (status.code != Status.OK && !socket.readBlocked) {
 				if (received) m_completedSocketReceives.insertBack(request);
-				socket.handleError();
 				socket.kill();
+				socket.handleError();
 				return;
 			} else if (request.exact) {
 				if (request.message.receivedAll) {
@@ -1779,8 +1779,8 @@ private:
 			auto sent = attemptMessageTransmission(socket, request.message);
 
 			if (status.code != Status.OK && !socket.writeBlocked) {
-				socket.handleError();
 				socket.kill();
+				socket.handleError();
 				return;
 			} else if (sent) {
 				socket.m_pendingSends.removeFront();
@@ -2383,8 +2383,8 @@ private:
 
 			auto err = cast(error_t) socket.lastError;
 			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
-			socket.handleError();
 			socket.kill();
+			socket.handleError();
 			return false;
 		}
 
@@ -2419,14 +2419,14 @@ private:
 			auto err = cast(error_t) socket.lastError;
 			if (err == ECONNRESET ||
 			    err == EPIPE) {
-				socket.handleClose();
 				socket.kill();
+				socket.handleClose();
 				return true;
 			}
 
 			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
-			socket.handleError();
 			socket.kill();
+			socket.handleError();
 			return false;
 		}
 
@@ -2460,8 +2460,8 @@ private:
 		if (close && socket.connected && !socket.disconnecting)
 		{
 			tracef("Close on FD %d", socket.handle);
-			socket.handleClose();
 			socket.kill();
+			socket.handleClose();
 			return true;
 		}
 
@@ -2499,8 +2499,8 @@ private:
 
 			auto err = cast(error_t) socket.lastError;
 			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
-			socket.handleError();
 			socket.kill();
+			socket.handleError();
 			return false;
 		}
 

@@ -350,8 +350,8 @@ package:
 							m_pendingSocketAccepts.removeFront();
 							AsyncOverlapped.free(overlapped);
 							AsyncAcceptRequest.free(request);
-							socket.handleError();
 							socket.kill();
+							socket.handleError();
 							return false;
 						}
 					}
@@ -373,8 +373,8 @@ package:
 					auto socket = request.socket;
 					if (!onAccept(request, remoteAddress)) {
 						m_status.code = Status.ABORT;
-						socket.handleError();
 						socket.kill();
+						socket.handleError();
 						return false;
 					}
 				}
@@ -1036,6 +1036,33 @@ package:
 	{
 		m_status = StatusInfo.init;
 
+		auto handle = ctxt.resetHandle();
+
+		if (ctxt.connectionOriented && ctxt.passive) {
+			foreach (request; m_completedSocketAccepts) if (request.socket is ctxt) {
+				m_completedSocketAccepts.removeFront();
+				request.peer.run();
+				request.onComplete(request.peer);
+				AsyncAcceptRequest.free(request);
+			}
+		}
+
+		if (!ctxt.passive) {
+			foreach (request; m_completedSocketReceives) if (request.socket is ctxt) {
+				m_completedSocketReceives.removeFront();
+				request.onComplete(request.message.transferred);
+				NetworkMessage.free(request.message);
+				AsyncReceiveRequest.free(request);
+			}
+
+			foreach (request; m_completedSocketSends) if (request.socket is ctxt) {
+				m_completedSocketSends.removeFront();
+				request.onComplete();
+				NetworkMessage.free(request.message);
+				AsyncSendRequest.free(request);
+			}
+		}
+
 		if (ctxt.connectionOriented && ctxt.passive && ctxt in m_pendingAccepts) {
 			auto overlapped = cast(AsyncOverlapped*) m_pendingAccepts[ctxt];
 			m_pendingAccepts.remove(ctxt);
@@ -1053,16 +1080,16 @@ package:
 		INT err;
 		if (ctxt.connectionOriented) {
 			if (forced) {
-				err = shutdown(ctxt.handle, SD_BOTH);
+				err = shutdown(handle, SD_BOTH);
 				closesocket(ctxt.handle);
 			} else {
-				err = shutdown(ctxt.handle, SD_SEND);
+				err = shutdown(handle, SD_SEND);
 			}
 			if (catchSocketError!"shutdown"(err)) {
 				return false;
 			}
 		} else {
-			closesocket(ctxt.handle);
+			closesocket(handle);
 		}
 
 		return true;
@@ -1216,8 +1243,8 @@ package:
 
 			.errorf("Failed to create peer socket with WSASocket: %s", error);
 			m_status.code = Status.ABORT;
-			socket.handleError();
 			socket.kill();
+			socket.handleError();
 			return;
 		}
 
@@ -1256,8 +1283,8 @@ package:
 				m_status.code = Status.ABORT;
 				AsyncOverlapped.free(overlapped);
 				AsyncAcceptRequest.free(request);
-				socket.handleError();
 				socket.kill();
+				socket.handleError();
 			}
 		}
 	}
@@ -1315,8 +1342,8 @@ package:
 
 			.errorf("WSARecv* on FD %d encountered socket error: %s", socket.handle, this.error);
 			m_status.code = Status.ABORT;
-			socket.handleError();
 			socket.kill();
+			socket.handleError();
 		}
 	}
 
@@ -1375,8 +1402,8 @@ package:
 
 			.errorf("WSASend* on FD %d encountered socket error: %s", socket.handle, this.error);
 			m_status.code = Status.ABORT;
-			socket.handleError();
 			socket.kill();
+			socket.handleError();
 		}
 	}
 
@@ -2499,14 +2526,17 @@ nothrow extern(System)
 			}
 		}
 
-		if (recvCount > 0) eventLoop.m_completedSocketReceives.insertBack(request);
+		if (recvCount > 0) {
+			eventLoop.m_completedSocketReceives.insertBack(request);
+			return;
+		}
 
 		NetworkMessage.free(request.message);
 		AsyncReceiveRequest.free(request);
 
 		if (error == WSAECONNRESET || error == WSAECONNABORTED || recvCount == 0) {
-			socket.handleClose();
 			socket.kill();
+			socket.handleClose();
 			return;
 		}
 
@@ -2538,8 +2568,8 @@ nothrow extern(System)
 		AsyncSendRequest.free(request);
 
 		if (error == WSAECONNRESET || error == WSAECONNABORTED) {
-			socket.handleClose();
 			socket.kill();
+			socket.handleClose();
 			return;
 		}
 

@@ -366,6 +366,13 @@ nothrow:
 package:
 	mixin COSocketMixins;
 
+	/// Reset internal OS socket handle to $(D INVALID_SOCKET) and return its previous value
+	fd_t resetHandle()
+	{
+		scope (exit) m_socket = INVALID_SOCKET;
+		return m_socket;
+	}
+
 	void handleError()
 	{ if (m_onError !is null) m_onError(); }
 
@@ -426,6 +433,7 @@ package:
 	 */
 	void receiveMessage(NetworkMessage* message, AsyncReceiveRequest.OnComplete onReceive, bool exact)
 	in {
+		assert(alive, "Cannot receive on an unrun / killed socket");
 		assert(!m_passive, "Passive sockets cannot receive");
 		assert(!m_connectionOriented || connected, "Established connection required");
 		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
@@ -447,6 +455,7 @@ package:
 	 */
 	void sendMessage(NetworkMessage* message, AsyncSendRequest.OnComplete onSend)
 	in {
+		assert(alive, "Cannot send on an unrun / killed socket");
 		assert(!m_passive, "Passive sockets cannot receive");
 		assert(!m_connectionOriented || connected, "Established connection required");
 		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
@@ -531,7 +540,10 @@ public:
 	in { assert(m_connectionOriented); }
 	body { m_onConnect = onConnect; }
 
-	/// Type of callback triggered when a connection-oriented socket completes disconnecting
+	/**
+	 * Type of callback triggered when a connection-oriented, active socket completes disconnects.
+	 * The socket will have been $(D kill)ed before the call.
+	 */
 	alias OnClose = void delegate();
 
 	/// Sets this socket's $(D OnClose) callback.
@@ -540,11 +552,8 @@ public:
 	body { m_onClose = onClose; }
 
 	/**
-	 * Type of callback triggered when a socker error occured, leaving socket in
-	 * an unusable state; the underlying OS handle has either already or will
-	 * soon be destroyed and must not be used anymore; this also means that any
-	 * of this socket's methods relying on the OS handle may not be called anymore.
-	 * Furthermore, after the callback completes the socket will be $(D kill)ed.
+	 * Type of callback triggered when a socker error occured.
+	 * The socket will have been $(D kill)ed before the call.
 	 */
 	alias OnError = void delegate();
 
@@ -613,7 +622,10 @@ public:
 	 * See_Also: listen
 	 */
 	void accept(AsyncAcceptRequest.OnComplete onAccept)
-	in { assert(m_connectionOriented && m_passive, "Can only accept on connection-oriented, passive sockets"); }
+	in {
+		assert(alive, "Cannot accept on an unrun / killed socket");
+		assert(m_connectionOriented && m_passive, "Can only accept on connection-oriented, passive sockets");
+	}
 	body {
 		auto request = AsyncAcceptRequest.alloc(this, AsyncAcceptRequest.peer.init, onAccept);
 		m_evLoop.submitRequest(request);
@@ -697,21 +709,25 @@ public:
 		sendMessage(message, onSend);
 	}
 
-	/// Same as `kill` on connection-less sockets; on connection-oriented sockets,
-	/// additionally call the previously provided onClose callback.
-	/// See_Also: kill, onClose
+	/**
+	 * $(D kill)s the socket.
+	 * Additionally triggers the $(D onClose) callback on connection-oriented, active sockets.
+	 * See_Also: kill, OnClose
+	 */
 	bool close()
 	{
 		scope (exit) if (m_connectionOriented && !m_passive && m_onClose !is null) m_onClose();
 		return kill();
 	}
 
-	/// Removes the socket from the event loop, shutting it down if necessary,
-	/// and cleans up the underlying resources.
+	/**
+	 * Removes the socket from the event loop, shutting it down if necessary,
+	 * and cleans up the underlying resources. Only after this method has been
+	 * called may the socket instance be deallocated.
+	 */
 	bool kill(bool forced = false)
 	{
 		m_receiveContinuously = false;
-		scope (exit) m_socket = INVALID_SOCKET;
 		return m_evLoop.kill(this, forced);
 	}
 

@@ -254,6 +254,33 @@ mixin template RunKill()
 
 		import core.sys.posix.unistd : close;
 
+		auto fd = ctxt.resetHandle();
+
+		if (ctxt.connectionOriented && ctxt.passive) {
+			foreach (request; m_completedSocketAccepts) if (request.socket is ctxt) {
+				m_completedSocketAccepts.removeFront();
+				request.peer.run();
+				request.onComplete(request.peer);
+				AsyncAcceptRequest.free(request);
+			}
+		}
+
+		if (!ctxt.passive) {
+			foreach (request; m_completedSocketReceives) if (request.socket is ctxt) {
+				m_completedSocketReceives.removeFront();
+				request.onComplete(request.message.transferred);
+				NetworkMessage.free(request.message);
+				AsyncReceiveRequest.free(request);
+			}
+
+			foreach (request; m_completedSocketSends) if (request.socket is ctxt) {
+				m_completedSocketSends.removeFront();
+				request.onComplete();
+				NetworkMessage.free(request.message);
+				AsyncSendRequest.free(request);
+			}
+		}
+
 		foreach (request; ctxt.m_pendingReceives) {
 			ctxt.m_pendingReceives.removeFront();
 			NetworkMessage.free(request.message);
@@ -265,8 +292,6 @@ mixin template RunKill()
 			NetworkMessage.free(request.message);
 			AsyncSendRequest.free(request);
 		}
-
-		auto fd = ctxt.handle;
 
 		if (ctxt.connectionOriented && !ctxt.passive && ctxt.connected) {
 			bool has_socket = fd != INVALID_SOCKET;
