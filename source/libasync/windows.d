@@ -383,10 +383,8 @@ package:
 						m_status.code = Status.ABORT;
 						request.socket.kill();
 						request.socket.handleError();
-						AsyncAcceptRequest.free(request);
 						return false;
 					}
-					AsyncAcceptRequest.free(request);
 				}
 				break;
 			default:
@@ -1066,7 +1064,6 @@ package:
 				if (!onAccept(request, remoteAddress)) {
 					.warning("Failed to accept incoming connection request while killing listener");
 				}
-				AsyncAcceptRequest.free(request);
 			}
 		}
 
@@ -1232,17 +1229,9 @@ package:
 	bool onAccept(AsyncAcceptRequest* request, sockaddr* remoteAddress)
 	{
 		auto socket = request.socket;
-		/+auto peer = new AsyncSocket(m_evLoop,
-		                            remoteAddress.sa_family,
-		                            socket.info.type,
-		                            socket.info.protocol,
-		                            request.peer);
-		AsyncAcceptRequest.free(request);
-		peer.run();
-		request.onComplete(peer);+/
 		auto peer = request.onComplete(request.peer, remoteAddress.sa_family, socket.info.type, socket.info.protocol);
 		AsyncAcceptRequest.free(request);
-		if (!setupConnectedCOASocket(peer, socket) || !peer.run()) {
+		if (!peer.run() || !setupConnectedCOASocket(peer, socket)) {
 			peer.kill();
 			peer.handleError();
 			return false;
