@@ -272,7 +272,16 @@ package:
 				AsyncSendRequest.free(request);
 			}
 
-			return true;
+			signal = MsgWaitForMultipleObjectsEx(
+				cast(DWORD) m_waitObjects.length,
+				m_waitObjects.ptr,
+				0,
+				QS_ALLEVENTS,
+				MWMO_INPUTAVAILABLE // MWMO_INPUTAVAILABLE: Processes key/mouse input to avoid window ghosting
+				);
+			if (signal == WAIT_TIMEOUT) {
+				return true;
+			}
 		}
 
 		if (catchErrors!"MsgWaitForMultipleObjectsEx"(signal, errors)) {
