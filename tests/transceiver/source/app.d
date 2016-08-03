@@ -96,9 +96,11 @@ bool listen(ref NetworkAddress local, int af, SocketType type)
 	}
 
 	AsyncAcceptRequest.OnComplete onAccept = void;
-	onAccept = (AsyncSocket client) {
+	onAccept = (handle, family, type, protocol) {
+		scope (exit) if (listener.alive) listener.accept(onAccept);
+		auto client = new AsyncSocket(g_eventLoop, family, type, protocol, handle);
 		transceive(client, true, false);
-		listener.accept(onAccept);
+		return client;
 	};
 
 	listener.accept(onAccept);
