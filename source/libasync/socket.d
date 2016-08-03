@@ -529,6 +529,8 @@ public:
 	this(EventLoop evLoop, int domain, int type) @safe @nogc
 	{ this(evLoop, domain, type, 0); }
 
+	~this() { if (alive) kill(); }
+
 	/// The underlying OS socket descriptor
 	@property fd_t handle() @safe pure @nogc
 	{ return m_socket; }
