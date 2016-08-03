@@ -1817,7 +1817,7 @@ private:
 				if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
 					m_status.code = Status.ASYNC;
 					socket.readBlocked = true;
-					return tuple(INVALID_SOCKET, cast(ushort) 0);
+					return tuple(INVALID_SOCKET, sockaddr.sa_family.init);
 				} else if (m_error == EBADF ||
 				           m_error == EINTR ||
 				           m_error == EINVAL ||
@@ -1827,7 +1827,7 @@ private:
 					assert(false, "accept{4} system call on FD " ~ socket.handle.to!string ~ " encountered fatal socket error: " ~ this.error);
 				} else if (catchError!"accept"(peer)) {
 					.errorf("accept{4} system call on FD %d encountered socket error: %s", socket.handle, this.error);
-					return tuple(INVALID_SOCKET, cast(ushort) 0);
+					return tuple(INVALID_SOCKET, sockaddr.sa_family.init);
 				}
 			}
 		};
@@ -1840,7 +1840,7 @@ private:
 			mixin(common);
 			if (!setNonBlock(peer)) {
 				.error("Failed to set accepted peer socket non-blocking");
-				return tuple(INVALID_SOCKET, cast(ushort) 0);
+				return tuple(INVALID_SOCKET, sockaddr.sa_family.init);
 			}
 		}
 
