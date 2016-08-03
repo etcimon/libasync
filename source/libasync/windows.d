@@ -381,10 +381,7 @@ package:
 					m_completedSocketAccepts.removeFront();
 					auto socket = request.socket;
 					if (!onAccept(request, remoteAddress)) {
-						m_status.code = Status.ABORT;
-						socket.kill();
-						socket.handleError();
-						return false;
+						.warning("Failed to accept incoming connection request while killing listener");
 					}
 				}
 				break;
@@ -1049,9 +1046,26 @@ package:
 
 		if (ctxt.connectionOriented && ctxt.passive) {
 			foreach (request; m_completedSocketAccepts) if (request.socket is ctxt) {
+				sockaddr* localAddress, remoteAddress;
+				socklen_t localAddressLength, remoteAddressLength;
+
+				GetAcceptExSockaddrs(request.buffer.ptr,
+									 0,
+									 cast(DWORD) request.buffer.length / 2,
+									 cast(DWORD) request.buffer.length / 2,
+									 &localAddress,
+									 &localAddressLength,
+									 &remoteAddress,
+									 &remoteAddressLength);
+
 				m_completedSocketAccepts.removeFront();
-				request.peer.run();
-				request.onComplete(request.peer);
+				if (!onAccept(request, remoteAddress)) {
+					m_status.code = Status.ABORT;
+					request.socket.kill();
+					request.socket.handleError();
+					AsyncAcceptRequest.free(request);
+					return false;
+				}
 				AsyncAcceptRequest.free(request);
 			}
 		}
@@ -1225,10 +1239,15 @@ package:
 		                            request.peer);
 		AsyncAcceptRequest.free(request);
 		peer.run();
-		if (!setupConnectedCOASocket(peer, socket)) return false;
 		request.onComplete(peer);
-		peer.handleConnect();
-		return true;
+		if (!setupConnectedCOASocket(peer, socket)) {
+			peer.kill();
+			peer.handleError();
+			return false;
+		} else {
+			peer.handleConnect();
+			return true;
+		}
 	}
 
 	void submitRequest(AsyncAcceptRequest* request)
