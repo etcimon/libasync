@@ -3,9 +3,9 @@ immutable HELP = "Minimalistic netcat-alike
 
 Usage:
   ncat -h | --help
-  ncat -l [-46u] <address> <port>
-  ncat -l [-46u] <port>
-  ncat -lU [-u] <address>
+  ncat -l [-46uk] <address> <port>
+  ncat -l [-46uk] <port>
+  ncat -lU [-uk] <address>
   ncat [-46u] <address> <port>
   ncat [-46u] <port>
   ncat -U [-u] <address>
@@ -13,17 +13,295 @@ Usage:
 Options:
   -h --help    Show this screen.
   -l           Start in listen mode, allowing inbound connects
+  -k           Keep listening for another connection after the
+               current one has been closed.
   -4           Operate in the IPv4 address family.
   -6           Operate in the IPv6 address family [default].
   -U           Operate in the UNIX domain socket address family (Posix platforms only).
   -u           Use datagram socket (e.g. UDP)
 ";
 
-enum Mode
+int main(string[] args)
 {
-	Connect,
-	Listen
+	auto arguments = docopt.docopt(HELP, args[1..$], true);
+
+	auto af = getAddressFamily(arguments);
+
+	NetworkAddress address = void;
+	try address = getAddress(arguments, af); catch (Exception e) {
+		stderr.writeln("ncat: ", e.msg);
+		return 1;
+	}
+
+	auto type = getType(arguments);
+	auto mode = getMode(arguments);
+	auto keepListening = keepListening(arguments);
+
+	g_running = true;
+	g_eventLoop = getThreadEventLoop();
+	g_receiveBuffer = new ubyte[4096];
+	if (mode == Mode.Listen) {
+		if (!listen(address, af, type, keepListening)) return 1;
+	} else {
+		if (!connect(address, af, type)) return 1;
+	}
+	while (g_running) g_eventLoop.loop(-1.seconds);
+	return g_status;
 }
+
+bool connect(ref NetworkAddress remote, int af, SocketType type)
+{
+	auto socket = new AsyncSocket(g_eventLoop, af, type);
+	if (socket.connectionOriented) transceive(socket, { g_running = false; });
+
+	if(!socket.run()) {
+		stderr.writeln("ncat: ", socket.error);
+		return false;
+	}
+
+	if (!socket.connect(remote)) {
+		stderr.writeln("ncat: ", socket.error);
+		return false;
+	}
+	if (!socket.connectionOriented) {
+		transceive(socket);
+		version (Posix) if (af == AF_UNIX) {
+			import std.path: buildPath;
+			import std.file: tempDir;
+			import std.conv : to;
+			import std.random: randomCover;
+			import std.range: take;
+			import std.ascii: hexDigits;
+			import std.array: array;
+
+			auto localName = buildPath(tempDir, "ncat." ~ hexDigits.array.randomCover.take(8).array.to!string);
+
+			NetworkAddress local;
+			local.sockAddr.sa_family = AF_UNIX;
+			(cast(sockaddr_un*) local.sockAddr).sun_path[0 .. localName.length] = cast(byte[]) localName[];
+			if (!socket.bind(local)) {
+				stderr.writeln("ncat: ", socket.error);
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
+bool listen(ref NetworkAddress local, int af, SocketType type, bool keepListening = false)
+{
+	auto listener = new AsyncSocket(g_eventLoop, af, type);
+
+	setupError(listener);
+
+	if(!listener.run()) {
+		stderr.writeln("ncat: ", listener.error);
+		return false;
+	}
+
+	try switch (af) {
+		case AF_INET, AF_INET6:
+			int yes = 1;
+			listener.setOption(SOL_SOCKET, SO_REUSEADDR, (cast(ubyte*) &yes)[0..yes.sizeof]);
+			version (Posix) listener.setOption(SOL_SOCKET, SO_REUSEPORT, (cast(ubyte*) &yes)[0..yes.sizeof]);
+			break;
+		version (Posix) {
+		case AF_UNIX:
+			auto path = to!string(cast(const(char)*) local.sockAddrUnix.sun_path.ptr).ifThrown("");
+			if (path.exists && !path.isDir) path.remove.collectException;
+			break;
+		}
+		default: assert(false);
+	} catch (Exception e) {
+		stderr.writeln("ncat: ", e.msg);
+		return false;
+	}
+
+	if (!listener.bind(local)) {
+		stderr.writeln("ncat: ", listener.error);
+		return false;
+	}
+
+	if (!listener.connectionOriented) {
+		NetworkAddress from, to;
+		mixin StdInTransmitter transmitter;
+
+		transmitter.start(listener, to);
+		listener.receiveContinuously = true;
+		listener.receiveFrom(g_receiveBuffer, from, (data) {
+			if (to == NetworkAddress.init) {
+				to = from;
+				transmitter.reader.loop();
+			}
+			if (from == to) {
+				stdout.rawWrite(data).collectException();
+				stdout.flush().collectException();
+			}
+		});
+	} else if (!listener.listen()) {
+		stderr.writeln("ncat: ", listener.error);
+		return false;
+	} else {
+		AsyncAcceptRequest.OnComplete onAccept = void;
+		onAccept = (handle, family, type, protocol) {
+			if (!keepListening) listener.kill();
+			auto client = new AsyncSocket(g_eventLoop, family, type, protocol, handle);
+			transceive(client, {
+				if (keepListening && listener.alive) listener.accept(onAccept);
+				else g_running = false;
+			});
+			return client;
+		};
+
+		listener.accept(onAccept);
+	}
+
+	return true;
+}
+
+void setupError(AsyncSocket socket, bool exit = true) nothrow
+{
+	socket.onError = {
+		stderr.writeln("ncat: ", socket.error).collectException();
+		if (exit) {
+			g_running = false;
+			g_status = 1;
+		}
+	};
+}
+
+mixin template StdInTransmitter()
+{
+	auto readBuffer = new shared ubyte[4096];
+	shared size_t readCount;
+
+	auto onRead = new shared AsyncSignal(g_eventLoop);
+	auto reader = new StdInReader(readBuffer, readCount, onRead);
+
+	void start(AsyncSocket socket) nothrow {
+		onRead.run({
+			if (readCount == 0) {
+				if (socket.connectionOriented) {
+					socket.close();
+				}
+				reader.stop();
+			} else {
+				socket.send(cast(ubyte[]) readBuffer[0..readCount], { reader.loop(); });
+			}
+		});
+		reader.start();
+		reader.loop();
+	}
+
+	void start(AsyncSocket socket, ref NetworkAddress to) nothrow {
+		onRead.run({
+			if (readCount == 0) {
+				to = NetworkAddress.init;
+			} else {
+				socket.sendTo(cast(ubyte[]) readBuffer[0..readCount], to, { reader.loop(); });
+			}
+		});
+		reader.start();
+	}
+}
+
+void transceive(AsyncSocket socket, AsyncSocket.OnClose onClose = null) nothrow
+{
+	setupError(socket);
+
+	if (socket.connectionOriented) {
+		socket.onConnect = delegate void() {
+			socket.receiveContinuously = true;
+			socket.receive(g_receiveBuffer, (data) {
+				stdout.rawWrite(data).collectException();
+				stdout.flush().collectException();
+			});
+
+			mixin StdInTransmitter transmitter;
+			transmitter.start(socket);
+		};
+		if (onClose) socket.onClose = onClose;
+	} else {
+		socket.receiveContinuously = true;
+		socket.receive(g_receiveBuffer, (data) {
+			stdout.rawWrite(data).collectException();
+			stdout.flush().collectException();
+		});
+
+		mixin StdInTransmitter transmitter;
+		transmitter.start(socket);
+	}
+}
+
+class StdInReader : Thread
+{
+private:
+	import core.sync.semaphore : Semaphore;
+
+	shared ubyte[] m_buffer;
+	shared size_t* m_readCount;
+	shared AsyncSignal m_onRead;
+	shared bool m_running;
+
+	Semaphore m_sem;
+
+public:
+	this(shared ubyte[] buffer, shared ref size_t readCount, shared AsyncSignal onRead) nothrow
+	{
+		m_buffer = buffer;
+		m_onRead = onRead;
+		m_readCount = &readCount;
+		m_sem = assumeWontThrow(new Semaphore(0));
+		m_running = true;
+		assumeWontThrow(isDaemon = true);
+		assumeWontThrow(super(&run));
+	}
+
+	version (Posix) void run()
+	{
+		import core.sys.posix.unistd : STDIN_FILENO, read;
+
+		m_sem.wait();
+		while (m_running && g_running) {
+			*m_readCount = read(STDIN_FILENO, cast(void*) m_buffer.ptr, m_buffer.length);
+			m_onRead.trigger();
+			m_sem.wait();
+		}
+	}
+
+	version (Windows) void run()
+	{
+		import libasync.internals.win32 : HANDLE, DWORD, GetStdHandle, ReadFile;
+		enum STD_INPUT_HANDLE = cast(DWORD) -10;
+		enum INVALID_HANDLE_VALUE = cast(HANDLE) -1;
+
+		auto stdin = GetStdHandle(STD_INPUT_HANDLE);
+		assert(stdin != INVALID_HANDLE_VALUE, "ncat: Failed to get standard input handle");
+
+		m_sem.wait();
+		while (m_running && g_running) {
+			DWORD bytesRead = void;
+			auto err = ReadFile(stdin, cast(void*) m_buffer.ptr, cast(DWORD) m_buffer.length, &bytesRead, null);
+			*m_readCount = bytesRead;
+			m_onRead.trigger();
+			m_sem.wait();
+		}
+	}
+
+	void stop() nothrow
+	{ m_running = false; loop(); }
+
+	void loop() nothrow
+	{ assumeWontThrow(m_sem.notify()); }
+}
+
+shared bool g_running;
+EventLoop g_eventLoop;
+int g_status;
+ubyte[] g_receiveBuffer;
+
+enum Mode { Connect, Listen }
 
 auto getAddressFamily(A)(A arguments)
 {
@@ -33,7 +311,7 @@ auto getAddressFamily(A)(A arguments)
 	return AddressFamily.INET6;
 }
 
-Address getAddress(A)(A arguments, AddressFamily af)
+auto getAddress(A)(A arguments, int af)
 {
 	auto address = arguments["<address>"];
 	ushort port = void;
@@ -44,258 +322,28 @@ Address getAddress(A)(A arguments, AddressFamily af)
 		throw new Exception("port must be integer and 0 <= port <= %s, not '%s'".format(ushort.max, arguments["<port>"]));
 	}
 
-	if (address.isNull) switch (af) with (AddressFamily) {
-		case INET: return new InternetAddress("0.0.0.0", port);
-		case INET6: return new Internet6Address("::", port);
+	if (address.isNull) switch (af) {
+		case AF_INET: with (new InternetAddress("0.0.0.0", port)) return NetworkAddress(name, nameLen);
+		case AF_INET6: with (new Internet6Address("::", port)) return NetworkAddress(name, nameLen);
 		default: assert(false);
 	}
 
-	switch (af) with (AddressFamily) {
-		case INET: return new InternetAddress(address.toString, port);
-		case INET6: return new Internet6Address(address.toString, port);
-		version (Posix) case UNIX: return new UnixAddress(address.toString);
+	switch (af) {
+		case AF_INET: with (new InternetAddress(address.toString, port)) return NetworkAddress(name, nameLen);
+		case AF_INET6: with (new Internet6Address(address.toString, port)) return NetworkAddress(name, nameLen);
+		version (Posix) case AF_UNIX: with(new UnixAddress(address.toString)) return NetworkAddress(name, nameLen);
 		default: assert(false);
 	}
 }
 
 auto getType(A)(A arguments)
-{
-	if (arguments["-u"].isTrue) return SocketType.DGRAM;
-	return SocketType.STREAM;
-}
+{ return arguments["-u"].isTrue? SocketType.DGRAM : SocketType.STREAM; }
 
 auto getMode(A)(A arguments)
-{
-	if (arguments["-l"].isTrue) return Mode.Listen;
-	return Mode.Connect;
-}
+{ return arguments["-l"].isTrue? Mode.Listen : Mode.Connect; }
 
-int main(string[] args)
-{
-	auto arguments = docopt.docopt(HELP, args[1..$], true);
-
-	auto af = getAddressFamily(arguments);
-	version (Windows) {
-		if (af == AddressFamily.UNIX) {
-			stderr.writeln("ncat: Unix domain sockets unsupported on Windows");
-			return 1;
-		}
-	}
-
-	Address address = void;
-	try address = getAddress(arguments, af);
-	catch (Exception e) {
-		stderr.writeln("ncat: ", e.msg);
-		return 1;
-	}
-
-	auto type = getType(arguments);
-
-	final switch (getMode(arguments)) with (Mode) {
-		case Listen:
-			return listenMode(address, af, type);
-		case Connect:
-			return connectMode(NetworkAddress(address), af, type);
-	}
-}
-
-int connectMode(NetworkAddress remote, AddressFamily af, SocketType type)
-{
-	auto running = true;
-
-	auto eventLoop = getThreadEventLoop();
-
-	auto client = new AsyncSocket(eventLoop, af, type);
-
-	auto socketRecvBuf = new ubyte[4096];
-	auto stdinReadBuf = new shared ubyte[4096];
-	shared ubyte[] input;
-
-	shared AsyncSignal handleSTDIN = new shared AsyncSignal(eventLoop);
-	void delegate() readAndSend = void;
-
-	void delegate(ubyte[] data) send = void;
-	if (client.connectionOriented) {
-		send = (data) => client.send(data, { if (client.alive) doOffThread(readAndSend); });
-	} else {
-		send = (data) => client.sendTo(cast(ubyte[]) input, remote, { if (client.alive) doOffThread(readAndSend); });
-	}
-
-
-	handleSTDIN.run({
-		if (input.length > 0) {
-			send(cast(ubyte[]) input);
-		} else {
-			running = false;
-		}
-	});
-
-	readAndSend = {
-		input = cast(shared ubyte[]) stdin.rawRead(cast(ubyte[]) stdinReadBuf);
-		handleSTDIN.trigger();
-	};
-
-	if (client.connectionOriented) {
-		client.onConnect = {
-			client.receiveContinuously = true;
-			client.receive(socketRecvBuf, (data) {
-				stdout.rawWrite(data);
-				stdout.flush();
-			});
-
-			doOffThread(readAndSend);
-		};
-
-		client.onClose = { running = false; };
-	}
-
-	client.onError = {
-		stderr.writeln("ncat: ", client.error).collectException();
-		running = false;
-	};
-
-	if(!client.run()) {
-		stderr.writeln("ncat: ", client.error);
-		return 1;
-	}
-
-	if (client.connectionOriented && !client.connect(remote)) {
-		stderr.writeln("ncat: ", client.error);
-		return 1;
-	} else version (Posix) if (af == AddressFamily.UNIX) {
-		import std.path: buildPath;
-		import std.file: tempDir;
-		import std.conv : to;
-		import std.random: randomCover;
-		import std.range: take;
-		import std.ascii: hexDigits;
-		import std.array: array;
-
-		auto localName = buildPath(tempDir, "ncat." ~ hexDigits.array.randomCover.take(8).array.to!string);
-
-		NetworkAddress local;
-		local.sockAddr.sa_family = AddressFamily.UNIX;
-		(cast(sockaddr_un*) local.sockAddr).sun_path[0 .. localName.length] = cast(byte[]) localName[];
-		if (!client.bind(local)) {
-			stderr.writeln("ncat: ", client.error);
-			return 1;
-		}
-	}
-
-	if (!client.connectionOriented) {
-		client.receiveContinuously = true;
-		client.receive(socketRecvBuf, (data) {
-			stdout.rawWrite(data);
-			stdout.flush();
-		});
-
-		doOffThread(readAndSend);
-	}
-
-	while (running) eventLoop.loop(-1.seconds);
-	return 0;
-}
-
-int listenMode(Address local, AddressFamily af, SocketType type)
-{
-	import libasync.internals.socket_compat : setsockopt, SO_REUSEADDR;
-	version (Posix) import libasync.internals.socket_compat : SO_REUSEPORT;
-	auto running = true;
-
-	auto eventLoop = getThreadEventLoop();
-
-	auto listener = new AsyncSocket(eventLoop, af, type);
-
-	auto socketRecvBuf = new ubyte[4096];
-	auto stdinReadBuf = new shared ubyte[4096];
-	shared ubyte[] input;
-
-	if (listener.connectionOriented) listener.onAccept = (client) {
-		listener.kill();
-
-		client.onConnect = {
-			client.receiveContinuously = true;
-			client.receive(socketRecvBuf, (data) {
-				stdout.rawWrite(data);
-				stdout.flush();
-			});
-
-			shared AsyncSignal handleSTDIN = new shared AsyncSignal(eventLoop);
-			void delegate() readAndSend = void;
-
-			handleSTDIN.run({
-				if (input.length > 0) {
-					client.send(cast(ubyte[]) input, { if (client.alive) doOffThread(readAndSend); });
-				} else {
-					running = false;
-				}
-			});
-
-			readAndSend = {
-				input = cast(shared ubyte[]) stdin.rawRead(cast(ubyte[]) stdinReadBuf);
-				handleSTDIN.trigger();
-			};
-
-			doOffThread(readAndSend);
-		};
-
-		client.onClose = { running = false; };
-		client.onError = {
-			stderr.writeln("ncat: ", client.error).collectException();
-			running = false;
-		};
-	};
-
-	listener.onError = {
-		stderr.writeln("ncat: ", listener.error).collectException();
-		running = false;
-	};
-
-	if(!listener.run()) {
-		stderr.writeln("ncat: ", listener.error);
-		return 1;
-	}
-
-	if (af != AddressFamily.UNIX) {
-		int yes = 1;
-		// None of the errors described for setsockopt (EBADF,EFAULT,EINVAL,ENOPROTOOPT,ENOTSOCK)
-		// can happen here unless there is a bug somewhere else.
-		assert(setsockopt(listener.handle, SocketOptionLevel.SOCKET, SO_REUSEADDR, &yes, yes.sizeof) == 0);
-		version (Posix) assert(setsockopt(listener.handle, SocketOptionLevel.SOCKET, SO_REUSEPORT, &yes, yes.sizeof) == 0);
-	} else version (Posix) {
-		auto path = (cast(UnixAddress) local).path;
-		if (path.exists && !path.isDir) try path.remove;
-		catch (Exception) {}
-	}
-
-	if (!listener.bind(NetworkAddress(local))) {
-		stderr.writeln("ncat: ", listener.error);
-		return 1;
-	}
-
-	if (!listener.connectionOriented) {
-		NetworkAddress remoteAddr;
-		listener.receiveContinuously = true;
-		listener.receiveFrom(socketRecvBuf, remoteAddr, (data) {
-			stdout.rawWrite(data);
-			stdout.flush();
-		});
-	}
-	else if (!listener.listen(128)) {
-		stderr.writeln("ncat: ", listener.error);
-		return 1;
-	}
-
-	while (running) eventLoop.loop(-1.seconds);
-	return 0;
-}
-
-void doOffThread(void delegate() dg)
-{
-	auto worker = new Thread({ dg(); });
-	worker.isDaemon = true;
-	worker.start();
-}
+auto keepListening(A)(A arguments)
+{ return arguments["-k"].isTrue; }
 
 import core.time;
 import core.thread;

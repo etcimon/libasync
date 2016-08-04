@@ -50,6 +50,9 @@ extern(System) nothrow
 	BOOL PostMessageW(HWND hwnd, UINT msg, WPARAM wPara, LPARAM lParam);
 	BOOL PostThreadMessageA(HWND hwnd, UINT msg, WPARAM wPara, LPARAM lParam);
 
+	HANDLE GetStdHandle(DWORD nStdHandle);
+	bool ReadFile(HANDLE hFile, void* lpBuffer, DWORD nNumberOfBytesRead, DWORD* lpNumberOfBytesRead, OVERLAPPED* lpOverlapped);
+
 	static if (__VERSION__ < 2065) {
 		BOOL PeekMessageW(MSG *lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg);
 		LONG DispatchMessageW(MSG *lpMsg);
