@@ -3,17 +3,16 @@ immutable HELP = "Receive/Send data continuously
 
 Usage:
   transceiver -h | --help
-  transceiver -l [-46u] <address> <port>
-  transceiver -l [-46u] <port>
-  transceiver [-46u] <address> <port>
-  transceiver [-46u] <port>
+  transceiver -l [-46] <address> <port>
+  transceiver -l [-46] <port>
+  transceiver [-46] <address> <port>
+  transceiver [-46] <port>
 
 Options:
   -h --help    Show this screen.
   -l           Start in listen mode, allowing inbound connects
   -4           Operate in the IPv4 address family.
   -6           Operate in the IPv6 address family [default].
-  -u           Use datagram socket (e.g. UDP)
 ";
 
 int main(string[] args)
@@ -28,23 +27,21 @@ int main(string[] args)
 		return 1;
 	}
 
-	auto type = getType(arguments);
-
 	auto mode = getMode(arguments);
 
 	g_running = true;
 	g_eventLoop = getThreadEventLoop();
 	g_receiveBuffer = new ubyte[4096];
 	if (mode == Mode.Listen) {
-		if (!listen(address, af, type)) return 1;
+		if (!listen(address, af, SOCK_STREAM)) return 1;
 	} else {
-		if (!connect(address, af, type)) return 1;
+		if (!connect(address, af, SOCK_STREAM)) return 1;
 	}
 	while (g_running) g_eventLoop.loop(-1.seconds);
 	return g_status;
 }
 
-bool connect(ref NetworkAddress remote, int af, SocketType type)
+bool connect(ref NetworkAddress remote, int af, int type)
 {
 	auto socket = new AsyncSocket(g_eventLoop, af, type);
 	transceive(socket);
@@ -62,7 +59,7 @@ bool connect(ref NetworkAddress remote, int af, SocketType type)
 	return true;
 }
 
-bool listen(ref NetworkAddress local, int af, SocketType type)
+bool listen(ref NetworkAddress local, int af, int type)
 {
 	auto listener = new AsyncSocket(g_eventLoop, af, type);
 
@@ -77,20 +74,21 @@ bool listen(ref NetworkAddress local, int af, SocketType type)
 		return false;
 	}
 
-	int yes = 1;
-	// None of the errors described for setsockopt (EBADF,EFAULT,EINVAL,ENOPROTOOPT,ENOTSOCK)
-	// can happen here unless there is a bug somewhere else.
-	assert(setsockopt(listener.handle, SocketOptionLevel.SOCKET, SO_REUSEADDR, &yes, yes.sizeof) == 0);
-	version (Posix) assert(setsockopt(listener.handle, SocketOptionLevel.SOCKET, SO_REUSEPORT, &yes, yes.sizeof) == 0);
+	try {
+		int yes = 1;
+		listener.setOption(SOL_SOCKET, SO_REUSEADDR, (cast(ubyte*) &yes)[0..yes.sizeof]);
+		version (Posix) listener.setOption(SOL_SOCKET, SO_REUSEPORT, (cast(ubyte*) &yes)[0..yes.sizeof]);
+	} catch (Exception e) {
+		stderr.writeln("transceiver: ", e.msg);
+		return false;
+	}
 
 	if (!listener.bind(local)) {
 		stderr.writeln("transceiver: ", listener.error);
 		return false;
 	}
 
-	if (!listener.connectionOriented) {
-		// TODO: Receive
-	} else if (!listener.listen(128)) {
+	if (!listener.listen()) {
 		stderr.writeln("transceiver: ", listener.error);
 		return false;
 	}
@@ -191,9 +189,6 @@ auto getAddress(A)(A arguments, int af)
 		default: assert(false);
 	}
 }
-
-auto getType(A)(A arguments)
-{ return arguments["-u"].isTrue? SocketType.DGRAM : SocketType.STREAM; }
 
 auto getMode(A)(A arguments)
 { return arguments["-l"].isTrue? Mode.Listen : Mode.Connect; }
