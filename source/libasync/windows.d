@@ -321,15 +321,22 @@ package:
 					                           &flags)) {
 						m_pendingConnects.remove(socket);
 						AsyncOverlapped.free(overlapped);
-						if (!setupConnectedCOASocket(socket)) return false;
-						socket.handleConnect();
-						return true;
+						//if (!setupConnectedCOASocket(socket)) return false;
+						if (updateConnectContext(socket.handle)) {
+							socket.handleConnect();
+							return true;
+						} else {
+							socket.kill();
+							socket.handleError();
+							return false;
+						}
 					} else {
 						m_error = WSAGetLastErrorSafe();
 						if (m_error == WSA_IO_INCOMPLETE) {
 							continue;
 						} else {
 							m_status.code = Status.ABORT;
+							socket.kill();
 							socket.handleError();
 							return false;
 						}
@@ -379,10 +386,7 @@ package:
 										 &remoteAddressLength);
 
 					m_completedSocketAccepts.removeFront();
-					if (!onAccept(request, remoteAddress)) {
-						m_status.code = Status.ABORT;
-						request.socket.kill();
-						request.socket.handleError();
+					if (!onAccept(request.socket.handle, request, remoteAddress)) {
 						return false;
 					}
 				}
@@ -1061,7 +1065,7 @@ package:
 									 &remoteAddressLength);
 
 				m_completedSocketAccepts.removeFront();
-				if (!onAccept(request, remoteAddress)) {
+				if (!onAccept(handle, request, remoteAddress)) {
 					.warning("Failed to accept incoming connection request while killing listener");
 				}
 			}
@@ -1172,9 +1176,15 @@ package:
 		overlapped.hEvent = pendingConnectEvent;
 		if (ConnectEx(ctxt.handle, addr, addrlen, null, 0, null, &overlapped.overlapped)) {
 			AsyncOverlapped.free(overlapped);
-			if (!setupConnectedCOASocket(ctxt)) return false;
-			ctxt.handleConnect();
-			return true;
+			//if (!setupConnectedCOASocket(ctxt)) return false;
+			if (updateConnectContext(ctxt.handle)) {
+				ctxt.handleConnect();
+				return true;
+			} else {
+				ctxt.kill();
+				ctxt.handleError();
+				return false;
+			}
 		} else {
 			m_error = WSAGetLastErrorSafe();
 			if (m_error == WSA_IO_PENDING) {
@@ -1183,11 +1193,33 @@ package:
 			} else {
 				m_status.code = Status.ABORT;
 				ctxt.kill();
+				ctxt.handleError();
 				return false;
 			}
 		}
 	}
 
+	auto updateAcceptContext(fd_t listener, fd_t socket)
+	{
+		auto err = setsockopt(socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, &listener, listener.sizeof);
+		if (catchSocketError!"accept"(err)) {
+			.error("Failed to setup accepted socket: ", error);
+			return false;
+		}
+		else return true;
+	}
+
+	auto updateConnectContext(fd_t socket)
+	{
+		auto err = setsockopt(socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, null, 0);
+		if (catchSocketError!"connect"(err)) {
+			.error("Failed to setup connected socket: ", error);
+			return false;
+		}
+		else return true;
+	}
+
+	/+
 	bool setupConnectedCOASocket(AsyncSocket ctxt, AsyncSocket incomingOn = null)
 	{
 		fd_t err;
@@ -1213,6 +1245,7 @@ package:
 
 		return true;
 	}
+	+/
 
 	bool listen(AsyncSocket ctxt, int backlog)
 	{
@@ -1226,18 +1259,28 @@ package:
 		return true;
 	}
 
-	bool onAccept(AsyncAcceptRequest* request, sockaddr* remoteAddress)
+	bool onAccept(fd_t listener, AsyncAcceptRequest* request, sockaddr* remoteAddress)
 	{
 		auto socket = request.socket;
+		scope (exit) AsyncAcceptRequest.free(request);
+
+		if (!updateAcceptContext(listener, request.peer)) {
+			if (socket.alive) {
+				m_status.code = Status.ABORT;
+				socket.kill();
+				socket.handleError();
+			}
+			return false;
+		}
+
 		auto peer = request.onComplete(request.peer, remoteAddress.sa_family, socket.info.type, socket.info.protocol);
-		AsyncAcceptRequest.free(request);
-		if (!peer.run() || !setupConnectedCOASocket(peer, socket)) {
+		if (peer.run()) {
+			peer.handleConnect();
+			return true;
+		} else {
 			peer.kill();
 			peer.handleError();
 			return false;
-		} else {
-			peer.handleConnect();
-			return true;
 		}
 	}
 
@@ -2560,6 +2603,7 @@ nothrow extern(System)
 		}
 
 		eventLoop.m_status.code = Status.ABORT;
+		socket.kill();
 		socket.handleError();
 	}
 
@@ -2593,6 +2637,7 @@ nothrow extern(System)
 		}
 
 		eventLoop.m_status.code = Status.ABORT;
+		socket.kill();
 		socket.handleError();
 	}
 }
