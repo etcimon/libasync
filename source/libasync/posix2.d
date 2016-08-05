@@ -256,6 +256,18 @@ mixin template RunKill()
 
 		auto fd = ctxt.resetHandle();
 
+		static if (EPOLL)
+		{
+			epoll_event osEvent = void;
+			epoll_ctl(m_epollfd, EPOLL_CTL_DEL, fd, &osEvent);
+		}
+		else /* if KQUEUE */
+		{
+			kevent_t osEvent;
+			EV_SET(&osEvent, fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
+			EV_SET(&osEvent, fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
+		}
+
 		if (ctxt.connectionOriented && ctxt.passive) {
 			foreach (request; m_completedSocketAccepts) if (request.socket is ctxt) {
 				m_completedSocketAccepts.removeFront();
