@@ -51,20 +51,24 @@ int main(string[] args)
 
 bool connect(ref NetworkAddress remote, int af, SocketType type)
 {
-	auto socket = new AsyncSocket(g_eventLoop, af, type);
-	if (socket.connectionOriented) transceive(socket, { g_running = false; });
+	g_client = ThreadMem.alloc!AsyncSocket(g_eventLoop, af, type);
+	if (g_client.connectionOriented) transceive(g_client, { g_running = false; });
 
-	if(!socket.run()) {
-		stderr.writeln("ncat: ", socket.error);
+	if(!g_client.run()) {
+		stderr.writeln("ncat: ", g_client.error);
+		ThreadMem.free(g_client);
+		g_client = null;
 		return false;
 	}
 
-	if (!socket.connect(remote)) {
-		stderr.writeln("ncat: ", socket.error);
+	if (!g_client.connect(remote)) {
+		stderr.writeln("ncat: ", g_client.error);
+		ThreadMem.free(g_client);
+		g_client = null;
 		return false;
 	}
-	if (!socket.connectionOriented) {
-		transceive(socket);
+	if (!g_client.connectionOriented) {
+		transceive(g_client);
 		version (Posix) if (af == AF_UNIX) {
 			import std.path: buildPath;
 			import std.file: tempDir;
@@ -79,8 +83,10 @@ bool connect(ref NetworkAddress remote, int af, SocketType type)
 			NetworkAddress local;
 			local.sockAddr.sa_family = AF_UNIX;
 			(cast(sockaddr_un*) local.sockAddr).sun_path[0 .. localName.length] = cast(byte[]) localName[];
-			if (!socket.bind(local)) {
-				stderr.writeln("ncat: ", socket.error);
+			if (!g_client.bind(local)) {
+				stderr.writeln("ncat: ", g_client.error);
+				ThreadMem.free(g_client);
+				g_client = null;
 				return false;
 			}
 		}
@@ -91,20 +97,21 @@ bool connect(ref NetworkAddress remote, int af, SocketType type)
 
 bool listen(ref NetworkAddress local, int af, SocketType type, bool keepListening = false)
 {
-	auto listener = new AsyncSocket(g_eventLoop, af, type);
+	g_listener = ThreadMem.alloc!AsyncSocket(g_eventLoop, af, type);
+	setupError(g_listener);
 
-	setupError(listener);
-
-	if(!listener.run()) {
-		stderr.writeln("ncat: ", listener.error);
+	if(!g_listener.run()) {
+		stderr.writeln("ncat: ", g_listener.error);
+		ThreadMem.free(g_listener);
+		g_listener = null;
 		return false;
 	}
 
 	try switch (af) {
 		case AF_INET, AF_INET6:
 			int yes = 1;
-			listener.setOption(SOL_SOCKET, SO_REUSEADDR, (cast(ubyte*) &yes)[0..yes.sizeof]);
-			version (Posix) listener.setOption(SOL_SOCKET, SO_REUSEPORT, (cast(ubyte*) &yes)[0..yes.sizeof]);
+			g_listener.setOption(SOL_SOCKET, SO_REUSEADDR, (cast(ubyte*) &yes)[0..yes.sizeof]);
+			version (Posix) g_listener.setOption(SOL_SOCKET, SO_REUSEPORT, (cast(ubyte*) &yes)[0..yes.sizeof]);
 			break;
 		version (Posix) {
 		case AF_UNIX:
@@ -118,18 +125,20 @@ bool listen(ref NetworkAddress local, int af, SocketType type, bool keepListenin
 		return false;
 	}
 
-	if (!listener.bind(local)) {
-		stderr.writeln("ncat: ", listener.error);
+	if (!g_listener.bind(local)) {
+		stderr.writeln("ncat: ", g_listener.error);
+		ThreadMem.free(g_listener);
+		g_listener = null;
 		return false;
 	}
 
-	if (!listener.connectionOriented) {
+	if (!g_listener.connectionOriented) {
 		NetworkAddress from, to;
 		mixin StdInTransmitter transmitter;
 
-		transmitter.start(listener, to);
-		listener.receiveContinuously = true;
-		listener.receiveFrom(g_receiveBuffer, from, (data) {
+		transmitter.start(g_listener, to);
+		g_listener.receiveContinuously = true;
+		g_listener.receiveFrom(g_receiveBuffer, from, (data) {
 			if (to == NetworkAddress.init) {
 				to = from;
 				transmitter.reader.loop();
@@ -139,28 +148,37 @@ bool listen(ref NetworkAddress local, int af, SocketType type, bool keepListenin
 				stdout.flush().collectException();
 			}
 		});
-	} else if (!listener.listen()) {
-		stderr.writeln("ncat: ", listener.error);
+	} else if (!g_listener.listen()) {
+		stderr.writeln("ncat: ", g_listener.error);
+		ThreadMem.free(g_listener);
+		g_listener = null;
 		return false;
 	} else {
-		AsyncAcceptRequest.OnComplete onAccept = void;
-		onAccept = (handle, family, type, protocol) {
-			if (!keepListening) listener.kill();
-			auto client = new AsyncSocket(g_eventLoop, family, type, protocol, handle);
-			transceive(client, {
-				if (keepListening && listener.alive) listener.accept(onAccept);
+		g_onAccept = (handle, family, type, protocol) {
+			if (!keepListening) {
+				g_listener.kill();
+				assumeWontThrow(ThreadMem.free(g_listener));
+				g_listener = null;
+			}
+			g_client = assumeWontThrow(ThreadMem.alloc!AsyncSocket(g_eventLoop, family, type, protocol, handle));
+			transceive(g_client, {
+				assumeWontThrow(ThreadMem.free(g_client));
+				g_client = null;
+				if (g_listener) g_listener.accept(g_onAccept);
 				else g_running = false;
 			});
-			return client;
+			return g_client;
 		};
 
-		listener.accept(onAccept);
+		g_listener.accept(g_onAccept);
 	}
 
 	return true;
 }
 
-void setupError(AsyncSocket socket, bool exit = true) nothrow
+AsyncAcceptRequest.OnComplete g_onAccept = void;
+
+void setupError(ref AsyncSocket socket, bool exit = true) nothrow
 {
 	socket.onError = {
 		stderr.writeln("ncat: ", socket.error).collectException();
@@ -179,11 +197,15 @@ mixin template StdInTransmitter()
 	auto onRead = new shared AsyncSignal(g_eventLoop);
 	auto reader = new StdInReader(readBuffer, readCount, onRead);
 
-	void start(AsyncSocket socket) nothrow {
+	void start(ref AsyncSocket socket) nothrow {
 		onRead.run({
 			if (readCount == 0) {
 				if (socket.connectionOriented) {
-					socket.close();
+					socket.kill();
+					assumeWontThrow(ThreadMem.free(socket));
+					socket = null;
+					if (g_listener) g_listener.accept(g_onAccept);
+					else g_running = false;
 				}
 				reader.stop();
 			} else {
@@ -194,7 +216,7 @@ mixin template StdInTransmitter()
 		reader.loop();
 	}
 
-	void start(AsyncSocket socket, ref NetworkAddress to) nothrow {
+	void start(ref AsyncSocket socket, ref NetworkAddress to) nothrow {
 		onRead.run({
 			if (readCount == 0) {
 				to = NetworkAddress.init;
@@ -206,12 +228,12 @@ mixin template StdInTransmitter()
 	}
 }
 
-void transceive(AsyncSocket socket, AsyncSocket.OnClose onClose = null) nothrow
+void transceive(ref AsyncSocket socket, AsyncSocket.OnClose onClose = null) nothrow
 {
 	setupError(socket);
 
 	if (socket.connectionOriented) {
-		socket.onConnect = delegate void() {
+		socket.onConnect = {
 			socket.receiveContinuously = true;
 			socket.receive(g_receiveBuffer, (data) {
 				stdout.rawWrite(data).collectException();
@@ -301,6 +323,8 @@ EventLoop g_eventLoop;
 int g_status;
 ubyte[] g_receiveBuffer;
 
+AsyncSocket g_listener, g_client;
+
 enum Mode { Connect, Listen }
 
 auto getAddressFamily(A)(A arguments)
@@ -355,6 +379,8 @@ import std.conv;
 import std.format;
 import std.file;
 import std.exception;
+
+import memutils.utils;
 
 import libasync;
 import docopt;
