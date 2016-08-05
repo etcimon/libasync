@@ -1,0 +1,14 @@
+Original source: https://gist.github.com/arunk-s/c897bb9d75a6c98733d6
+
+1. Build kernel module:
+   $ (cd kmodule ; make)
+2. Load kernel module:
+   # insmod kmodule/netlinkKernel.ko
+4. Send message to kernel module and see received reply message:
+   $ dub --build=release
+5. See message the kernel received:
+   # dmesg
+6. Unload kernel module:
+   # rmmod netlinkKernel
+7. Clean kernel module build files:
+   $ (cd kmodule ; make clean)
