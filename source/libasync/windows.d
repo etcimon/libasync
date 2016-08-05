@@ -1084,6 +1084,13 @@ package:
 				NetworkMessage.free(request.message);
 				AsyncSendRequest.free(request);
 			}
+
+			if(!CancelIo(cast(HANDLE) handle)) {
+				m_status.code = Status.ABORT;
+				m_error = GetLastErrorSafe();
+				.error("Failed to cancel outstanding overlapped I/O requests: ", this.error);
+				return false;
+			}
 		}
 
 		if (ctxt.connectionOriented && ctxt.passive) {
@@ -2569,8 +2576,15 @@ nothrow extern(System)
 	{
 		.tracef("onOverlappedReceiveComplete: error: %s, recvCount: %s, flags: %s", error, recvCount, flags);
 
-		auto socket = overlapped.receive.socket;
 		auto request = overlapped.receive;
+
+		if (error == EWIN.WSA_OPERATION_ABORTED) {
+			NetworkMessage.free(request.message);
+			AsyncReceiveRequest.free(request);
+			return;
+		}
+
+		auto socket = overlapped.receive.socket;
 		auto eventLoop = &socket.m_evLoop.m_evLoop;
 		if (eventLoop.m_status.code != Status.OK) return;
 
@@ -2612,8 +2626,15 @@ nothrow extern(System)
 		.tracef("onOverlappedSendComplete: error: %s, sentCount: %s, flags: %s", error, sentCount, flags);
 		.tracef("%s %s", overlapped, overlapped.send);
 
-		auto socket = overlapped.send.socket;
 		auto request = overlapped.send;
+
+		if (error == EWIN.WSA_OPERATION_ABORTED) {
+			NetworkMessage.free(request.message);
+			AsyncSendRequest.free(request);
+			return;
+		}
+
+		auto socket = overlapped.send.socket;
 		auto eventLoop = &socket.m_evLoop.m_evLoop;
 		if (eventLoop.m_status.code != Status.OK) return;
 
