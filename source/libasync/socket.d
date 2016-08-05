@@ -258,8 +258,9 @@ struct AsyncSendRequest
  * and submit the next request only once the previous one
  * (of the same type) notifies you of its completion.
  * For connection-oriented, active sockets, connection completion and
- * disconnection (either locally via $(D onClose) or by the remote peer)
- * are handled by $(D OnConnect) and $(D OnClose) respectively.
+ * disconnect (by the remote peer) are handled by $(D OnConnect)
+ * and $(D OnClose) respectively; disconnecting from the remote peer
+ * can be initiated with $(D kill) and will not trigger $(D OnClose).
  */
 final class AsyncSocket
 {
@@ -725,17 +726,6 @@ public:
 	{
 		auto message = NetworkMessage.alloc(cast(ubyte[]) data, &to);
 		sendMessage(message, onSend);
-	}
-
-	/**
-	 * $(D kill)s the socket.
-	 * Additionally triggers the $(D onClose) callback on connection-oriented, active sockets.
-	 * See_Also: kill, OnClose
-	 */
-	bool close()
-	{
-		scope (exit) if (m_connectionOriented && !m_passive && m_onClose !is null) m_onClose();
-		return kill();
 	}
 
 	/**
