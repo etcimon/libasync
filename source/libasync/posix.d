@@ -601,8 +601,6 @@ package:
 
 			foreach (request; m_completedSocketAccepts) {
 				m_completedSocketAccepts.removeFront();
-				//request.peer.run();
-				//request.onComplete(request.peer);
 				auto socket = request.socket;
 				auto peer = request.onComplete(request.peer, request.family, socket.info.type, socket.info.protocol);
 				AsyncAcceptRequest.free(request);

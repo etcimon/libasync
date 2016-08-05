@@ -60,7 +60,8 @@ private:
 	__gshared Mutex gs_mtx;
 
 	HANDLE[] m_waitObjects;
-	AsyncOverlapped*[AsyncSocket] m_pendingConnects, m_pendingAccepts;
+	AsyncOverlapped*[AsyncSocket] m_pendingConnects;
+	bool[AsyncOverlapped*] m_pendingAccepts;
 
 	@property HANDLE pendingConnectEvent()
 	{ return m_waitObjects[0]; }
@@ -68,7 +69,6 @@ private:
 	@property HANDLE pendingAcceptEvent()
 	{ return m_waitObjects[1]; }
 
-	AsyncOverlapped.Queue     m_pendingSocketAccepts;
 	AsyncAcceptRequest.Queue  m_completedSocketAccepts;
 	AsyncReceiveRequest.Queue m_completedSocketReceives;
 	AsyncSendRequest.Queue    m_completedSocketSends;
@@ -321,7 +321,6 @@ package:
 					                           &flags)) {
 						m_pendingConnects.remove(socket);
 						AsyncOverlapped.free(overlapped);
-						//if (!setupConnectedCOASocket(socket)) return false;
 						if (updateConnectContext(socket.handle)) {
 							socket.handleConnect();
 							return true;
@@ -345,7 +344,7 @@ package:
 				break;
 			// AcceptEx completion
 			case 1:
-				foreach (overlapped; m_pendingSocketAccepts) {
+				foreach (overlapped; cast(AsyncOverlapped*[]) m_pendingAccepts.keys) {
 					auto request = overlapped.accept;
 					auto socket = request.socket;
 
@@ -354,7 +353,7 @@ package:
 											   &transferred,
 											   false,
 											   &flags)) {
-						m_pendingSocketAccepts.removeFront();
+						m_pendingAccepts.remove(overlapped);
 						AsyncOverlapped.free(overlapped);
 						m_completedSocketAccepts.insertBack(request);
 					} else {
@@ -363,7 +362,7 @@ package:
 							continue;
 						} else {
 							m_status.code = Status.ABORT;
-							m_pendingSocketAccepts.removeFront();
+							m_pendingAccepts.remove(overlapped);
 							AsyncOverlapped.free(overlapped);
 							AsyncAcceptRequest.free(request);
 							socket.kill();
@@ -1087,10 +1086,13 @@ package:
 			}
 		}
 
-		if (ctxt.connectionOriented && ctxt.passive && ctxt in m_pendingAccepts) {
-			auto overlapped = cast(AsyncOverlapped*) m_pendingAccepts[ctxt];
-			m_pendingAccepts.remove(ctxt);
-			assumeWontThrow(ThreadMem.free(overlapped));
+		if (ctxt.connectionOriented && ctxt.passive) {
+			foreach (overlapped; cast(AsyncOverlapped*[]) m_pendingAccepts.keys) {
+				if (overlapped.accept.socket is ctxt) {
+					m_pendingAccepts.remove(overlapped);
+					AsyncOverlapped.free(overlapped);
+				}
+			}
 		} else if (ctxt.connectionOriented && !ctxt.passive && ctxt in m_pendingConnects) {
 			auto overlapped = cast(AsyncOverlapped*) m_pendingConnects[ctxt];
 			m_pendingConnects.remove(ctxt);
@@ -1326,7 +1328,7 @@ package:
 		} else {
 			m_error = WSAGetLastErrorSafe();
 			if (m_error == WSA_IO_PENDING) {
-				m_pendingSocketAccepts.insertBack(overlapped);
+				m_pendingAccepts[overlapped] = true;
 				return;
 			// AcceptEx documentation states this error happens if "an incoming connection was indicated,
 			// but was subsequently terminated by the remote peer prior to accepting the call".
@@ -2558,9 +2560,7 @@ struct AsyncOverlapped
 	{ overlapped.hEvent = hEvent; }
 
 	import libasync.internals.freelist;
-	static import libasync.internals.queue;
 	mixin FreeList!1_000;
-	mixin libasync.internals.queue.Queue;
 }
 
 nothrow extern(System)
