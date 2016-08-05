@@ -143,6 +143,15 @@ public:
 		contentLength = content.length;
 	}
 
+	this(const ref NetworkMessage other) nothrow
+	{
+		m_header = cast(Header) other.m_header;
+		m_content = cast(Content) other.m_content;
+		buffers = &m_content;
+		bufferCount = 1;
+		m_buffer = contentStart[0..contentLength];
+	}
+
 	this(this) @safe pure @nogc nothrow
 	{ buffers = &m_content; }
 
@@ -437,7 +446,7 @@ package:
 	 * Submits an asynchronous request on this socket to receive a $(D message).
 	 * Upon successful reception $(D onReceive) will be called with the received data.
 	 * $(D exact) indicates whether successful reception requires the entire buffer
-	 * provided within $(D message) to have been filled. If a socket error occurrs,
+	 * provided within $(D message) to have been filled. If a socket error occurs,
 	 * but some data has already been received, then $(D onReceive) will be called
 	 * with that partial data regardless of $(D exact).
 	 * The $(D message) must have been allocated using $(D NetworkMessage.alloc) and
@@ -472,7 +481,7 @@ package:
 		assert(!m_passive, "Passive sockets cannot receive");
 		assert(!m_connectionOriented || connected, "Established connection required");
 		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
-		assert(m_connectionOriented || assumeWontThrow({ remoteAddress; return true; }().ifThrown(false)) || message.hasAddress, "Remote address required");
+		assert(m_connectionOriented || message.hasAddress || assumeWontThrow({ remoteAddress; return true; }().ifThrown(false)), "Remote address required");
 		assert(onSend !is null, "Completion callback required");
 	} body {
 		auto request = AsyncSendRequest.alloc(this, message, onSend);
@@ -688,6 +697,19 @@ public:
 	}
 
 	/**
+	 * Submits an asynchronous request on this socket to receive a $(D message).
+	 * Upon successful reception $(D onReceive) will be called with the received data.
+	 * $(D exact) indicates whether successful reception requires the entire buffer
+	 * provided within $(D message) to have been filled. If a socket error occurs,
+	 * but some data has already been received, then $(D onReceive) will be called
+	 * with that partial data regardless of $(D exact).
+	 */
+	void receiveMessage(ref NetworkMessage message, AsyncReceiveRequest.OnComplete onReceive, bool exact = false)
+	{
+		receiveMessage(NetworkMessage.alloc(message), onReceive, exact);
+	}
+
+	/**
 	 * Submits an asynchronous request on this socket to receive $(D data).
 	 * Upon successful reception of at most $(D data.length) bytes $(D onReceive)
 	 * will be called with the received bytes as a slice of $(D data).
@@ -725,6 +747,15 @@ public:
 	{
 		auto message = NetworkMessage.alloc(data, &from);
 		receiveMessage(message, onReceive, false);
+	}
+
+	/**
+	 * Submits an asynchronous request on this socket to send a $(D message).
+	 * Upon successful transmission $(D onSend) will be called.
+	 */
+	void sendMessage(const ref NetworkMessage message, AsyncSendRequest.OnComplete onSend)
+	{
+		sendMessage(NetworkMessage.alloc(message), onSend);
 	}
 
 	/**
