@@ -52,6 +52,11 @@ bool isDatagramOriented(SocketType type) @safe pure nothrow @nogc
 	}
 }
 
+/**
+ * Represents a single message to be transferred over the network by $(D AsyncSocket).
+ * Authors: Moritz Maxeiner, moritz@ucworks.org
+ * Date: 2016
+ */
 struct NetworkMessage
 {
 version (Posix) {
@@ -175,7 +180,11 @@ public:
 	mixin FreeList!(1_000);
 }
 
-///
+/**
+ * Represents a single request to asynchronously accept an incoming connection.
+ * Authors: Moritz Maxeiner, moritz@ucworks.org
+ * Date: 2016
+ */
 struct AsyncAcceptRequest
 {
 	/// Passive socket to accept a peer's connection on
@@ -208,7 +217,11 @@ struct AsyncAcceptRequest
 	mixin Queue;
 }
 
-///
+/**
+ * Represents a single request to asynchronously receive data.
+ * Authors: Moritz Maxeiner, moritz@ucworks.org
+ * Date: 2016
+ */
 struct AsyncReceiveRequest
 {
 	AsyncSocket socket;       /// Socket to receive the message on
@@ -222,7 +235,11 @@ struct AsyncReceiveRequest
 	mixin Queue;
 }
 
-///
+/**
+ * Represents a single request to asynchronously send data.
+ * Authors: Moritz Maxeiner, moritz@ucworks.org
+ * Date: 2016
+ */
 struct AsyncSendRequest
 {
 	AsyncSocket socket;      /// Socket to send the message on
@@ -261,6 +278,8 @@ struct AsyncSendRequest
  * disconnect (by the remote peer) are handled by $(D OnConnect)
  * and $(D OnClose) respectively; disconnecting from the remote peer
  * can be initiated with $(D kill) and will not trigger $(D OnClose).
+ * Authors: Moritz Maxeiner, moritz@ucworks.org
+ * Date: 2016
  */
 final class AsyncSocket
 {

@@ -2547,22 +2547,25 @@ package:
 	}
 }
 
-/// Information for a single Windows overlapped I/O request;
-/// uses a freelist to minimize allocations.
+/**
+ * Holds contextual information for a single overlapped I/O request.
+ * Authors: Moritz Maxeiner, moritz@ucworks.org
+ * Date: 2016
+ */
 struct AsyncOverlapped
 {
 	align (1):
-	/// Required for Windows overlapped I/O requests
-	OVERLAPPED overlapped;
+	OVERLAPPED overlapped;            /// Required for overlapped I/O requests
 	align:
 
 	union
 	{
-		AsyncAcceptRequest* accept;
-		AsyncReceiveRequest* receive;
-		AsyncSendRequest* send;
+		AsyncAcceptRequest* accept;   /// For accepting on an $(D AsyncSocket)
+		AsyncReceiveRequest* receive; /// For receiving on an $(D AsyncSocket)
+		AsyncSendRequest* send;       /// For sending on an $(D AsyncSocket)
 	}
 
+	/// Windows event stored inside of the overlapped structure
 	@property void hEvent(HANDLE hEvent) @safe pure @nogc nothrow
 	{ overlapped.hEvent = hEvent; }
 
