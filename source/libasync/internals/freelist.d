@@ -32,7 +32,7 @@ public:
 
 	import memutils.utils : ThreadMem;
 
-	static T* alloc(Args...)(auto ref Args args) @trusted nothrow
+	static T* alloc(Args...)(auto ref Args args) @trusted
 	{
 		T* obj = void;
 
@@ -55,7 +55,7 @@ public:
 		return obj;
 	}
 
-	static void free(T* obj) @trusted nothrow
+	static void free(T* obj) @trusted
 	{
 		static if (isIntegral!(typeof(Limit))) {
 			if (freelist.count <= Limit / T.sizeof) {
@@ -65,7 +65,7 @@ public:
 				.tracef(T.stringof ~ ".FreeList.free: Pushed %s", obj);
 			} else {
 				.tracef(T.stringof ~ ".FreeList.free: Deallocating %s", obj);
-				assumeWontThrow(ThreadMem.free(obj));
+				ThreadMem.free(obj);
 			}
 		} else {
 			obj.freelist.next = freelist.head;

@@ -273,7 +273,7 @@ mixin template RunKill()
 				m_completedSocketAccepts.removeFront();
 				auto socket = request.socket;
 				auto peer = request.onComplete(request.peer, request.family, socket.info.type, socket.info.protocol);
-				AsyncAcceptRequest.free(request);
+				assumeWontThrow(AsyncAcceptRequest.free(request));
 				if (!peer.run) return false;
 			}
 		}
@@ -281,29 +281,33 @@ mixin template RunKill()
 		if (!ctxt.passive) {
 			foreach (request; m_completedSocketReceives) if (request.socket is ctxt) {
 				m_completedSocketReceives.removeFront();
-				request.onComplete(request.message.transferred);
-				NetworkMessage.free(request.message);
-				AsyncReceiveRequest.free(request);
+				if (request.message) {
+					assumeWontThrow(request.onComplete.get!0)(request.message.transferred);
+					assumeWontThrow(NetworkMessage.free(request.message));
+				} else {
+					assumeWontThrow(request.onComplete.get!1)();
+				}
+				assumeWontThrow(AsyncReceiveRequest.free(request));
 			}
 
 			foreach (request; m_completedSocketSends) if (request.socket is ctxt) {
 				m_completedSocketSends.removeFront();
 				request.onComplete();
-				NetworkMessage.free(request.message);
-				AsyncSendRequest.free(request);
+				assumeWontThrow(NetworkMessage.free(request.message));
+				assumeWontThrow(AsyncSendRequest.free(request));
 			}
 		}
 
 		foreach (request; ctxt.m_pendingReceives) {
 			ctxt.m_pendingReceives.removeFront();
-			NetworkMessage.free(request.message);
-			AsyncReceiveRequest.free(request);
+			if (request.message) assumeWontThrow(NetworkMessage.free(request.message));
+			assumeWontThrow(AsyncReceiveRequest.free(request));
 		}
 
 		foreach (request; ctxt.m_pendingSends) {
 			ctxt.m_pendingSends.removeFront();
-			NetworkMessage.free(request.message);
-			AsyncSendRequest.free(request);
+			assumeWontThrow(NetworkMessage.free(request.message));
+			assumeWontThrow(AsyncSendRequest.free(request));
 		}
 
 		if (ctxt.connectionOriented && !ctxt.passive && ctxt.connected) {

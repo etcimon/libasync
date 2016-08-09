@@ -1,5 +1,6 @@
 module libasync.socket;
 
+import std.variant;
 import std.exception : assumeWontThrow, ifThrown;
 
 import libasync.events;
@@ -238,7 +239,9 @@ struct AsyncReceiveRequest
 	OnComplete onComplete;    /// Called once the request completed successfully
 	bool exact;               /// Whether the message's buffer should be filled completely
 
-	alias OnComplete = void delegate(ubyte[] data) nothrow;
+	alias OnDataReceived = void delegate(ubyte[] data) nothrow;
+	alias OnDataAvailable = void delegate() nothrow;
+	alias OnComplete = Algebraic!(OnDataReceived, OnDataAvailable);
 
 	mixin FreeList!1_000;
 	mixin Queue;
@@ -458,13 +461,12 @@ package:
 		assert(alive, "Cannot receive on an unrun / killed socket");
 		assert(!m_passive, "Passive sockets cannot receive");
 		assert(!m_connectionOriented || connected, "Established connection required");
-		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
+		assert(!m_connectionOriented || !message || !message.hasAddress, "Connected peer is already known through .remoteAddress");
 		version (Posix) assert(!m_receiveContinuously || m_pendingReceives.empty, "Cannot receive message manually while receiving continuously");
 		assert(m_connectionOriented || !exact, "Connectionless datagram sockets must receive one datagram at a time");
-		assert(onReceive !is null, "Completion callback required");
-		assert(message.m_buffer.length > 0, "Zero byte receives are not supported");
+		assert(!message || message.m_buffer.length > 0, "Only zero byte receives may refrain from providing a non-empty message buffer");
 	} body {
-		auto request = AsyncReceiveRequest.alloc(this, message, onReceive, exact);
+		auto request = assumeWontThrow(AsyncReceiveRequest.alloc(this, message, onReceive, exact));
 		m_evLoop.submitRequest(request);
 	}
 
@@ -704,9 +706,11 @@ public:
 	 * but some data has already been received, then $(D onReceive) will be called
 	 * with that partial data regardless of $(D exact).
 	 */
-	void receiveMessage(ref NetworkMessage message, AsyncReceiveRequest.OnComplete onReceive, bool exact = false)
+	void receiveMessage(ref NetworkMessage message, AsyncReceiveRequest.OnDataReceived onReceive, bool exact = false)
 	{
-		receiveMessage(NetworkMessage.alloc(message), onReceive, exact);
+		receiveMessage(assumeWontThrow(NetworkMessage.alloc(message)),
+		               AsyncReceiveRequest.OnComplete(onReceive),
+		               exact);
 	}
 
 	/**
@@ -715,10 +719,28 @@ public:
 	 * will be called with the received bytes as a slice of $(D data).
 	 * See_Also: receiveExactly, receiveFrom
 	 */
-	void receive(ref ubyte[] data, AsyncReceiveRequest.OnComplete onReceive)
+	void receive(ref ubyte[] data, AsyncReceiveRequest.OnDataReceived onReceive)
 	{
-		auto message = NetworkMessage.alloc(data);
-		receiveMessage(message, onReceive, false);
+		receiveMessage(NetworkMessage.alloc(data),
+		               AsyncReceiveRequest.OnComplete(onReceive),
+		               false);
+	}
+
+	/**
+	 * Submits a special asynchronous request on this socket to receive nothing.
+	 * Also known as a "zero byte receive" $(D onReceive) will be called once
+	 * there is new data on the socket that can be received immediately.
+	 * Additionally, $(D onReceive) may also be called on connection-oriented sockets
+	 * where the remote peer has disconnected gracefully with no further data being
+	 * available for reception.
+	 */
+	void receive(AsyncReceiveRequest.OnDataAvailable onReceive)
+	in {
+		assert(!m_receiveContinuously, "Continuous receiving and zero byte receives may not be mixed");
+	} body {
+		receiveMessage(null,
+		               AsyncReceiveRequest.OnComplete(onReceive),
+		               false);
 	}
 
 	/**
@@ -727,10 +749,11 @@ public:
 	 * will be called with $(D data).
 	 * See_Also: receive, receiveFrom
 	 */
-	void receiveExactly(ref ubyte[] data, AsyncReceiveRequest.OnComplete onReceive)
+	void receiveExactly(ref ubyte[] data, AsyncReceiveRequest.OnDataReceived onReceive)
 	{
-		auto message = NetworkMessage.alloc(data);
-		receiveMessage(message, onReceive, true);
+		receiveMessage(NetworkMessage.alloc(data),
+		               AsyncReceiveRequest.OnComplete(onReceive),
+		               true);
 	}
 
 	/**
@@ -743,10 +766,11 @@ public:
 	 * remote address on connection-oriented sockets, refer to $(D remoteAddress).
 	 * See_Also: receive, receiveExactly, remoteAddress
 	 */
-	void receiveFrom(ref ubyte[] data, ref NetworkAddress from, AsyncReceiveRequest.OnComplete onReceive)
+	void receiveFrom(ref ubyte[] data, ref NetworkAddress from, AsyncReceiveRequest.OnDataReceived onReceive)
 	{
-		auto message = NetworkMessage.alloc(data, &from);
-		receiveMessage(message, onReceive, false);
+		receiveMessage(NetworkMessage.alloc(data, &from),
+		               AsyncReceiveRequest.OnComplete(onReceive),
+		               false);
 	}
 
 	/**
@@ -764,8 +788,7 @@ public:
 	 */
 	void send(in ubyte[] data, AsyncSendRequest.OnComplete onSend)
 	{
-		auto message = NetworkMessage.alloc(cast(ubyte[]) data);
-		sendMessage(message, onSend);
+		sendMessage(NetworkMessage.alloc(cast(ubyte[]) data), onSend);
 	}
 
 	/**
@@ -774,8 +797,7 @@ public:
 	 */
 	void sendTo(in ubyte[] data, const ref NetworkAddress to, AsyncSendRequest.OnComplete onSend)
 	{
-		auto message = NetworkMessage.alloc(cast(ubyte[]) data, &to);
-		sendMessage(message, onSend);
+		sendMessage(NetworkMessage.alloc(cast(ubyte[]) data, &to), onSend);
 	}
 
 	/**

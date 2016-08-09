@@ -603,7 +603,7 @@ package:
 				m_completedSocketAccepts.removeFront();
 				auto socket = request.socket;
 				auto peer = request.onComplete(request.peer, request.family, socket.info.type, socket.info.protocol);
-				AsyncAcceptRequest.free(request);
+				assumeWontThrow(AsyncAcceptRequest.free(request));
 				if (!peer.run) {
 					m_status.code = Status.ABORT;
 					peer.kill();
@@ -615,27 +615,31 @@ package:
 			foreach (request; m_completedSocketReceives) {
 				if (request.socket.receiveContinuously) {
 					m_completedSocketReceives.removeFront();
-					request.onComplete(request.message.transferred);
+					assumeWontThrow(request.onComplete.get!0)(request.message.transferred);
 					if (request.socket.receiveContinuously && request.socket.alive) {
 						request.message.count = 0;
 						submitRequest(request);
 					} else {
-						NetworkMessage.free(request.message);
-						AsyncReceiveRequest.free(request);
+						assumeWontThrow(NetworkMessage.free(request.message));
+						assumeWontThrow(AsyncReceiveRequest.free(request));
 					}
 				} else {
 					m_completedSocketReceives.removeFront();
-					request.onComplete(request.message.transferred);
-					NetworkMessage.free(request.message);
-					AsyncReceiveRequest.free(request);
+					if (request.message) {
+						assumeWontThrow(request.onComplete.get!0)(request.message.transferred);
+						assumeWontThrow(NetworkMessage.free(request.message));
+					} else {
+						assumeWontThrow(request.onComplete.get!1)();
+					}
+					assumeWontThrow(AsyncReceiveRequest.free(request));
 				}
 			}
 
 			foreach (request; m_completedSocketSends) {
 				m_completedSocketSends.removeFront();
 				request.onComplete();
-				NetworkMessage.free(request.message);
-				AsyncSendRequest.free(request);
+				assumeWontThrow(NetworkMessage.free(request.message));
+				assumeWontThrow(AsyncSendRequest.free(request));
 			}
 
 			return true;
@@ -1753,8 +1757,11 @@ private:
 		if (socket.readBlocked) return;
 		foreach (request; socket.m_pendingReceives) {
 			// Try to fit all bytes available in the OS receive buffer
-			// into the current request's buffer.
-			auto received = attemptMessageReception(socket, request.message);
+			// into the current request's message's buffer, or try a
+			// a zero byte receive, should there be no such message.
+			bool received = void;
+			if (request.message) received = attemptMessageReception(socket, request.message);
+			else received = attemptZeroByteReceive(socket);
 
 			if (status.code != Status.OK && !socket.readBlocked) {
 				if (received) m_completedSocketReceives.insertBack(request);
@@ -1842,8 +1849,51 @@ private:
 			}
 		}
 
-		//return new AsyncSocket(m_evLoop, remote.ss_family, socket.info.type, socket.info.protocol, peer);
 		return tuple(peer, remote.ss_family);
+	}
+
+	bool attemptZeroByteReceive(AsyncSocket socket)
+	{
+		import libasync.internals.socket_compat : recv, MSG_PEEK;
+
+		ubyte buffer = void;
+		auto fd = socket.handle;
+
+		while (true) {
+			auto err = recv(fd, &buffer, 1, MSG_PEEK);
+
+			.tracef("recv system call on FD %d returned %d", fd, err);
+			if (err == SOCKET_ERROR) {
+				m_error = lastError();
+
+				if (m_error == EPosix.EINTR) {
+					.tracef("recv system call on FD %d was interrupted before any transfer occured", fd);
+					continue;
+				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+					.tracef("recv system call on FD %d would have blocked", fd);
+					m_status.code = Status.ASYNC;
+					socket.readBlocked = true;
+					return false;
+				} else if (m_error == EBADF ||
+				           m_error == EFAULT ||
+				           m_error == EINVAL ||
+				           m_error == ENOTCONN ||
+				           m_error == ENOTSOCK) {
+					.errorf("recv system call on FD %d encountered fatal socket error: %s", fd, this.error);
+					assert(false);
+				} else if (catchError!"Receive message"(err)) {
+					.errorf("recv system call on FD %d encountered socket error: %s", fd, this.error);
+					return false;
+				}
+			} else {
+				.tracef("Received %d bytes on FD %d", err, fd);
+				m_status.code = Status.OK;
+				if (socket.connectionOriented && !err) {
+					socket.readBlocked = true;
+				}
+				return err > 0;
+			}
+		}
 	}
 
 	/**
