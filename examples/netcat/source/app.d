@@ -39,7 +39,6 @@ int main(string[] args)
 
 	g_running = true;
 	g_eventLoop = getThreadEventLoop();
-	g_receiveBuffer = new ubyte[4096];
 	if (mode == Mode.Listen) {
 		if (!listen(address, af, type, keepListening)) return 1;
 	} else {
@@ -137,16 +136,19 @@ bool listen(ref NetworkAddress local, int af, SocketType type, bool keepListenin
 		mixin StdInTransmitter transmitter;
 
 		transmitter.start(g_listener, to);
-		g_listener.receiveContinuously = true;
-		g_listener.receiveFrom(g_receiveBuffer, from, (data) {
-			if (to == NetworkAddress.init) {
-				to = from;
-				transmitter.reader.loop();
-			}
-			if (from == to) {
-				stdout.rawWrite(data).collectException();
-				stdout.flush().collectException();
-			}
+		g_listener.receive({
+			auto buffer = new ubyte[4096];
+			g_listener.receiveContinuously = true;
+			g_listener.receiveFrom(buffer, from, (data) {
+				if (to == NetworkAddress.init) {
+					to = from;
+					transmitter.reader.loop();
+				}
+				if (from == to) {
+					stdout.rawWrite(data).collectException();
+					stdout.flush().collectException();
+				}
+			});
 		});
 	} else if (!g_listener.listen()) {
 		stderr.writeln("ncat: ", g_listener.error);
@@ -234,10 +236,13 @@ void transceive(ref AsyncSocket socket, AsyncSocket.OnClose onClose = null) noth
 
 	if (socket.connectionOriented) {
 		socket.onConnect = {
-			socket.receiveContinuously = true;
-			socket.receive(g_receiveBuffer, (data) {
-				stdout.rawWrite(data).collectException();
-				stdout.flush().collectException();
+			socket.receive({
+				auto buffer = new ubyte[4096];
+				socket.receiveContinuously = true;
+				socket.receive(buffer, (data) {
+					stdout.rawWrite(data).collectException();
+					stdout.flush().collectException();
+				});
 			});
 
 			mixin StdInTransmitter transmitter;
@@ -245,10 +250,13 @@ void transceive(ref AsyncSocket socket, AsyncSocket.OnClose onClose = null) noth
 		};
 		if (onClose) socket.onClose = onClose;
 	} else {
-		socket.receiveContinuously = true;
-		socket.receive(g_receiveBuffer, (data) {
-			stdout.rawWrite(data).collectException();
-			stdout.flush().collectException();
+		socket.receive({
+			auto buffer = new ubyte[4096];
+			socket.receiveContinuously = true;
+			socket.receive(buffer, (data) {
+				stdout.rawWrite(data).collectException();
+				stdout.flush().collectException();
+			});
 		});
 
 		mixin StdInTransmitter transmitter;
@@ -321,7 +329,6 @@ public:
 shared bool g_running;
 EventLoop g_eventLoop;
 int g_status;
-ubyte[] g_receiveBuffer;
 
 AsyncSocket g_listener, g_client;
 
