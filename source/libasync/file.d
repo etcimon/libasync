@@ -38,7 +38,7 @@ public:
 		m_cmdInfo.ready.run(cast(void delegate())&handler);
 		m_owner = cast(shared)Thread.getThis();
 		m_file = cast(shared)new File;
-		try m_cmdInfo.mtx = cast(shared) new Mutex; catch {}
+		try m_cmdInfo.mtx = cast(shared) new Mutex; catch (Exception) {}
 	}
 
 	/// Cleans up the underlying resources. todo: make this dispose?
@@ -69,7 +69,7 @@ public:
 	shared(ubyte[]) buffer() {
 		try synchronized(m_cmdInfo.mtx)
 			return m_cmdInfo.buffer;
-		catch {}
+		catch (Exception) {}
 		return null;
 	}
 
@@ -83,7 +83,7 @@ public:
 		shared FileReadyHandler handler;
 		handler.del = del;
 		handler.ctxt = this;
-		try synchronized(this) m_handler = handler; catch {}
+		try synchronized(this) m_handler = handler; catch (Exception) {}
 		return this;
 	}
 
@@ -101,7 +101,7 @@ public:
 	}
 	body {
 		if (buffer.length == 0) {
-			try m_handler(); catch { }
+			try m_handler(); catch (Exception) { }
 			return true;
 		}
 		try {
@@ -150,16 +150,16 @@ public:
 		} catch (Exception e) {
 			auto status = StatusInfo.init;
 			status.code = Status.ERROR;
-			try status.text = "Error in read, " ~ e.toString(); catch {}
+			try status.text = "Error in read, " ~ e.toString(); catch (Exception) {}
 			m_status = cast(shared) status;
-			try m_handler(); catch { }
+			try m_handler(); catch (Exception) { }
 			return false;
 		}
 		try synchronized(m_cmdInfo.mtx) {
 			m_cmdInfo.buffer = buffer;
 			m_cmdInfo.command = FileCmd.READ;
 			filePath = Path(file_path);
-		} catch {}
+		} catch (Exception) {}
 		offset = off;
 
 		return doOffThread({ process(this); });
@@ -174,7 +174,7 @@ public:
 	}
 	body {
 		if (buffer.length == 0) {
-			try m_handler(); catch { return false; }
+			try m_handler(); catch (Exception) { return false; }
 			return true;
 		}
 		try {
@@ -223,7 +223,7 @@ public:
 		} catch (Exception e) {
 			auto status = StatusInfo.init;
 			status.code = Status.ERROR;
-			try status.text = "Error in write, " ~ e.toString(); catch {}
+			try status.text = "Error in write, " ~ e.toString(); catch (Exception) {}
 			m_status = cast(shared) status;
 			return false;
 		}
@@ -231,7 +231,7 @@ public:
 			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 			m_cmdInfo.command = FileCmd.WRITE;
 			filePath = Path(file_path);
-		} catch {}
+		} catch (Exception) {}
 		offset = off;
 
 		return doOffThread({ process(this); });
@@ -245,7 +245,7 @@ public:
 	}
 	body {
 		if (buffer.length == 0) {
-			try m_handler(); catch { return false; }
+			try m_handler(); catch (Exception) { return false; }
 			return true;
 		}
 		try {
@@ -290,7 +290,7 @@ public:
 		} catch (Exception e) {
 			auto status = StatusInfo.init;
 			status.code = Status.ERROR;
-			try status.text = "Error in append, " ~ e.toString(); catch {}
+			try status.text = "Error in append, " ~ e.toString(); catch (Exception) {}
 			m_status = cast(shared) status;
 			return false;
 		}
@@ -298,7 +298,7 @@ public:
 			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 			m_cmdInfo.command = FileCmd.APPEND;
 			filePath = Path(file_path);
-		} catch {}
+		} catch (Exception) {}
 
 		return doOffThread({ process(this); });
 	}
@@ -419,7 +419,7 @@ private void process(shared AsyncFile ctxt) {
 	} catch (Throwable e) {
 		auto status = StatusInfo.init;
 		status.code = Status.ERROR;
-		try status.text = "Error in " ~  cmd.to!string ~ ", " ~ e.toString(); catch {}
+		try status.text = "Error in " ~  cmd.to!string ~ ", " ~ e.toString(); catch (Exception) {}
 		ctxt.status = status;
 	}
 
@@ -428,7 +428,7 @@ private void process(shared AsyncFile ctxt) {
 		trace("AsyncFile Thread Error: ", e.toString());
 		auto status = StatusInfo.init;
 		status.code = Status.ERROR;
-		try status.text = e.toString(); catch {}
+		try status.text = e.toString(); catch (Exception) {}
 		ctxt.status = status;
 	}
 }

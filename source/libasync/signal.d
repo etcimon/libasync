@@ -105,7 +105,7 @@ package:
 
 	void handler() {
 		try m_sgh();
-		catch {}
+		catch (Throwable) {}
 		return;
 	}
 }

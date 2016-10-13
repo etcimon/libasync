@@ -65,7 +65,7 @@ void testDNS() {
 }
 
 void testDirectoryWatcher() {
-	import std.file : mkdir, write, rmdir, exists;
+	import std.file : mkdir, rmdir, exists;
 	if (exists("./hey/tmp.tmp"))
 		remove("./hey/tmp.tmp");
 	if (exists("./hey"))
@@ -90,7 +90,7 @@ void testDirectoryWatcher() {
 		mkdir("./hey");
 		assert(g_watcher.watchDir("./hey/"));
 		tm.duration(1.seconds).run({
-			import std.file : write;
+			static import std.file;
 			writeln("Writing to ./hey/tmp.tmp for the first time");
 			std.file.write("./hey/tmp.tmp", "some string");
 			tm.duration(100.msecs).run({

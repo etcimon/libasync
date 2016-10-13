@@ -34,10 +34,14 @@ public:
 	///
 	this(EventLoop evl) {
 		m_evLoop = cast(shared) evl;
-		try m_cmdInfo.ready = new shared AsyncSignal(cast(EventLoop)m_evLoop); catch { assert(false, "Failed to start DNS Signaling"); }
+		try {
+			m_cmdInfo.ready = new shared AsyncSignal(cast(EventLoop)m_evLoop);
+		} catch (Throwable) {
+			assert(false, "Failed to start DNS Signaling");
+		}
 		m_cmdInfo.ready.run(cast(void delegate())&callback);
 		m_owner = cast(shared)Thread.getThis();
-		try m_cmdInfo.mtx = cast(shared) new Mutex; catch {}
+		try m_cmdInfo.mtx = cast(shared) new Mutex; catch (Exception) {}
 	}
 
 	///
@@ -57,7 +61,8 @@ public:
 		shared DNSReadyHandler handler;
 		handler.del = cast(shared) del;
 		handler.ctxt = this;
-		try synchronized(this) m_handler = handler; catch { assert(false, "Failed to set handler in AsyncDNS"); }
+		try synchronized(this) m_handler = handler;
+		catch (Throwable) assert(false, "Failed to set handler in AsyncDNS");
 		return this;
 	}
 
@@ -75,7 +80,7 @@ public:
 				m_cmdInfo.command = DNSCmd.RESOLVEHOST;
 				m_cmdInfo.ipv6 = ipv6;
 				m_cmdInfo.url = cast(shared) url;
-			} catch {}
+			} catch (Exception) {}
 		} else {
 			m_cmdInfo.command = DNSCmd.RESOLVEHOST;
 			m_cmdInfo.ipv6 = ipv6;
@@ -111,7 +116,7 @@ package:
 	shared(NetworkAddress*) addr() {
 		try synchronized(m_cmdInfo.mtx)
 			return cast(shared)&m_cmdInfo.addr;
-		catch {}
+		catch (Exception) {}
 		return null;
 	}
 
@@ -135,7 +140,7 @@ package:
 		catch (Throwable e) {
 			static if (DEBUG) {
 				import std.stdio : writeln;
-				try writeln("Failed to send command. ", e.toString()); catch {}
+				try writeln("Failed to send command. ", e.toString()); catch (Throwable) {}
 			}
 		}
 	}
@@ -187,7 +192,7 @@ private void process(shared AsyncDNS ctxt) {
 	} catch (Throwable e) {
 		auto status = StatusInfo.init;
 		status.code = Status.ERROR;
-		try status.text = e.toString(); catch {}
+		try status.text = e.toString(); catch (Throwable) {}
 		ctxt.status = status;
 	}
 
@@ -195,7 +200,7 @@ private void process(shared AsyncDNS ctxt) {
 	catch (Throwable e) {
 		auto status = StatusInfo.init;
 		status.code = Status.ERROR;
-		try status.text = e.toString(); catch {}
+		try status.text = e.toString(); catch (Throwable) {}
 		ctxt.status = status;
 	}
 }
