@@ -60,7 +60,7 @@ package:
 
 	void handler() {
 		try m_evh();
-		catch {}
+		catch (Exception) {}
 		return;
 	}
 }

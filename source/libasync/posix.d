@@ -43,7 +43,7 @@ version(linux) {
 			sigaddset(&mask, cast(int) __libc_current_sigrtmin());
 			pthread_sigmask(SIG_BLOCK, &mask, null);
 			//}
-		} catch {}
+		} catch (Throwable) {}
 	}
 	static this() {
 		blockSignals();
@@ -143,7 +143,7 @@ package:
 		try
 			if (!g_mutex)
 				g_mutex = new Mutex;
-		catch {}
+		catch (Throwable) {}
 
 		static if (EPOLL)
 		{
@@ -173,7 +173,7 @@ package:
 					m_status.code = Status.EVLOOP_FAILURE;
 					return false;
 				}
-			} catch { }
+			} catch (Throwable) { }
 
 
 
@@ -216,7 +216,7 @@ package:
 					g_evIdxCapacity = 32;
 					g_idxCapacity = 32;
 				}
-			} catch { assert(false, "Initialization failed"); }
+			} catch (Throwable) { assert(false, "Initialization failed"); }
 			m_kqueuefd = kqueue();
 			int err;
 			try {
@@ -225,7 +225,7 @@ package:
 				sigaddset(&mask, SIGXCPU);
 
 				err = sigprocmask(SIG_BLOCK, &mask, null);
-			} catch {}
+			} catch (Throwable) {}
 
 			EventType evtype = EventType.Signal;
 
@@ -246,7 +246,7 @@ package:
 				assert(false, "Add SIGXCPU failed at kevent call");
 		}
 
-		static if (LOG) try log("init in thread " ~ Thread.getThis().name); catch {}
+		static if (LOG) try log("init in thread " ~ Thread.getThis().name); catch (Throwable) {}
 
 		return true;
 	}
@@ -943,7 +943,7 @@ package:
 			sigval sigvl;
 			fd_t err;
 			sigvl.sival_ptr = cast(void*) ctxt;
-			try err = pthread_sigqueue(ctxt.pthreadId, fd, sigvl); catch {}
+			try err = pthread_sigqueue(ctxt.pthreadId, fd, sigvl); catch (Throwable) {}
 			if (catchError!"sigqueue"(err)) {
 				return false;
 			}
@@ -960,7 +960,7 @@ package:
 				int err = core.sys.posix.signal.kill(getpid(), SIGXCPU);
 				if (catchError!"notify(signal)"(err))
 					assert(false, "Signal could not be raised");
-			} catch {}
+			} catch (Throwable) {}
 		}
 
 		return true;
@@ -1000,11 +1000,11 @@ package:
 					ret = inotify_add_watch(fd, path.toNativeString().toStringz, events);
 					if (catchError!"inotify_add_watch"(ret))
 						return fd_t.init;
-					static if (LOG) try log("inotify_add_watch(" ~ DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd).to!string ~ ")"); catch {}
+					static if (LOG) try log("inotify_add_watch(" ~ DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd).to!string ~ ")"); catch (Throwable) {}
 					assert(m_dwFolders.get(tuple(cast(fd_t) fd, cast(uint)ret), DWFolderInfo.init) == DWFolderInfo.init, "Could not get a unique watch descriptor for path, got: " ~ m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)].to!string);
 					m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)] = DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd);
 				} catch (Exception e) {
-					try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add directory " ~ path.toNativeString() ~ ": " ~ e.toString() ); catch {}
+					try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add directory " ~ path.toNativeString() ~ ": " ~ e.toString() ); catch (Throwable) {}
 					return 0;
 				}
 
@@ -1020,7 +1020,7 @@ package:
 									continue;
 						}
 					} catch (Exception e) {
-						try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add sub-directories of " ~ path.toNativeString() ~ ": " ~ e.toString() ); catch {}
+						try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add sub-directories of " ~ path.toNativeString() ~ ": " ~ e.toString() ); catch (Throwable) {}
 					}
 				}
 
@@ -1048,7 +1048,11 @@ package:
 				events |= NOTE_RENAME;
 
 			EventInfo* evinfo;
-			try evinfo = m_watchers[fd]; catch { assert(false, "Could retrieve event info, directory watcher was not initialized properly, or you are operating on a closed directory watcher."); }
+			try {
+				evinfo = m_watchers[fd];
+			} catch (Throwable) {
+				assert(false, "Could retrieve event info, directory watcher was not initialized properly, or you are operating on a closed directory watcher.");
+			}
 
 			/// we need a file descriptor for the containers, so we open files but we don't monitor them
 			/// todo: track indexes internally?
@@ -1089,7 +1093,8 @@ package:
 					}
 
 				} catch (Exception e) {
-					try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add directory " ~ path.toNativeString() ~ ": " ~ e.msg);  catch {}
+					try setInternalError!"inotify_add_watch"(Status.ERROR, "Could not add directory " ~ path.toNativeString() ~ ": " ~ e.msg); 
+					catch (Throwable) {}
 					return 0;
 				}
 				return ret;
@@ -1164,7 +1169,8 @@ package:
 					}
 					return true;
 				} catch (Exception e) {
-					try setInternalError!"inotify_rm_watch"(Status.ERROR, "Could not unwatch directory: " ~ e.toString()); catch {}
+					try setInternalError!"inotify_rm_watch"(Status.ERROR, "Could not unwatch directory: " ~ e.toString());
+					catch (Throwable) {}
 					return false;
 				}
 			}
@@ -1177,7 +1183,7 @@ package:
 					setInternalError!"dwFolders.get(wd)"(Status.ERROR, "Could not find watch info for wd " ~ wd.to!string);
 					return false;
 				}
-			} catch { }
+			} catch (Throwable) { }
 
 			return removeAll(info);
 		}
@@ -1244,7 +1250,8 @@ package:
 
 					}
 				} catch (Exception e) {
-					try setInternalError!"dwFolders.get(wd)"(Status.ERROR, "Could not close the folder " ~ fi.to!string ~ ": " ~ e.toString()); catch {}
+					try setInternalError!"dwFolders.get(wd)"(Status.ERROR, "Could not close the folder " ~ fi.to!string ~ ": " ~ e.toString());
+					catch (Throwable) {}
 					return false;
 				}
 
@@ -1252,7 +1259,7 @@ package:
 			}
 
 			DWFolderInfo info;
-			try info = m_dwFolders.get(wd, DWFolderInfo.init); catch {}
+			try info = m_dwFolders.get(wd, DWFolderInfo.init); catch (Throwable) {}
 
 			if (!removeAll(info))
 				return false;
@@ -1356,7 +1363,7 @@ package:
 					dst[i] = DWChangeInfo(evtype, path);
 					import std.file : isDir;
 					bool is_dir;
-					try is_dir = isDir(path.toNativeString()); catch {}
+					try is_dir = isDir(path.toNativeString()); catch (Throwable) {}
 					if (fi.wi.recursive && is_dir) {
 
 						try {

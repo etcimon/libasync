@@ -70,7 +70,7 @@ public:
 			bool addWatch() {
 				WatchInfo info;
 				info.events = ev;
-				try info.path = Path(path); catch {}
+				try info.path = Path(path); catch (Exception) {}
 				info.recursive = recursive;
 
 				//writeln("Watch: ", info.path.toNativeString());
@@ -79,7 +79,7 @@ public:
 				if (wd == 0 && m_evLoop.status.code != Status.OK)
 					return false;
 				info.wd = wd;
-				try m_directories.insert(info); catch {}
+				try m_directories.insert(info); catch (Exception) {}
 				return true;
 			}
 
@@ -126,7 +126,7 @@ public:
 					}
 				}
 			}
-		} catch {}
+		} catch (Exception) {}
 		return true;
 	}
 
