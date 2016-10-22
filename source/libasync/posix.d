@@ -151,7 +151,7 @@ package:
 			if (!g_signalsBlocked)
 				blockSignals();
 			assert(m_instanceId <= __libc_current_sigrtmax(), "An additional event loop is unsupported due to SIGRTMAX restrictions in Linux Kernel");
-			m_epollfd = epoll_create1(0);
+			m_epollfd = epoll_create1(EPOLL_CLOEXEC);
 
 			if (catchError!"epoll_create1"(m_epollfd))
 				return false;

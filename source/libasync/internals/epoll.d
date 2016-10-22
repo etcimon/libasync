@@ -52,6 +52,7 @@ static if (__VERSION__ < 2071)
 }
 
 enum EFD_NONBLOCK = 0x800;
+enum EPOLL_CLOEXEC = 0x80000;
 
 int eventfd (uint initval, int flags);
 
