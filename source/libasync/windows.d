@@ -66,7 +66,7 @@ package:
 	body
 	{
 		try if (!gs_mtx)
-			gs_mtx = new Mutex; catch {}
+			gs_mtx = new Mutex; catch (Throwable) {}
 		static ushort j;
 		assert (j == 0, "Current implementation is only tested with 1 event loop per thread. There are known issues with signals on linux.");
 		j += 1;
@@ -106,7 +106,7 @@ package:
 		RegisterClassW(&wc);
 		m_hwnd = CreateWindowW(wnz, clsn, 0, 0, 0, 385, 375, HWND_MESSAGE,
 		                       cast(HMENU) null, null, null);
-		static if (LOG) try log("Window registered: " ~ m_hwnd.to!string); catch{}
+		static if (LOG) try log("Window registered: " ~ m_hwnd.to!string); catch (Throwable) {}
 		auto ptr = cast(ULONG_PTR)cast(void*)&this;
 		SetWindowLongPtrA(m_hwnd, GWLP_USERDATA, ptr);
 		assert( cast(EventLoopImpl*)cast(void*)GetWindowLongPtrA(m_hwnd, GWLP_USERDATA) is &this );
@@ -291,7 +291,7 @@ package:
 
 
 		static if (LOG) try log("Client started FD#" ~ fd.to!string);
-		catch{}
+		catch (Throwable) {}
 		return fd;
 	}
 
@@ -319,20 +319,20 @@ package:
 		else return 0;
 
 		static if (LOG) try log("UDP Socket started FD#" ~ fd.to!string);
-		catch{}
+		catch (Throwable) {}
 
 		return fd;
 	}
 
 	fd_t run(shared AsyncSignal ctxt) {
 		m_status = StatusInfo.init;
-		static if (LOG) try log("Signal subscribed to: " ~ m_hwnd.to!string); catch {}
+		static if (LOG) try log("Signal subscribed to: " ~ m_hwnd.to!string); catch (Throwable) {}
 		return (cast(fd_t)m_hwnd);
 	}
 
 	fd_t run(AsyncNotifier ctxt) {
 		m_status = StatusInfo.init;
-		//static if (LOG) try log("Running signal " ~ (cast(AsyncNotifier)ctxt).to!string); catch {}
+		//static if (LOG) try log("Running signal " ~ (cast(AsyncNotifier)ctxt).to!string); catch (Throwable) {}
 		return cast(fd_t) m_hwnd;
 	}
 
@@ -344,7 +344,7 @@ package:
 		if (timer_id == fd_t.init) {
 			timer_id = createIndex();
 		}
-		static if (LOG) try log("Timer created: " ~ timer_id.to!string ~ " with timeout: " ~ timeout.total!"msecs".to!string ~ " msecs"); catch {}
+		static if (LOG) try log("Timer created: " ~ timer_id.to!string ~ " with timeout: " ~ timeout.total!"msecs".to!string ~ " msecs"); catch (Throwable) {}
 
 		BOOL err;
 		try err = cast(int)SetTimer(m_hwnd, timer_id, timeout.total!"msecs".to!uint, null);
@@ -471,7 +471,7 @@ package:
 	bool kill(AsyncTimer ctxt) {
 		m_status = StatusInfo.init;
 
-		static if (LOG) try log("Kill timer" ~ ctxt.id.to!string); catch {}
+		static if (LOG) try log("Kill timer" ~ ctxt.id.to!string); catch (Throwable) {}
 
 		BOOL err = KillTimer(m_hwnd, ctxt.id);
 		if (err == 0)
@@ -734,7 +734,7 @@ package:
 			import std.algorithm : min;
 			size_t cnt = min(dst.length, changes.length);
 			foreach (DWChangeInfo change; (*changes)[0 .. cnt]) {
-				static if (LOG) try log("reading change: " ~ change.path); catch {}
+				static if (LOG) try log("reading change: " ~ change.path); catch (Throwable) {}
 				dst[i] = (*changes)[i];
 				i++;
 			}
@@ -744,7 +744,7 @@ package:
 			setInternalError!"watcher.readChanges"(Status.ERROR, "Could not read directory changes: " ~ e.msg);
 			return 0;
 		}
-		static if (LOG) try log("Changes returning with: " ~ i.to!string); catch {}
+		static if (LOG) try log("Changes returning with: " ~ i.to!string); catch (Throwable) {}
 		return cast(uint) i;
 	}
 
@@ -804,7 +804,7 @@ package:
 			err = PostMessageA(cast(HWND)fd, WM_USER_SIGNAL, wparam, lparam);
 		else
 			err = PostMessageA(cast(HWND)fd, WM_USER_EVENT, wparam, lparam);
-		static if (LOG) try log("Sending notification to: " ~ (cast(HWND)fd).to!string); catch {}
+		static if (LOG) try log("Sending notification to: " ~ (cast(HWND)fd).to!string); catch (Throwable) {}
 		if (err == 0)
 		{
 			m_error = GetLastErrorSafe();
@@ -822,7 +822,7 @@ package:
 		m_status = StatusInfo.init;
 		int ret = .recv(fd, cast(void*) data.ptr, cast(INT) data.length, 0);
 
-		//static if (LOG) try log("RECV " ~ ret.to!string ~ "B FD#" ~ fd.to!string); catch {}
+		//static if (LOG) try log("RECV " ~ ret.to!string ~ "B FD#" ~ fd.to!string); catch (Throwable) {}
 		if (catchSocketError!".recv"(ret)) { // ret == -1
 			if (m_error == error_t.WSAEWOULDBLOCK)
 				m_status.code = Status.ASYNC;
@@ -837,7 +837,7 @@ package:
 	{
 		m_status = StatusInfo.init;
 		static if (LOG) try log("SEND " ~ data.length.to!string ~ "B FD#" ~ fd.to!string);
-		catch{}
+		catch (Throwable) {}
 		int ret = .send(fd, cast(const(void)*) data.ptr, cast(INT) data.length, 0);
 
 		if (catchSocketError!"send"(ret)) {
@@ -872,7 +872,7 @@ package:
 			addr.family = AF_INET;
 		}
 
-		static if (LOG) try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
+		static if (LOG) try log("RECVFROM " ~ ret.to!string ~ "B"); catch (Throwable) {}
 		if (catchSocketError!".recvfrom"(ret)) { // ret == -1
 			if (m_error == WSAEWOULDBLOCK)
 				m_status.code = Status.ASYNC;
@@ -886,7 +886,7 @@ package:
 	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
 	{
 		m_status = StatusInfo.init;
-		static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B " ~ addr.toString()); catch{}
+		static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B " ~ addr.toString()); catch (Throwable) {}
 		int ret;
 		if (addr != NetworkAddress.init)
 			ret = .sendto(fd, cast(void*) data.ptr, cast(INT) data.length, 0, addr.sockAddr, addr.sockAddrLen);
@@ -929,7 +929,7 @@ package:
 		INT err;
 
 		static if (LOG) try log("Shutdown FD#" ~ fd.to!string);
-		catch{}
+		catch (Throwable) {}
 		if (forced) {
 			err = shutdown(fd, SD_BOTH);
 			closesocket(fd);
@@ -1020,7 +1020,7 @@ package:
 		INT err = WSAStringToAddressW(str, cast(INT) addr.family, null, addr.sockAddr, &addrlen);
 		if (port != 0) addr.port = port;
 		static if (LOG) try log(addr.toString());
-		catch {}
+		catch (Throwable) {}
 		if( catchSocketError!"getAddressFromIP"(err) )
 			return NetworkAddress.init;
 		else assert(addrlen == addr.sockAddrLen);
@@ -1133,7 +1133,7 @@ private:
 				}
 				break;
 			case WM_TIMER:
-				static if (LOG) try log("Timer callback: " ~ m_timer.fd.to!string); catch {}
+				static if (LOG) try log("Timer callback: " ~ m_timer.fd.to!string); catch (Throwable) {}
 				TimerHandler cb;
 				bool cached = (m_timer.fd == cast(fd_t)msg.wParam);
 				try {
@@ -1164,7 +1164,7 @@ private:
 				void* payloadPtr = cast(void*) payloadAddr;
 				shared AsyncSignal ctxt = cast(shared AsyncSignal) payloadPtr;
 
-				static if (LOG) try log("Got notification in : " ~ m_hwnd.to!string ~ " pointer: " ~ payloadPtr.to!string); catch {}
+				static if (LOG) try log("Got notification in : " ~ m_hwnd.to!string ~ " pointer: " ~ payloadPtr.to!string); catch (Throwable) {}
 				try {
 					assert(ctxt.id != 0);
 					ctxt.handler();
@@ -1200,7 +1200,7 @@ private:
 		try{
 			if (m_udpHandlers.get(sock) == UDPHandler.init)
 				return false;
-		}	catch {}
+		}	catch (Throwable) {}
 		if (sock == 0) { // highly unlikely...
 			setInternalError!"onUDPEvent"(Status.ERROR, "no socket defined");
 			return false;
@@ -1210,7 +1210,7 @@ private:
 			try {
 				//log("CLOSE FD#" ~ sock.to!string);
 				(m_udpHandlers)[sock](UDPEvent.ERROR);
-			} catch { // can't do anything about this...
+			} catch (Throwable) { // can't do anything about this...
 			}
 			return false;
 		}
@@ -1251,7 +1251,7 @@ private:
 		try{
 			if (m_tcpHandlers.get(sock) == TCPEventHandler.init && m_connHandlers.get(sock) == TCPAcceptHandler.init)
 				return false;
-		} catch {}
+		} catch (Throwable) {}
 		if (sock == 0) { // highly unlikely...
 			setInternalError!"onTCPEvent"(Status.ERROR, "no socket defined");
 			return false;
@@ -1261,7 +1261,7 @@ private:
 			try {
 				//log("CLOSE FD#" ~ sock.to!string);
 				(m_tcpHandlers)[sock](TCPEvent.ERROR);
-			} catch { // can't do anything about this...
+			} catch (Throwable) { // can't do anything about this...
 			}
 			return false;
 		}
@@ -1276,7 +1276,7 @@ private:
 				static if (LOG) log("Accepting connection");
 				/// Let another listener take the next connection
 				TCPAcceptHandler list;
-				try list = m_connHandlers[sock]; catch { assert(false, "Listening on an invalid socket..."); }
+				try list = m_connHandlers[sock]; catch (Throwable) { assert(false, "Listening on an invalid socket..."); }
 				scope(exit) {
 					/// The connection rotation mechanism is handled by the TCPListenerDistMixins
 					/// when registering the same AsyncTCPListener object on multiple event loops.
@@ -1869,16 +1869,16 @@ package:
 			import std.stdio;
 			DWFolderWatcher watcher = cast(DWFolderWatcher)(overlapped.Pointer);
 			watcher.m_bytesTransferred = cbTransferred;
-			try ThreadMem.free(overlapped); catch {}
+			try ThreadMem.free(overlapped); catch (Throwable) {}
 
 			static if (DEBUG) {
 				if (dwError != 0)
-					try writeln("Diretory watcher error: "~EWSAMessages[dwError.to!EWIN]); catch{}
+					try writeln("Diretory watcher error: "~EWSAMessages[dwError.to!EWIN]); catch (Throwable) {}
 			}
 			try watcher.triggerChanged();
 			catch (Exception e) {
 				static if (DEBUG) {
-					try writeln("Failed to trigger change"); catch {}
+					try writeln("Failed to trigger change"); catch (Throwable) {}
 				}
 			}
 		}
@@ -2093,7 +2093,7 @@ shared static this() {
 			gs_maxID = 32;
 		}
 	}
-	catch {
+	catch (Throwable) {
 		assert(false, "Couldn't reserve necessary space for available Manual Events");
 	}
 
@@ -2111,7 +2111,7 @@ nothrow extern(System) {
 			static if (DEBUG) {
 				if (appl.status.code != Status.OK && appl.status.code != Status.ASYNC) {
 					import std.stdio : writeln;
-					try { writeln(appl.error, ": ", appl.m_status.text); } catch {}
+					try { writeln(appl.error, ": ", appl.m_status.text); } catch (Throwable) {}
 				}
 			}
 			return 0;
