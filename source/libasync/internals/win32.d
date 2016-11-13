@@ -6,6 +6,7 @@ version(Windows):
 public import core.sys.windows.windows;
 public import core.sys.windows.windows;
 public import core.sys.windows.winsock2;
+public import core.sys.windows.com : GUID;
 
 extern(System) nothrow
 {
@@ -45,8 +46,12 @@ extern(System) nothrow
 	BOOL GetFileSizeEx(HANDLE hFile, long *lpFileSize);
 	BOOL SetEndOfFile(HANDLE hFile);
 	BOOL GetOverlappedResult(HANDLE hFile, OVERLAPPED* lpOverlapped, DWORD* lpNumberOfBytesTransferred, BOOL bWait);
+	BOOL WSAGetOverlappedResult(SOCKET s, OVERLAPPED* lpOverlapped, DWORD* lpcbTransfer, BOOL fWait, DWORD* lpdwFlags);
 	BOOL PostMessageW(HWND hwnd, UINT msg, WPARAM wPara, LPARAM lParam);
 	BOOL PostThreadMessageA(HWND hwnd, UINT msg, WPARAM wPara, LPARAM lParam);
+
+	HANDLE GetStdHandle(DWORD nStdHandle);
+	bool ReadFile(HANDLE hFile, void* lpBuffer, DWORD nNumberOfBytesRead, DWORD* lpNumberOfBytesRead, OVERLAPPED* lpOverlapped);
 
 	static if (__VERSION__ < 2065) {
 		BOOL PeekMessageW(MSG *lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg);
@@ -74,6 +79,7 @@ extern(System) nothrow
 		MAX_PROTOCOL_CHAIN = 7,
 	};
 
+	enum WSA_IO_INCOMPLETE = 996;
 	enum WSA_IO_PENDING = 997;
 
 	struct WSAPROTOCOL_INFOW {
@@ -108,6 +114,15 @@ extern(System) nothrow
 		size_t   len;
 		ubyte *buf;
 	}
+
+	struct WSAMSG {
+        sockaddr*  name;
+        int        namelen;
+        WSABUF*    lpBuffers;
+        DWORD      dwBufferCount;
+        WSABUF     Control;
+        DWORD      dwFlags;
+    }
 
 	struct WSAOVERLAPPEDX {
 		ULONG_PTR Internal;
@@ -204,16 +219,93 @@ extern(System) nothrow
 	}
 	alias sockaddr SOCKADDR;
 
+	enum SOMAXCONN = 0x7fffffff;
+	auto SOMAXCONN_HINT(int b) { return -b; }
+
+	enum _SS_MAXSIZE = 128;           // Maximum size
+	enum _SS_ALIGNSIZE = long.sizeof; // Desired alignment
+
+	enum _SS_PAD1SIZE = _SS_ALIGNSIZE - ushort.sizeof;
+	enum _SS_PAD2SIZE = _SS_MAXSIZE - (ushort.sizeof + _SS_PAD1SIZE + _SS_ALIGNSIZE);
+
+	struct SOCKADDR_STORAGE {
+		ushort ss_family;
+		byte[_SS_PAD1SIZE] __ss_pad1;
+		long __ss_align;
+		byte[_SS_PAD2SIZE] __ss_pad2;
+	}
+	alias SOCKADDR_STORAGE* PSOCKADDR_STORAGE;
+	alias SOCKADDR_STORAGE sockaddr_storage;
+
 	alias void function(DWORD, DWORD, WSAOVERLAPPEDX*, DWORD) LPWSAOVERLAPPED_COMPLETION_ROUTINEX;
 	alias void function(DWORD, DWORD, WSAOVERLAPPEDX*) LPLOOKUPSERVICE_COMPLETION_ROUTINE;
 	alias void* LPCONDITIONPROC;
 	alias void* LPTRANSMIT_FILE_BUFFERS;
+
+	alias BOOL function(SOCKET sListenSocket,
+	                    SOCKET sAcceptSocket,
+	                    void* lpOutputBuffer,
+	                    DWORD dwReceiveDataLength,
+	                    DWORD dwLocalAddressLength,
+	                    DWORD dwRemoteAddressLength,
+	                    DWORD* lpdwBytesReceived,
+	                    OVERLAPPED* lpOverlapped) LPFN_ACCEPTEX;
+	auto WSAID_ACCEPTEX = GUID(0xb5367df1, 0xcbac, 0x11cf, [ 0x95, 0xca, 0x00, 0x80, 0x5f, 0x48, 0xa1, 0x92 ]);
+
+	alias void function(void* lpOutputBuffer,
+	                    DWORD dwReceiveDataLength,
+	                    DWORD dwLocalAddressLength,
+	                    DWORD dwRemoteAddressLength,
+	                    sockaddr** LocalSockaddr,
+	                    int* LocalSockaddrLength,
+	                    sockaddr** RemoteSockaddr,
+	                    int* RemoteSockaddrLength) LPFN_GETACCEPTEXSOCKADDRS;
+	auto WSAID_GETACCEPTEXSOCKADDRS = GUID(0xb5367df2, 0xcbac, 0x11cf, [ 0x95, 0xca, 0x00, 0x80, 0x5f, 0x48, 0xa1, 0x92 ]);
+
+	alias BOOL function(SOCKET s, sockaddr* name, int namelen, void* lpSendBuffer, DWORD dwSendDataLength, DWORD* lpdwBytesSent, OVERLAPPED* lpOverlapped) LPFN_CONNECTEX;
+	auto WSAID_CONNECTEX = GUID(0x25a207b9, 0xddf3, 0x4660, [ 0x8e, 0xe9, 0x76, 0xe5, 0x8c, 0x74, 0x06, 0x3e ]);
+
+	alias BOOL function(SOCKET s, OVERLAPPED* lpOverlapped, DWORD  dwFlags, DWORD  dwReserved) LPFN_DISCONNECTEX;
+	auto WSAID_DISCONNECTEX = GUID(0x7fda2e11, 0x8630, 0x436f, [ 0xa0, 0x31, 0xf5, 0x36, 0xa6, 0xee, 0xc1, 0x57 ]);
+
+	int WSAIoctl(SOCKET s, DWORD dwIoControlCode, void* lpvInBuffer, DWORD cbInBuffer, void* lpvOutBuffer, DWORD cbOutBuffer, DWORD* lpcbBytesReturned, WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
+
+	enum IOCPARM_MASK = 0x7f;
+	enum uint IOC_VOID         = 0x20000000;
+	enum uint IOC_OUT          = 0x40000000;
+	enum uint IOC_IN           = 0x80000000;
+	enum uint IOC_INOUT        = (IOC_IN|IOC_OUT);
+
+	enum uint IOC_UNIX         = 0x00000000;
+	enum uint IOC_WS2          = 0x08000000;
+	enum uint IOC_PROTOCOL     = 0x10000000;
+	enum uint IOC_VENDOR       = 0x18000000;
+
+	auto _WSAIO(uint x,uint y)      { return (IOC_VOID|(x)|(y)); }
+	auto _WSAIOR(uint x,uint y)     { return (IOC_OUT|(x)|(y)); }
+	auto _WSAIOW(uint x,uint y)     { return (IOC_IN|(x)|(y)); }
+	auto _WSAIORW(uint x,uint y)    { return (IOC_INOUT|(x)|(y)); }
+
+	enum SIO_GET_EXTENSION_FUNCTION_POINTER = _WSAIORW(IOC_WS2,6);
+
+	LPFN_ACCEPTEX AcceptEx;
+	LPFN_GETACCEPTEXSOCKADDRS GetAcceptExSockaddrs;
+	LPFN_CONNECTEX ConnectEx;
+	LPFN_DISCONNECTEX DisconnectEx;
+
+	enum SO_UPDATE_ACCEPT_CONTEXT    = 0x700B;
+	enum SO_UPDATE_CONNECT_CONTEXT   = 0x7010;
+
+	bool CancelIo(HANDLE hFile);
+	bool CancelIOEx(HANDLE hFile, OVERLAPPED* lpOverlapped);
 
 	SOCKET WSAAccept(SOCKET s, sockaddr *addr, INT* addrlen, LPCONDITIONPROC lpfnCondition, DWORD_PTR dwCallbackData);
 	int WSAAsyncSelect(SOCKET s, HWND hWnd, uint wMsg, sizediff_t lEvent);
 	SOCKET WSASocketW(int af, int type, int protocol, WSAPROTOCOL_INFOW *lpProtocolInfo, uint g, DWORD dwFlags);
 	int WSARecv(SOCKET s, WSABUF* lpBuffers, DWORD dwBufferCount, DWORD* lpNumberOfBytesRecvd, DWORD* lpFlags, in WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
 	int WSASend(SOCKET s, in WSABUF* lpBuffers, DWORD dwBufferCount, DWORD* lpNumberOfBytesSent, DWORD dwFlags, in WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
+	int WSARecvFrom(SOCKET s, WSABUF* lpBuffers, DWORD dwBufferCount, DWORD* lpNumberOfBytesRecvd, DWORD* lpFlags, sockaddr* lpFrom, INT* lpFromlen, in WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
+	int WSASendTo(SOCKET s, in WSABUF* lpBuffers, DWORD dwBufferCount, DWORD* lpNumberOfBytesSent, DWORD dwFlags, sockaddr* lpTo, int iToLen, in WSAOVERLAPPEDX* lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINEX lpCompletionRoutine);
 	int WSASendDisconnect(SOCKET s, WSABUF* lpOutboundDisconnectData);
 	INT WSAStringToAddressA(in LPTSTR AddressString, INT AddressFamily, in WSAPROTOCOL_INFO* lpProtocolInfo, SOCKADDR* lpAddress, INT* lpAddressLength);
 	INT WSAStringToAddressW(in LPWSTR AddressString, INT AddressFamily, in WSAPROTOCOL_INFOW* lpProtocolInfo, SOCKADDR* lpAddress, INT* lpAddressLength);
@@ -225,15 +317,6 @@ extern(System) nothrow
 	void FreeAddrInfoExW(ADDRINFOEXW* pAddrInfo);
 	void freeaddrinfo(ADDRINFOA* ai);
 	BOOL TransmitFile(SOCKET hSocket, HANDLE hFile, DWORD nNumberOfBytesToWrite, DWORD nNumberOfBytesPerSend, OVERLAPPED* lpOverlapped, LPTRANSMIT_FILE_BUFFERS lpTransmitBuffers, DWORD dwFlags);
-
-
-	struct GUID
-	{
-		DWORD Data1;
-		WORD Data2;
-		WORD Data3;
-		BYTE[8]  Data4;
-	};
 
 	enum WM_USER = 0x0400;
 

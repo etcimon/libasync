@@ -1,0 +1,19 @@
+{
+    "name": "transceiver",
+    "description": "Receive/Send data continuously",
+    "copyright": "Copyright © 2016, Moritz Maxeiner",
+    "authors": ["Moritz Maxeiner"],
+    "dependencies": {
+        "libasync": { "path": "../../" },
+        "docopt": "~>0.6.1-b.5"
+    },
+
+    "targetName": "transceiver",
+    "buildTypes": {
+        "release": {
+            "versions": ["StdLoggerDisableTrace",
+                         "StdLoggerDisableInfo",
+                         "StdLoggerDisableWarning"]
+        }
+    }
+}

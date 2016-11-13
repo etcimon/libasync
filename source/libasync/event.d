@@ -70,11 +70,23 @@ public:
 		return m_evId;
 	}
 
+	/// Removes the event from the event loop, closing the file descriptor if necessary,
+	/// and cleans up the underlying resources.
+	bool kill(bool forced = false)
+	body {
+		scope(exit) m_evId = 0;
+		return m_evLoop.kill(this, forced);
+	}
+
 package:
-	mixin StatefulFDMixins;
+	mixin COSocketMixins;
 
 	@property bool stateful() const {
 		return m_stateful;
+	}
+
+	@property void stateful(bool stateful) {
+		m_stateful = stateful;
 	}
 
 	@property void id(fd_t id) {

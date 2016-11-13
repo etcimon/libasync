@@ -22,6 +22,7 @@ public import libasync.watcher;
 public import libasync.file;
 public import libasync.threads;
 public import libasync.event;
+public import libasync.socket;
 
 version(Windows) {
 	public import libasync.windows;
@@ -99,7 +100,7 @@ package:
 		return m_evLoop.error;
 	}
 
-	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr) {
+	uint recvFrom(in fd_t fd, ubyte[] data, ref NetworkAddress addr) {
 		return m_evLoop.recvFrom(fd, data, addr);
 	}
 
@@ -107,15 +108,10 @@ package:
 		return m_evLoop.sendTo(fd, data, addr);
 	}
 
-	uint recv(in fd_t fd, ref ubyte[] data)
+	uint recv(in fd_t fd, ubyte[] data)
 	{
 		return m_evLoop.recv(fd, data);
 	}
-
-	/*uint recv(out ubyte[] data, in fd_t fd, in NetworkAddress dst)
-	{
-		return m_evLoop.recv(data, fd, dst);
-	}*/
 
 	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
@@ -197,6 +193,38 @@ package:
 		return m_evLoop.run(ctxt);
 	}
 
+	fd_t run(AsyncSocket ctxt) {
+		return m_evLoop.run(ctxt);
+	}
+
+	void submitRequest(AsyncAcceptRequest* ctxt) {
+		m_evLoop.submitRequest(ctxt);
+	}
+
+	void submitRequest(AsyncReceiveRequest* ctxt) {
+		m_evLoop.submitRequest(ctxt);
+	}
+
+	void submitRequest(AsyncSendRequest* ctxt) {
+		m_evLoop.submitRequest(ctxt);
+	}
+
+	import libasync.internals.socket_compat : sockaddr, socklen_t;
+	bool bind(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
+	{
+		return m_evLoop.bind(ctxt, addr, addrlen);
+	}
+
+	bool connect(AsyncSocket ctxt, sockaddr* addr, socklen_t addrlen)
+	{
+		return m_evLoop.connect(ctxt, addr, addrlen);
+	}
+
+	bool listen(AsyncSocket ctxt, int backlog)
+	{
+		return m_evLoop.listen(ctxt, backlog);
+	}
+
 	fd_t run(shared AsyncSignal ctxt) {
 		return m_evLoop.run(ctxt);
 	}
@@ -228,6 +256,10 @@ package:
 
 	bool kill(AsyncDirectoryWatcher obj) {
 		return m_evLoop.kill(obj);
+	}
+
+	bool kill(AsyncSocket obj, bool forced = false) {
+		return m_evLoop.kill(obj, forced);
 	}
 
 	bool kill(AsyncTCPConnection obj, bool forced = false) {

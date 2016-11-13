@@ -164,7 +164,7 @@ public:
 	}
 
 package:
-	mixin StatefulFDMixins;
+	mixin COSocketMixins;
 
 	@property void inbound(bool b) {
 		m_inbound = b;

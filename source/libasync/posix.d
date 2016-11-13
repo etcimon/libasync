@@ -9,17 +9,18 @@ import std.datetime : Duration, msecs, seconds, SysTime;
 import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
 import std.container : Array;
+import std.exception;
 
 import core.stdc.errno;
 import libasync.events;
 import libasync.internals.path;
 import core.sys.posix.signal;
 import libasync.posix2;
+import libasync.internals.logging;
 import core.sync.mutex;
 import memutils.utils;
 import memutils.hashmap;
 
-enum SOCKET_ERROR = -1;
 alias fd_t = int;
 
 
@@ -110,6 +111,10 @@ private:
 		HashMap!(fd_t, Array!(DWChangeInfo)*) m_changes; // fd_t = id++ per AsyncDirectoryWatcher
 
 	}
+
+	AsyncAcceptRequest.Queue m_completedSocketAccepts;
+	AsyncReceiveRequest.Queue m_completedSocketReceives;
+	AsyncSendRequest.Queue m_completedSocketSends;
 
 package:
 
@@ -277,13 +282,11 @@ package:
 	bool loop(Duration timeout = 0.seconds)
 		//in { assert(Fiber.getThis() is null); }
 	{
-
 		import libasync.internals.memory;
-		bool success = true;
-		int num;
+
+		int num = void;
 
 		static if (EPOLL) {
-
 			static align(1) epoll_event[] events;
 			if (events is null)
 			{
@@ -292,283 +295,355 @@ package:
 					assert(false, "Could not allocate events array: " ~ e.msg);
 				}
 			}
-			int timeout_ms;
-			if (timeout == 0.seconds) // return immediately
-				timeout_ms = 0;
-			else if (timeout == -1.seconds) // wait indefinitely
-				timeout_ms = -1;
-			else timeout_ms = cast(int)timeout.total!"msecs";
-			/// Retrieve pending events
-			num = epoll_wait(m_epollfd, cast(epoll_event*)&events[0], 128, timeout_ms);
-			assert(events !is null && events.length <= 128);
-
-
-		}
-		else /* if KQUEUE */ {
+		} else /* if KQUEUE */ {
 			import core.sys.posix.time : time_t;
 			import core.sys.posix.config : c_long;
+
 			static kevent_t[] events;
 			if (events.length == 0) {
 				try events = allocArray!kevent_t(manualAllocator(), 128);
 				catch (Exception e) { assert(false, "Could not allocate events array"); }
 			}
+		}
 
-			if (timeout != -1.seconds) {
-				time_t secs = timeout.split!("seconds", "nsecs")().seconds;
-				c_long ns = timeout.split!("seconds", "nsecs")().nsecs;
-				auto tspec = libasync.internals.kqueue.timespec(secs, ns);
+		auto waitForEvents(Duration timeout)
+		{
+			static if (EPOLL) {
+				int timeout_ms;
+				if (timeout == 0.seconds) // return immediately
+					timeout_ms = 0;
+				else if (timeout == -1.seconds) // wait indefinitely
+					timeout_ms = -1;
+				else timeout_ms = cast(int) timeout.total!"msecs";
+				/// Retrieve pending events
+				scope (exit) assert(events !is null && events.length <= 128);
+				return epoll_wait(m_epollfd, cast(epoll_event*) &events[0], 128, timeout_ms);
+			} else /* if KQUEUE */ {
+				if (timeout != -1.seconds) {
+					time_t secs = timeout.split!("seconds", "nsecs")().seconds;
+					c_long ns = timeout.split!("seconds", "nsecs")().nsecs;
+					auto tspec = libasync.internals.kqueue.timespec(secs, ns);
 
-				num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, &tspec);
-			} else {
-				num = kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, null);
+					return kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, &tspec);
+				} else {
+					return kevent(m_kqueuefd, null, 0, cast(kevent_t*) events, cast(int) events.length, null);
+				}
 			}
 		}
 
-		static Tuple!(int, Status)[] errors = [	tuple(EINTR, Status.EVLOOP_TIMEOUT) ];
+		auto handleEvents()
+		{
+			bool success = true;
 
-		if (catchEvLoopErrors!"event_poll'ing"(num, errors))
-			return false;
+			static Tuple!(int, Status)[] errors = [	tuple(EINTR, Status.EVLOOP_TIMEOUT) ];
 
-		if (num > 0)
-			static if (LOG) log("Got " ~ num.to!string ~ " event(s)");
+			if (catchEvLoopErrors!"event_poll'ing"(num, errors))
+				return false;
 
-		foreach(i; 0 .. num) {
-			success = false;
-			m_status = StatusInfo.init;
-			static if (EPOLL)
-			{
-				epoll_event _event = events[i];
-				static if (LOG) try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch {}
-				EventInfo* info = cast(EventInfo*) _event.data.ptr;
-				int event_flags = cast(int) _event.events;
-			}
-			else /* if KQUEUE */
-			{
-				kevent_t _event = events[i];
-				EventInfo* info = cast(EventInfo*) _event.udata;
-				//log("Got info");
-				int event_flags = (_event.filter << 16) | (_event.flags & 0xffff);
-				//log("event flags");
-			}
+			if (num > 0)
+				static if (LOG) log("Got " ~ num.to!string ~ " event(s)");
 
-			//if (info.owner != m_instanceId)
-			//	static if (LOG) try log("Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
-			//	catch{}
-			//log("owner");
-			switch (info.evType) {
-				case EventType.Event:
-					if (info.fd == 0)
-						break;
+			foreach(i; 0 .. num) {
+				success = false;
+				m_status = StatusInfo.init;
+				static if (EPOLL)
+				{
+					epoll_event _event = events[i];
+					static if (LOG) try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch {}
+					EventInfo* info = cast(EventInfo*) _event.data.ptr;
+					int event_flags = cast(int) _event.events;
+				}
+				else /* if KQUEUE */
+				{
+					kevent_t _event = events[i];
+					EventInfo* info = cast(EventInfo*) _event.udata;
+					//log("Got info");
+					int event_flags = (_event.filter << 16) | (_event.flags & 0xffff);
+					//log("event flags");
+				}
 
-					import core.sys.posix.unistd : close;
-					success = onEvent(info.fd, info.evObj.eventHandler, event_flags);
-
-					if (!success) {
-						close(info.fd);
-						try ThreadMem.free(info);
-						catch (Exception e){ assert(false, "Error freeing resources"); }
-					}
-					break;
-				case EventType.TCPAccept:
-					if (info.fd == 0)
-						break;
-					success = onTCPAccept(info.fd, info.evObj.tcpAcceptHandler, event_flags);
-					break;
-
-				case EventType.Notifier:
-
-					static if (LOG) log("Got notifier!");
-					try info.evObj.notifierHandler();
-					catch (Exception e) {
-						setInternalError!"notifierHandler"(Status.ERROR);
-					}
-					break;
-
-				case EventType.DirectoryWatcher:
-					static if (LOG) log("Got DirectoryWatcher event!");
-					static if (!EPOLL) {
-						// in KQUEUE all events will be consumed here, because they must be pre-processed
-						try {
-							DWFileEvent fevent;
-							if (_event.fflags & (NOTE_LINK | NOTE_WRITE))
-								fevent = DWFileEvent.CREATED;
-							else if (_event.fflags & NOTE_DELETE)
-								fevent = DWFileEvent.DELETED;
-							else if (_event.fflags & (NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE))
-								fevent = DWFileEvent.MODIFIED;
-							else if (_event.fflags & NOTE_RENAME)
-								fevent = DWFileEvent.MOVED_FROM;
-							else if (_event.fflags & NOTE_RENAME)
-								fevent = DWFileEvent.MOVED_TO;
-							else
-								assert(false, "No event found?");
-
-							DWFolderInfo fi = m_dwFolders.get(cast(fd_t)_event.ident, DWFolderInfo.init);
-
-							if (fi == DWFolderInfo.init) {
-								DWFileInfo tmp = m_dwFiles.get(cast(fd_t)_event.ident, DWFileInfo.init);
-								assert(tmp != DWFileInfo.init, "The event loop returned an invalid file's file descriptor for the directory watcher");
-								fi = m_dwFolders.get(cast(fd_t) tmp.folder, DWFolderInfo.init);
-								assert(fi != DWFolderInfo.init, "The event loop returned an invalid folder file descriptor for the directory watcher");
-							}
-
-							// all recursive events will be generated here
-							if (!compareFolderFiles(fi, fevent)) {
-								continue;
-							}
-
-						} catch (Exception e) {
-							static if (LOG) log("Could not process DirectoryWatcher event: " ~ e.msg);
+				//if (info.owner != m_instanceId)
+				//	static if (LOG) try log("Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
+				//	catch{}
+				//log("owner");
+				switch (info.evType) {
+					case EventType.Event:
+						if (info.fd == 0)
 							break;
+
+						import core.sys.posix.unistd : close;
+						success = onEvent(info.fd, info.evObj.eventHandler, event_flags);
+
+						if (!success) {
+							close(info.fd);
+							assumeWontThrow(ThreadMem.free(info));
 						}
-
-					}
-
-					try info.evObj.dwHandler();
-					catch (Exception e) {
-						setInternalError!"dwHandler"(Status.ERROR);
-					}
-					break;
-
-				case EventType.Timer:
-					static if (LOG) try log("Got timer! " ~ info.fd.to!string); catch {}
-					static if (EPOLL) {
-						static long val;
-						import core.sys.posix.unistd : read;
-						read(info.evObj.timerHandler.ctxt.id, &val, long.sizeof);
-					} else {
-					}
-					try info.evObj.timerHandler();
-					catch (Exception e) {
-						setInternalError!"timerHandler"(Status.ERROR);
-					}
-					static if (!EPOLL) {
-						auto ctxt = info.evObj.timerHandler.ctxt;
-						if (ctxt && ctxt.oneShot && !ctxt.rearmed) {
-							kevent_t __event;
-							EV_SET(&__event, ctxt.id, EVFILT_TIMER, EV_DELETE, 0, 0, null);
-							int err = kevent(m_kqueuefd, &__event, 1, null, 0, null);
-							if (catchError!"kevent_del(timer)"(err))
-								return false;
+						break;
+					case EventType.Socket:
+						auto socket = info.evObj.socket;
+						if (socket.passive) {
+							success = onCOPSocketEvent(socket, event_flags);
+						} else if (socket.connectionOriented) {
+							success = onCOASocketEvent(socket, event_flags);
+						} else {
+							success = onCLSocketEvent(socket, event_flags);
 						}
-					}
-					break;
+						break;
+					case EventType.TCPAccept:
+						if (info.fd == 0)
+							break;
+						success = onTCPAccept(info.fd, info.evObj.tcpAcceptHandler, event_flags);
+						break;
 
-				case EventType.Signal:
-					static if (LOG) try log("Got signal!"); catch {}
+					case EventType.Notifier:
 
-					static if (EPOLL) {
-
-						static if (LOG) try log("Got signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch {}
-						import core.sys.linux.sys.signalfd : signalfd_siginfo;
-						import core.sys.posix.unistd : read;
-						signalfd_siginfo fdsi;
-						fd_t err = cast(fd_t)read(info.fd, &fdsi, fdsi.sizeof);
-						shared AsyncSignal sig = cast(shared AsyncSignal) cast(void*) fdsi.ssi_ptr;
-
-						try sig.handler();
+						static if (LOG) log("Got notifier!");
+						try info.evObj.notifierHandler();
 						catch (Exception e) {
-							setInternalError!"signal handler"(Status.ERROR);
+							setInternalError!"notifierHandler"(Status.ERROR);
 						}
+						break;
 
+					case EventType.DirectoryWatcher:
+						static if (LOG) log("Got DirectoryWatcher event!");
+						static if (!EPOLL) {
+							// in KQUEUE all events will be consumed here, because they must be pre-processed
+							try {
+								DWFileEvent fevent;
+								if (_event.fflags & (NOTE_LINK | NOTE_WRITE))
+									fevent = DWFileEvent.CREATED;
+								else if (_event.fflags & NOTE_DELETE)
+									fevent = DWFileEvent.DELETED;
+								else if (_event.fflags & (NOTE_ATTRIB | NOTE_EXTEND | NOTE_WRITE))
+									fevent = DWFileEvent.MODIFIED;
+								else if (_event.fflags & NOTE_RENAME)
+									fevent = DWFileEvent.MOVED_FROM;
+								else if (_event.fflags & NOTE_RENAME)
+									fevent = DWFileEvent.MOVED_TO;
+								else
+									assert(false, "No event found?");
 
-					}
-					else /* if KQUEUE */
-					{
-						static AsyncSignal[] sigarr;
+								DWFolderInfo fi = m_dwFolders.get(cast(fd_t)_event.ident, DWFolderInfo.init);
 
-						if (sigarr.length == 0) {
-							try sigarr = new AsyncSignal[32];
-							catch (Exception e) { assert(false, "Could not allocate signals array"); }
-						}
+								if (fi == DWFolderInfo.init) {
+									DWFileInfo tmp = m_dwFiles.get(cast(fd_t)_event.ident, DWFileInfo.init);
+									assert(tmp != DWFileInfo.init, "The event loop returned an invalid file's file descriptor for the directory watcher");
+									fi = m_dwFolders.get(cast(fd_t) tmp.folder, DWFolderInfo.init);
+									assert(fi != DWFolderInfo.init, "The event loop returned an invalid folder file descriptor for the directory watcher");
+								}
 
-						bool more = popSignals(sigarr);
-						foreach (AsyncSignal sig; sigarr)
-						{
-							shared AsyncSignal ptr = cast(shared AsyncSignal) sig;
-							if (ptr is null)
+								// all recursive events will be generated here
+								if (!compareFolderFiles(fi, fevent)) {
+									continue;
+								}
+
+							} catch (Exception e) {
+								static if (LOG) log("Could not process DirectoryWatcher event: " ~ e.msg);
 								break;
-							try (cast(shared AsyncSignal)sig).handler();
+							}
+
+						}
+
+						try info.evObj.dwHandler();
+						catch (Exception e) {
+							setInternalError!"dwHandler"(Status.ERROR);
+						}
+						break;
+
+					case EventType.Timer:
+						static if (LOG) try log("Got timer! " ~ info.fd.to!string); catch {}
+						static if (EPOLL) {
+							static long val;
+							import core.sys.posix.unistd : read;
+							read(info.evObj.timerHandler.ctxt.id, &val, long.sizeof);
+						} else {
+						}
+						try info.evObj.timerHandler();
+						catch (Exception e) {
+							setInternalError!"timerHandler"(Status.ERROR);
+						}
+						static if (!EPOLL) {
+							auto ctxt = info.evObj.timerHandler.ctxt;
+							if (ctxt && ctxt.oneShot && !ctxt.rearmed) {
+								kevent_t __event;
+								EV_SET(&__event, ctxt.id, EVFILT_TIMER, EV_DELETE, 0, 0, null);
+								int err = kevent(m_kqueuefd, &__event, 1, null, 0, null);
+								if (catchError!"kevent_del(timer)"(err))
+									return false;
+							}
+						}
+						break;
+
+					case EventType.Signal:
+						static if (LOG) try log("Got signal!"); catch {}
+
+						static if (EPOLL) {
+
+							static if (LOG) try log("Got signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch {}
+							import core.sys.linux.sys.signalfd : signalfd_siginfo;
+							import core.sys.posix.unistd : read;
+							signalfd_siginfo fdsi;
+							fd_t err = cast(fd_t)read(info.fd, &fdsi, fdsi.sizeof);
+							shared AsyncSignal sig = cast(shared AsyncSignal) cast(void*) fdsi.ssi_ptr;
+
+							try sig.handler();
 							catch (Exception e) {
 								setInternalError!"signal handler"(Status.ERROR);
 							}
+
+
 						}
-					}
-					break;
+						else /* if KQUEUE */
+						{
+							static AsyncSignal[] sigarr;
 
-				case EventType.UDPSocket:
-					import core.sys.posix.unistd : close;
-					success = onUDPTraffic(info.fd, info.evObj.udpHandler, event_flags);
+							if (sigarr.length == 0) {
+								try sigarr = new AsyncSignal[32];
+								catch (Exception e) { assert(false, "Could not allocate signals array"); }
+							}
 
-					nothrow void abortHandler(bool graceful) {
-
-						close(info.fd);
-						info.evObj.udpHandler.conn.socket = 0;
-						try info.evObj.udpHandler(UDPEvent.ERROR);
-						catch (Exception e) { }
-						try ThreadMem.free(info);
-						catch (Exception e){ assert(false, "Error freeing resources"); }
-					}
-
-					if (!success && m_status.code == Status.ABORT) {
-						abortHandler(true);
-
-					}
-					else if (!success && m_status.code == Status.ERROR) {
-						abortHandler(false);
-					}
-					break;
-				case EventType.TCPTraffic:
-					assert(info.evObj.tcpEvHandler.conn !is null, "TCP Connection invalid");
-
-					success = onTCPTraffic(info.fd, info.evObj.tcpEvHandler, event_flags, info.evObj.tcpEvHandler.conn);
-
-					nothrow void abortTCPHandler(bool graceful) {
-
-						nothrow void closeAll() {
-							static if (LOG) try log("closeAll()"); catch {}
-							if (info.evObj.tcpEvHandler.conn.connected)
-								closeSocket(info.fd, true, true);
-
-							info.evObj.tcpEvHandler.conn.socket = 0;
+							bool more = popSignals(sigarr);
+							foreach (AsyncSignal sig; sigarr)
+							{
+								shared AsyncSignal ptr = cast(shared AsyncSignal) sig;
+								if (ptr is null)
+									break;
+								try (cast(shared AsyncSignal)sig).handler();
+								catch (Exception e) {
+									setInternalError!"signal handler"(Status.ERROR);
+								}
+							}
 						}
+						break;
 
-						/// Close the connection after an unexpected socket error
-						if (graceful) {
-							try info.evObj.tcpEvHandler(TCPEvent.CLOSE);
-							catch (Exception e) { static if(LOG) log("Close failure"); }
-							closeAll();
-						}
+					case EventType.UDPSocket:
+						import core.sys.posix.unistd : close;
+						success = onUDPTraffic(info.fd, info.evObj.udpHandler, event_flags);
 
-						/// Kill the connection after an internal error
-						else {
-							try info.evObj.tcpEvHandler(TCPEvent.ERROR);
-							catch (Exception e) { static if(LOG) log("Error failure"); }
-							closeAll();
-						}
+						nothrow void abortHandler(bool graceful) {
 
-						if (info.evObj.tcpEvHandler.conn.inbound) {
-							static if (LOG) log("Freeing inbound connection FD#" ~ info.fd.to!string);
-							try ThreadMem.free(info.evObj.tcpEvHandler.conn);
+							close(info.fd);
+							info.evObj.udpHandler.conn.socket = 0;
+							try info.evObj.udpHandler(UDPEvent.ERROR);
+							catch (Exception e) { }
+							try ThreadMem.free(info);
 							catch (Exception e){ assert(false, "Error freeing resources"); }
 						}
-						try ThreadMem.free(info);
-						catch (Exception e){ assert(false, "Error freeing resources"); }
-					}
 
-					if (!success && m_status.code == Status.ABORT) {
-						abortTCPHandler(true);
-					}
-					else if (!success && m_status.code == Status.ERROR) {
-						abortTCPHandler(false);
-					}
-					break;
-				default:
-					break;
+						if (!success && m_status.code == Status.ABORT) {
+							abortHandler(true);
+
+						}
+						else if (!success && m_status.code == Status.ERROR) {
+							abortHandler(false);
+						}
+						break;
+					case EventType.TCPTraffic:
+						assert(info.evObj.tcpEvHandler.conn !is null, "TCP Connection invalid");
+
+						success = onTCPTraffic(info.fd, info.evObj.tcpEvHandler, event_flags, info.evObj.tcpEvHandler.conn);
+
+						nothrow void abortTCPHandler(bool graceful) {
+
+							nothrow void closeAll() {
+								static if (LOG) try log("closeAll()"); catch {}
+								if (info.evObj.tcpEvHandler.conn.connected)
+									closeSocket(info.fd, true, true);
+
+								info.evObj.tcpEvHandler.conn.socket = 0;
+							}
+
+							/// Close the connection after an unexpected socket error
+							if (graceful) {
+								try info.evObj.tcpEvHandler(TCPEvent.CLOSE);
+								catch (Exception e) { static if(LOG) log("Close failure"); }
+								closeAll();
+							}
+
+							/// Kill the connection after an internal error
+							else {
+								try info.evObj.tcpEvHandler(TCPEvent.ERROR);
+								catch (Exception e) { static if(LOG) log("Error failure"); }
+								closeAll();
+							}
+
+							if (info.evObj.tcpEvHandler.conn.inbound) {
+								static if (LOG) log("Freeing inbound connection FD#" ~ info.fd.to!string);
+								try ThreadMem.free(info.evObj.tcpEvHandler.conn);
+								catch (Exception e){ assert(false, "Error freeing resources"); }
+							}
+							try ThreadMem.free(info);
+							catch (Exception e){ assert(false, "Error freeing resources"); }
+						}
+
+						if (!success && m_status.code == Status.ABORT) {
+							abortTCPHandler(true);
+						}
+						else if (!success && m_status.code == Status.ERROR) {
+							abortTCPHandler(false);
+						}
+						break;
+					default:
+						break;
+				}
+
 			}
 
+			return success;
 		}
-		return success;
+
+		if (m_completedSocketAccepts.empty && m_completedSocketReceives.empty && m_completedSocketSends.empty) {
+			num = waitForEvents(timeout);
+			return handleEvents();
+		} else {
+			num = waitForEvents(0.seconds);
+			if (num != 0 && !handleEvents()) return false;
+
+			foreach (request; m_completedSocketAccepts) {
+				m_completedSocketAccepts.removeFront();
+				auto socket = request.socket;
+				auto peer = request.onComplete(request.peer, request.family, socket.info.type, socket.info.protocol);
+				assumeWontThrow(AsyncAcceptRequest.free(request));
+				if (!peer.run) {
+					m_status.code = Status.ABORT;
+					peer.kill();
+					peer.handleError();
+					return false;
+				}
+			}
+
+			foreach (request; m_completedSocketReceives) {
+				if (request.socket.receiveContinuously) {
+					m_completedSocketReceives.removeFront();
+					assumeWontThrow(request.onComplete.get!0)(request.message.transferred);
+					if (request.socket.receiveContinuously && request.socket.alive) {
+						request.message.count = 0;
+						submitRequest(request);
+					} else {
+						assumeWontThrow(NetworkMessage.free(request.message));
+						assumeWontThrow(AsyncReceiveRequest.free(request));
+					}
+				} else {
+					m_completedSocketReceives.removeFront();
+					if (request.message) {
+						assumeWontThrow(request.onComplete.get!0)(request.message.transferred);
+						assumeWontThrow(NetworkMessage.free(request.message));
+					} else {
+						assumeWontThrow(request.onComplete.get!1)();
+					}
+					assumeWontThrow(AsyncReceiveRequest.free(request));
+				}
+			}
+
+			foreach (request; m_completedSocketSends) {
+				m_completedSocketSends.removeFront();
+				request.onComplete();
+				assumeWontThrow(NetworkMessage.free(request.message));
+				assumeWontThrow(AsyncSendRequest.free(request));
+			}
+
+			return true;
+		}
 	}
 
 	bool setOption(T)(fd_t fd, TCPOption option, in T value) {
@@ -805,67 +880,180 @@ package:
 
 	}
 
-	pragma(inline, true)
-	uint recv(in fd_t fd, ref ubyte[] data)
+	uint recv(in fd_t fd, ubyte[] data)
 	{
 		static if (LOG) try log("Recv from FD: " ~ fd.to!string); catch {}
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : recv;
-		int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
+		retry:
+			auto ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, 0);
 
-		static if (LOG) log(".recv " ~ ret.to!string ~ " bytes of " ~ data.length.to!string ~ " @ " ~ fd.to!string);
-		if (catchError!".recv"(ret)){ // ret == SOCKET_ERROR == -1 ?
-			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
+		static if (LOG) try log(".recv " ~ ret.to!string ~ " bytes of " ~ data.length.to!string ~ " @ " ~ fd.to!string); catch {}
+		if (catchError!".recv"(ret)) {
+			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
 				m_status.code = Status.ASYNC;
+			} else switch (m_error) with (EPosix) {
+				case EINTR:
+					goto retry;
+				case EBADF, EFAULT, EINVAL, ENOTCONN, ENOTSOCK:
+					// Encountering any of these in the wild means it's bug hunting season
+					assert(false, ".recv encountered terminal socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string);
+				default:
+					static if (LOG) try log(".recv encountered socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string); catch {}
+					break;
+			}
 
-			return 0; // TODO: handle some errors more specifically
+			return 0;
 		}
 
-		//m_status.code = Status.OK;
-
-		return cast(uint) ret < 0 ? 0 : ret;
+		m_status.code = Status.OK;
+		// FIXME: This may overflow
+		return cast(uint) ret;
 	}
 
-	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		static if (LOG) try log("Send to FD: " ~ fd.to!string); catch {}
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : send;
-		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
-		static if (LOG) try log("Sent: " ~ ret.to!string); catch {}
-		if (catchError!"send"(ret)) { // ret == -1
-			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
-				m_status.code = Status.ASYNC;
-			return 0;
+		retry:
+			auto ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, 0);
 
+		static if (LOG) try log("Sent: " ~ ret.to!string); catch {}
+		if (catchError!".send"(ret)) {
+			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+				m_status.code = Status.ASYNC;
+			} else switch (m_error) with (EPosix) {
+				case EINTR:
+					goto retry;
+				case EBADF, ECONNRESET, EDESTADDRREQ, EFAULT, EINVAL, EISCONN, EMSGSIZE, ENOTCONN, ENOTSOCK, EOPNOTSUPP, EPIPE:
+					// Encountering any of these in the wild means it's bug hunting season
+					assert(false, ".send encountered terminal socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string);
+				default:
+					static if (LOG) try log(".send encountered socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string); catch {}
+					break;
+			}
+
+			return 0;
 		}
-		return cast(uint) ret < 0 ? 0 : ret;
+
+		m_status.code = Status.OK;
+		// FIXME: This may overflow
+		return cast(uint) ret;
 	}
 
-	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
+	size_t recvMsg(in fd_t fd, NetworkMessage* msg)
+	{
+		import libasync.internals.socket_compat : recvmsg, msghdr, iovec, sockaddr_storage;
+
+		while (true) {
+			auto err = recvmsg(fd, msg.header, 0);
+
+			.tracef("recvmsg system call on FD %d returned %d", fd, err);
+			if (err == SOCKET_ERROR) {
+				m_error = lastError();
+
+				if (m_error == EPosix.EINTR) {
+					.tracef("recvmsg system call on FD %d was interrupted before any transfer occured", fd);
+					continue;
+				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+					.tracef("recvmsg system call on FD %d would have blocked", fd);
+					m_status.code = Status.ASYNC;
+					return 0;
+				} else if (m_error == EBADF ||
+				           m_error == EFAULT ||
+				           m_error == EINVAL ||
+				           m_error == ENOTCONN ||
+				           m_error == ENOTSOCK) {
+					.errorf("recvmsg system call on FD %d encountered fatal socket error: %s", fd, this.error);
+					assert(false);
+				} else if (catchError!"Receive message"(err)) {
+					.errorf("recvmsg system call on FD %d encountered socket error: %s", fd, this.error);
+					return 0;
+				}
+			} else {
+				.tracef("Received %d bytes on FD %d", err, fd);
+				m_status.code = Status.OK;
+				return err;
+			}
+		}
+	}
+
+	size_t sendMsg(in fd_t fd, NetworkMessage* msg) {
+		import libasync.internals.socket_compat : sendmsg;
+
+		.tracef("Send message on FD %d with size %d", fd, msg.header.msg_iov.iov_len);
+		m_status = StatusInfo.init;
+
+		while (true) {
+			auto err = sendmsg(fd, msg.header, 0);
+
+			.tracef("sendmsg system call on FD %d returned %d", fd, err);
+			if (err == SOCKET_ERROR) {
+				m_error = lastError();
+
+				if (m_error == EPosix.EINTR) {
+					.tracef("sendmsg system call on FD %d was interrupted before any transfer occured", fd);
+					continue;
+				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+					.tracef("sendmsg system call on FD %d would have blocked", fd);
+					m_status.code = Status.ASYNC;
+					return 0;
+				} else if (m_error == ECONNRESET ||
+				           m_error == EPIPE) {
+					return 0;
+				} else if (m_error == EBADF ||
+				           m_error == EDESTADDRREQ ||
+				           m_error == EFAULT ||
+				           m_error == EINVAL ||
+				           m_error == EISCONN ||
+				           m_error == ENOTSOCK ||
+				           m_error == EOPNOTSUPP) {
+					.errorf("sendmsg system call on FD %d encountered fatal socket error: %s", fd, this.error);
+					assert(false);
+				// ENOTCONN, EMSGSIZE
+				} else if (catchError!"Send message"(err)) {
+					.errorf("sendmsg system call on FD %d encountered socket error: %s", fd, this.error);
+					return 0;
+				}
+			} else {
+				.tracef("Sent %d bytes on FD %d", err, fd);
+				m_status.code = Status.OK;
+				return err;
+			}
+		}
+	}
+
+	uint recvFrom(in fd_t fd, ubyte[] data, ref NetworkAddress addr)
 	{
 		import libasync.internals.socket_compat : recvfrom, AF_INET6, AF_INET, socklen_t;
 
 		m_status = StatusInfo.init;
 
-		addr.family = AF_INET6;
-		socklen_t addrLen = addr.sockAddrLen;
-		long ret = recvfrom(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, &addrLen);
+		retry:
+			auto addrLen = NetworkAddress.sockAddrMaxLen();
+			auto ret = recvfrom(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, &addrLen);
 
-		if (addrLen < addr.sockAddrLen) {
-			addr.family = AF_INET;
-		}
-
-		static if (LOG) try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
-		if (catchError!".recvfrom"(ret)) { // ret == -1
-			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
+		static if (LOG) log(".recvFrom " ~ ret.to!string ~ " bytes @ " ~ fd.to!string);
+		if (catchError!".recvFrom"(ret)) {
+			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
 				m_status.code = Status.ASYNC;
+			} else switch (m_error) with (EPosix) {
+				case EINTR:
+					goto retry;
+				case EBADF, EFAULT, EINVAL, ENOTCONN, ENOTSOCK:
+					// Encountering any of these in the wild means it's bug hunting season
+					assert(false, ".recvFrom encountered terminal socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string);
+				default:
+					static if (LOG) try log(".recvFrom encountered socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string); catch {}
+					break;
+			}
+
 			return 0;
 		}
 
 		m_status.code = Status.OK;
-
+		// FIXME: This may overflow
 		return cast(uint) ret;
 	}
 
@@ -875,17 +1063,29 @@ package:
 
 		m_status = StatusInfo.init;
 
-		static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B");
-		catch{}
-		long ret = sendto(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, addr.sockAddrLen);
+		static if (LOG) try log(".sendTo " ~ data.length.to!string ~ "bytes"); catch{}
+		retry:
+			auto ret = sendto(fd, data.ptr, data.length, 0, addr.sockAddr, addr.sockAddrLen);
 
-		if (catchError!".sendto"(ret)) { // ret == -1
-			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
+		if (catchError!".sendTo"(ret)) {
+			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
 				m_status.code = Status.ASYNC;
+			} else switch (m_error) with (EPosix) {
+				case EINTR:
+					goto retry;
+				case EBADF, ECONNRESET, EDESTADDRREQ, EFAULT, EINVAL, EISCONN, EMSGSIZE, ENOTCONN, ENOTSOCK, EOPNOTSUPP, EPIPE:
+					// Encountering any of these in the wild means it's bug hunting season
+					assert(false, ".sendTo encountered terminal socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string);
+				default:
+					static if (LOG) try log(".sendTo encountered socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string); catch {}
+					break;
+			}
+
 			return 0;
 		}
 
 		m_status.code = Status.OK;
+		// FIXME: This may overflow
 		return cast(uint) ret;
 	}
 
@@ -1426,6 +1626,24 @@ package:
 		}
 	}
 
+	void submitRequest(AsyncAcceptRequest* request)
+	{
+		request.socket.m_pendingAccepts.insertBack(request);
+		processPendingAccepts(request.socket);
+	}
+
+	void submitRequest(AsyncReceiveRequest* request)
+	{
+		request.socket.m_pendingReceives.insertBack(request);
+		processPendingReceives(request.socket);
+	}
+
+	void submitRequest(AsyncSendRequest* request)
+	{
+		request.socket.m_pendingSends.insertBack(request);
+		processPendingSends(request.socket);
+	}
+
 	bool broadcast(in fd_t fd, bool b) {
 		m_status = StatusInfo.init;
 
@@ -1456,11 +1674,13 @@ package:
 			EV_SET(&(events[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
 			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
 			kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
-
 		}
 
-		if (catchError!"shutdown"(err))
+		if (err == SOCKET_ERROR && errno == ENOTCONN) {
+			// The socket has already been shut down, we can recover from that
+		} else  if (catchError!"shutdown"(err)) {
 			return false;
+		}
 
 		return true;
 	}
@@ -1506,7 +1726,7 @@ package:
 		return getAddressInfo(host, port, ipv6, tcp, hints);
 	}
 
-	void setInternalError(string TRACE)(in Status s, in string details = "", in error_t error = EPosix.EACCES)
+	void setInternalError(string TRACE)(in Status s, string details = "", error_t error = cast(EPosix) errno())
 	{
 		if (details.length > 0)
 			m_status.text = TRACE ~ ": " ~ details;
@@ -1516,6 +1736,235 @@ package:
 		static if(LOG) log(m_status);
 	}
 private:
+
+	void processPendingAccepts(AsyncSocket socket)
+	{
+		if (socket.readBlocked) return;
+		foreach (request; socket.m_pendingAccepts) {
+			// Try to accept a single connection on the socket
+			auto result = attemptConnectionAcceptance(socket);
+			request.peer = result[0];
+			request.family = result[1];
+
+			if (status.code != Status.OK && !socket.readBlocked) {
+				socket.kill();
+				socket.handleError();
+				return;
+			} else if (request.peer != INVALID_SOCKET) {
+				socket.m_pendingAccepts.removeFront();
+				m_completedSocketAccepts.insertBack(request);
+			} else {
+				break;
+			}
+		}
+	}
+
+	void processPendingReceives(AsyncSocket socket)
+	{
+		if (socket.readBlocked) return;
+		foreach (request; socket.m_pendingReceives) {
+			// Try to fit all bytes available in the OS receive buffer
+			// into the current request's message's buffer, or try a
+			// a zero byte receive, should there be no such message.
+			bool received = void;
+			if (request.message) received = attemptMessageReception(socket, request.message);
+			else received = attemptZeroByteReceive(socket);
+
+			if (status.code != Status.OK && !socket.readBlocked) {
+				if (received) m_completedSocketReceives.insertBack(request);
+				socket.kill();
+				socket.handleError();
+				return;
+			} else if (request.exact) {
+				if (request.message.receivedAll) {
+					socket.m_pendingReceives.removeFront();
+					m_completedSocketReceives.insertBack(request);
+				} else {
+					break;
+				}
+			// New bytes or zero-sized connectionless datagram
+			} else if (received || !socket.connectionOriented && !socket.readBlocked) {
+				socket.m_pendingReceives.removeFront();
+				m_completedSocketReceives.insertBack(request);
+			} else {
+				break;
+			}
+		}
+	}
+
+	void processPendingSends(AsyncSocket socket)
+	{
+		if (socket.writeBlocked) return;
+		foreach (request; socket.m_pendingSends) {
+			// Try to fit all bytes of the current request's buffer
+			// into the OS send buffer.
+			auto sent = attemptMessageTransmission(socket, request.message);
+
+			if (status.code != Status.OK && !socket.writeBlocked) {
+				socket.kill();
+				socket.handleError();
+				return;
+			} else if (sent) {
+				socket.m_pendingSends.removeFront();
+				m_completedSocketSends.insertBack(request);
+			} else {
+				break;
+			}
+		}
+	}
+
+	auto attemptConnectionAcceptance(AsyncSocket socket)
+	{
+		import core.sys.posix.fcntl : O_NONBLOCK;
+		import libasync.internals.socket_compat : accept, accept4, sockaddr_storage, socklen_t;
+
+		fd_t peer = void;
+		sockaddr_storage remote = void;
+		socklen_t remoteLength = remote.sizeof;
+
+		enum common = q{
+			if (peer == SOCKET_ERROR) {
+				m_error = lastError();
+
+				if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+					m_status.code = Status.ASYNC;
+					socket.readBlocked = true;
+					return tuple(INVALID_SOCKET, sockaddr.sa_family.init);
+				} else if (m_error == EBADF ||
+				           m_error == EINTR ||
+				           m_error == EINVAL ||
+				           m_error == ENOTSOCK ||
+				           m_error == EOPNOTSUPP ||
+				           m_error == EFAULT) {
+					assert(false, "accept{4} system call on FD " ~ socket.handle.to!string ~ " encountered fatal socket error: " ~ this.error);
+				} else if (catchError!"accept"(peer)) {
+					.errorf("accept{4} system call on FD %d encountered socket error: %s", socket.handle, this.error);
+					return tuple(INVALID_SOCKET, sockaddr.sa_family.init);
+				}
+			}
+		};
+
+		version (linux) {
+			peer = accept4(socket.handle, cast(sockaddr*) &remote, &remoteLength, O_NONBLOCK);
+			mixin(common);
+		} else {
+			peer = accept(socket.handle, cast(sockaddr*) &remote, &remoteLength);
+			mixin(common);
+			if (!setNonBlock(peer)) {
+				.error("Failed to set accepted peer socket non-blocking");
+				return tuple(INVALID_SOCKET, sockaddr.sa_family.init);
+			}
+		}
+
+		return tuple(peer, remote.ss_family);
+	}
+
+	bool attemptZeroByteReceive(AsyncSocket socket)
+	{
+		import libasync.internals.socket_compat : recv, MSG_PEEK;
+
+		ubyte buffer = void;
+		auto fd = socket.handle;
+
+		while (true) {
+			auto err = recv(fd, &buffer, 1, MSG_PEEK);
+
+			.tracef("recv system call on FD %d returned %d", fd, err);
+			if (err == SOCKET_ERROR) {
+				m_error = lastError();
+
+				if (m_error == EPosix.EINTR) {
+					.tracef("recv system call on FD %d was interrupted before any transfer occured", fd);
+					continue;
+				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+					.tracef("recv system call on FD %d would have blocked", fd);
+					m_status.code = Status.ASYNC;
+					socket.readBlocked = true;
+					return false;
+				} else if (m_error == EBADF ||
+				           m_error == EFAULT ||
+				           m_error == EINVAL ||
+				           m_error == ENOTCONN ||
+				           m_error == ENOTSOCK) {
+					.errorf("recv system call on FD %d encountered fatal socket error: %s", fd, this.error);
+					assert(false);
+				} else if (catchError!"Receive message"(err)) {
+					.errorf("recv system call on FD %d encountered socket error: %s", fd, this.error);
+					return false;
+				}
+			} else {
+				.tracef("Received %d bytes on FD %d", err, fd);
+				m_status.code = Status.OK;
+				if (socket.connectionOriented && !err) {
+					socket.readBlocked = true;
+				}
+				return err > 0;
+			}
+		}
+	}
+
+	/**
+	 * Appends as much of the bytes currently available in the OS receive
+	 * buffer to the given message's transferred bytes as the message's
+	 * buffer's remaining free bytes and the state of the OS receive buffer
+	 * allow for, advancing the message's count of transferred bytes in the process.
+	 * Sets $(D readBlocked) on indication by the OS that there were
+	 * not enough bytes available in the OS receive buffer.
+	 * Returns: $(D true) if any bytes were transferred.
+	 */
+	bool attemptMessageReception(AsyncSocket socket, NetworkMessage* msg)
+	in {
+		assert(socket.connectionOriented && !msg.receivedAll || !msg.receivedAny, "Message already received");
+	} body {
+		bool received;
+		size_t recvCount = void;
+
+		if (socket.datagramOriented) {
+			recvCount = recvMsg(socket.handle, msg);
+			msg.count = msg.count + recvCount;
+			received = received || recvCount > 0;
+		} else do {
+			recvCount = recvMsg(socket.handle, msg);
+			msg.count = msg.count + recvCount;
+			received = received || recvCount > 0;
+		} while (recvCount > 0 && !msg.receivedAll);
+
+		// More bytes may yet become available in the future
+		if (status.code == Status.ASYNC) {
+			socket.readBlocked = true;
+		// Connection was shutdown in an orderly fashion by the remote peer
+		} else if (socket.connectionOriented && status.code == Status.OK && !recvCount) {
+			socket.readBlocked = true;
+		}
+
+		return received;
+	}
+
+	/**
+	 * Transfers as much of the given message's untransferred bytes
+	 * into the OS send buffer as the latter's state allows for,
+	 * advancing the message's count of transferred bytes in the process.
+	 * Sets $(DDOC_MEMBERS writeBlocked) on indication by the OS that
+	 * there was not enough space available in the OS send buffer.
+	 * Returns: $(D true) if all of the message's bytes
+	 *          have been transferred.
+	 */
+	bool attemptMessageTransmission(AsyncSocket socket, NetworkMessage* msg)
+	in { assert(!msg.sent, "Message already sent"); }
+	body {
+		size_t sentCount = void;
+
+		do {
+			sentCount = sendMsg(socket.handle, msg);
+			msg.count = msg.count + sentCount;
+		} while (sentCount > 0 && !msg.sent);
+
+		if (status.code == Status.ASYNC) {
+			socket.writeBlocked = true;
+		}
+
+		return msg.sent;
+	}
 
 	/// For DirectoryWatcher
 	/// In kqueue/vnode, all we get is the folder in which changes occured.
@@ -1891,31 +2340,6 @@ private:
 			}
 		}
 
-		if (error) // failure
-		{
-			setInternalError!"EPOLLERR"(Status.ABORT, null);
-			try {
-				del(EventCode.ERROR);
-			}
-			catch (Exception e)
-			{
-				setInternalError!"del@Event.ERROR"(Status.ABORT);
-				// ignore failure...
-			}
-			return false;
-		}
-
-		if (conn.stateful && connect) {
-			static if (LOG) try log("!connect"); catch {}
-			conn.connected = true;
-			try del(EventCode.CONNECT);
-			catch (Exception e) {
-				setInternalError!"del@Event.CONNECT"(Status.ABORT);
-				return false;
-			}
-			return true;
-		}
-
 		if (write && (!conn.stateful || conn.connected && !conn.disconnecting && conn.writeBlocked)) {
 			if (conn.stateful) conn.writeBlocked = false;
 			static if (LOG) try log("!write"); catch {}
@@ -1965,10 +2389,199 @@ private:
 				try ThreadMem.free(conn.evInfo);
 				catch (Exception e){ assert(false, "Error freeing resources"); }
 			}
+			return true;
+		}
+
+		if (error) // failure
+		{
+			setInternalError!"EPOLLERR"(Status.ABORT, null);
+			try {
+				del(EventCode.ERROR);
+			}
+			catch (Exception e)
+			{
+				setInternalError!"del@Event.ERROR"(Status.ABORT);
+				// ignore failure...
+			}
+			return false;
+		}
+
+		if (conn.stateful && connect) {
+			static if (LOG) try log("!connect"); catch {}
+			conn.connected = true;
+			try del(EventCode.CONNECT);
+			catch (Exception e) {
+				setInternalError!"del@Event.CONNECT"(Status.ABORT);
+				return false;
+			}
+			return true;
 		}
 
 		return true;
 	}
+
+	/// Handle an event for a connectionless socket
+	bool onCLSocketEvent(AsyncSocket socket, int events)
+	{
+		static if (EPOLL)
+		{
+			const uint epoll_events = cast(uint) events;
+			const bool read = cast(bool) (epoll_events & EPOLLIN);
+			const bool write = cast(bool) (epoll_events & EPOLLOUT);
+			const bool error = cast(bool) (epoll_events & EPOLLERR);
+		}
+		else
+		{
+			const short kqueue_events = cast(short) (events >> 16);
+			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
+			const bool read = cast(bool) (kqueue_events & EVFILT_READ);
+			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
+			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
+		}
+
+		if (read) {
+			tracef("Read on FD %d", socket.handle);
+
+			socket.readBlocked = false;
+			processPendingReceives(socket);
+		}
+
+		if (write) {
+			tracef("Write on FD %d", socket.handle);
+
+			socket.writeBlocked = false;
+			processPendingSends(socket);
+		}
+
+		if (error) {
+			tracef("Error on FD %d", socket.handle);
+
+			auto err = cast(error_t) socket.lastError;
+			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
+			socket.kill();
+			socket.handleError();
+			return false;
+		}
+
+		return true;
+	}
+
+	/// Handle an event for a connection-oriented, active socket
+	bool onCOASocketEvent(AsyncSocket socket, int events)
+	{
+		static if (EPOLL) {
+			const uint epoll_events = cast(uint) events;
+			bool read = cast(bool) (epoll_events & EPOLLIN);
+			bool write = cast(bool) (epoll_events & EPOLLOUT);
+			const bool error = cast(bool) (epoll_events & EPOLLERR);
+			const bool connect = ((cast(bool) (epoll_events & EPOLLIN)) || (cast(bool) (epoll_events & EPOLLOUT))) && !socket.disconnecting && !socket.connected;
+			const bool close = (cast(bool) (epoll_events & EPOLLRDHUP)) || (cast(bool) (events & EPOLLHUP));
+		} else {
+			const short kqueue_events = cast(short) (events >> 16);
+			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
+			bool read = cast(bool) (kqueue_events & EVFILT_READ);
+			bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
+			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
+			const bool connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !socket.disconnecting && !socket.connected);
+			const bool close = cast(bool) (kqueue_flags & EV_EOF);
+		}
+
+		tracef("AsyncSocket events: (read: %s, write: %s, error: %s, connect: %s, close: %s)", read, write, error, connect, close);
+
+		if (error) {
+			tracef("Error on FD %d", socket.handle);
+
+			auto err = cast(error_t) socket.lastError;
+			if (err == ECONNRESET ||
+			    err == EPIPE) {
+				socket.kill();
+				socket.handleClose();
+				return true;
+			}
+
+			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
+			socket.kill();
+			socket.handleError();
+			return false;
+		}
+
+		if (connect) {
+			tracef("Connect on FD %d", socket.handle);
+
+			socket.connected = true;
+			socket.readBlocked = false;
+			socket.writeBlocked = false;
+			socket.handleConnect();
+			read = false;
+			write = false;
+		}
+
+		if ((/+read ||+/ write) && socket.connected && !socket.disconnecting && socket.writeBlocked) {
+			tracef("Write on FD %d", socket.handle);
+
+			socket.writeBlocked = false;
+			processPendingSends(socket);
+		}/+ else {
+			read = true;
+		}+/
+
+		if (read && socket.connected && !socket.disconnecting && socket.readBlocked) {
+			tracef("Read on FD %d", socket.handle);
+
+			socket.readBlocked = false;
+			processPendingReceives(socket);
+		}
+
+		if (close && socket.connected && !socket.disconnecting)
+		{
+			tracef("Close on FD %d", socket.handle);
+			socket.kill();
+			socket.handleClose();
+			return true;
+		}
+
+		return true;
+	}
+
+	/// Handle an event for a connection-oriented, passive socket
+	bool onCOPSocketEvent(AsyncSocket socket, int events)
+	{
+		import core.sys.posix.fcntl : O_NONBLOCK;
+		import libasync.internals.socket_compat : accept, accept4, sockaddr, socklen_t;
+
+		static if (EPOLL) {
+			const uint epoll_events = cast(uint) events;
+			const bool incoming = cast(bool) (epoll_events & EPOLLIN);
+			const bool error = cast(bool) (epoll_events & EPOLLERR);
+		} else {
+			const short kqueue_events = cast(short) (events >> 16);
+			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
+			const bool incoming = cast(bool) (kqueue_events & EVFILT_READ);
+			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
+		}
+
+		tracef("AsyncSocket events: (incoming: %s, error: %s)", incoming, error);
+
+		if (incoming) {
+			tracef("Incoming on FD %d", socket.handle);
+
+			socket.readBlocked = false;
+			processPendingAccepts(socket);
+		}
+
+		if (error) {
+			tracef("Error on FD %d", socket.handle);
+
+			auto err = cast(error_t) socket.lastError;
+			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
+			socket.kill();
+			socket.handleError();
+			return false;
+		}
+
+		return true;
+	}
+
 	bool onTCPTraffic(fd_t fd, TCPEventHandler del, int events, AsyncTCPConnection conn)
 	{
 		//log("TCP Traffic at FD#" ~ fd.to!string);
@@ -2699,7 +3312,7 @@ static if (!EPOLL)
 	}
 }
 
-mixin template StatefulFDMixins() {
+mixin template COSocketMixins() {
 
 	private CleanupData m_impl;
 
@@ -2708,37 +3321,46 @@ mixin template StatefulFDMixins() {
 		bool connected;
 		bool disconnecting;
 		bool writeBlocked;
+		bool readBlocked;
 	}
 
-	@property bool disconnecting() const {
+	@property bool disconnecting() const @safe pure @nogc {
 		return m_impl.disconnecting;
 	}
 
-	@property void disconnecting(bool b) {
+	@property void disconnecting(bool b) @safe pure @nogc {
 		m_impl.disconnecting = b;
 	}
 
-	@property bool connected() const {
+	@property bool connected() const @safe pure @nogc {
 		return m_impl.connected;
 	}
 
-	@property void connected(bool b) {
+	@property void connected(bool b) @safe pure @nogc {
 		m_impl.connected = b;
 	}
 
-	@property bool writeBlocked() const {
+	@property bool writeBlocked() const @safe pure @nogc {
 		return m_impl.writeBlocked;
 	}
 
-	@property void writeBlocked(bool b) {
+	@property void writeBlocked(bool b) @safe pure @nogc {
 		m_impl.writeBlocked = b;
 	}
 
-	@property EventInfo* evInfo() {
+	@property bool readBlocked() const @safe pure @nogc {
+		return m_impl.readBlocked;
+	}
+
+	@property void readBlocked(bool b) @safe pure @nogc {
+		m_impl.readBlocked = b;
+	}
+
+	@property EventInfo* evInfo() @safe pure @nogc {
 		return m_impl.evInfo;
 	}
 
-	@property void evInfo(EventInfo* info) {
+	@property void evInfo(EventInfo* info) @safe pure @nogc {
 		m_impl.evInfo = info;
 	}
 
@@ -2806,18 +3428,19 @@ mixin template EvInfoMixins() {
 union EventObject {
 	TCPAcceptHandler tcpAcceptHandler;
 	TCPEventHandler tcpEvHandler;
+	AsyncSocket socket;
 	TimerHandler timerHandler;
 	DWHandler dwHandler;
 	UDPHandler udpHandler;
 	NotifierHandler notifierHandler;
 	EventHandler eventHandler;
-
 }
 
 enum EventType : char {
 	TCPAccept,
 	TCPTraffic,
 	UDPSocket,
+	Socket,
 	Notifier,
 	Signal,
 	Timer,
@@ -2830,149 +3453,4 @@ struct EventInfo {
 	EventType evType;
 	EventObject evObj;
 	ushort owner;
-}
-
-
-
-/**
- Represents a network/socket address. (taken from vibe.core.net)
- */
-public struct NetworkAddress {
-	import libasync.internals.socket_compat : sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6;
-	private union {
-		sockaddr addr;
-		sockaddr_in addr_ip4;
-		sockaddr_in6 addr_ip6;
-	}
-
-	@property bool ipv6() const pure nothrow { return this.family == AF_INET6; }
-
-	/** Family (AF_) of the socket address.
-	 */
-	@property ushort family() const pure nothrow { return addr.sa_family; }
-	/// ditto
-	@property void family(ushort val) pure nothrow { addr.sa_family = cast(ubyte)val; }
-
-	/** The port in host byte order.
-	 */
-	@property ushort port()
-	const pure nothrow {
-		switch (this.family) {
-			default: assert(false, "port() called for invalid address family.");
-			case AF_INET: return ntoh(addr_ip4.sin_port);
-			case AF_INET6: return ntoh(addr_ip6.sin6_port);
-		}
-	}
-	/// ditto
-	@property void port(ushort val)
-	pure nothrow {
-		switch (this.family) {
-			default: assert(false, "port() called for invalid address family.");
-			case AF_INET: addr_ip4.sin_port = hton(val); break;
-			case AF_INET6: addr_ip6.sin6_port = hton(val); break;
-		}
-	}
-
-	/** A pointer to a sockaddr struct suitable for passing to socket functions.
-	 */
-	@property inout(sockaddr)* sockAddr() inout pure nothrow { return &addr; }
-
-	/** Size of the sockaddr struct that is returned by sockAddr().
-	 */
-	@property uint sockAddrLen()
-	const pure nothrow {
-		switch (this.family) {
-			default: assert(false, "sockAddrLen() called for invalid address family.");
-			case AF_INET: return addr_ip4.sizeof;
-			case AF_INET6: return addr_ip6.sizeof;
-		}
-	}
-
-	@property inout(sockaddr_in)* sockAddrInet4() inout pure nothrow
-	in { assert (family == AF_INET); }
-	body { return &addr_ip4; }
-
-	@property inout(sockaddr_in6)* sockAddrInet6() inout pure nothrow
-	in { assert (family == AF_INET6); }
-	body { return &addr_ip6; }
-
-	/** Returns a string representation of the IP address
-	*/
-	string toAddressString()
-	const {
-		import std.array : appender;
-		auto ret = appender!string();
-		ret.reserve(40);
-		toAddressString(str => ret.put(str));
-		return ret.data;
-	}
-	/// ditto
-	void toAddressString(scope void delegate(const(char)[]) @safe sink)
-	const {
-		import std.array : appender;
-		import std.format : formattedWrite;
-		ubyte[2] _dummy = void; // Workaround for DMD regression in master
-
-		switch (this.family) {
-			default: assert(false, "toAddressString() called for invalid address family.");
-			case AF_INET:
-				ubyte[4] ip = () @trusted { return (cast(ubyte*)&addr_ip4.sin_addr.s_addr)[0 .. 4]; } ();
-				sink.formattedWrite("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-				break;
-			case AF_INET6:
-				ubyte[16] ip = addr_ip6.sin6_addr.s6_addr;
-				foreach (i; 0 .. 8) {
-					if (i > 0) sink(":");
-					_dummy[] = ip[i*2 .. i*2+2];
-					sink.formattedWrite("%x", bigEndianToNative!ushort(_dummy));
-				}
-				break;
-		}
-	}
-
-	/** Returns a full string representation of the address, including the port number.
-	*/
-	string toString()
-	const {
-		import std.array : appender;
-		auto ret = appender!string();
-		toString(str => ret.put(str));
-		return ret.data;
-	}
-	/// ditto
-	void toString(scope void delegate(const(char)[]) @safe sink)
-	const {
-		import std.format : formattedWrite;
-		switch (this.family) {
-			default: assert(false, "toString() called for invalid address family.");
-			case AF_INET:
-				toAddressString(sink);
-				sink.formattedWrite(":%s", port);
-				break;
-			case AF_INET6:
-				sink("[");
-				toAddressString(sink);
-				sink.formattedWrite("]:%s", port);
-				break;
-		}
-	}
-
-}
-
-private pure nothrow {
-	import std.bitmanip;
-
-	ushort ntoh(ushort val)
-	{
-		version (LittleEndian) return swapEndian(val);
-		else version (BigEndian) return val;
-		else static assert(false, "Unknown endianness.");
-	}
-
-	ushort hton(ushort val)
-	{
-		version (LittleEndian) return swapEndian(val);
-		else version (BigEndian) return val;
-		else static assert(false, "Unknown endianness.");
-	}
 }

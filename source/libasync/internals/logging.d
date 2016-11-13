@@ -12,7 +12,7 @@ template defaultLogFunction(LogLevel ll)
     void defaultLogFunction(int line = __LINE__, string file = __FILE__,
         string funcName = __FUNCTION__,
         string prettyFuncName = __PRETTY_FUNCTION__,
-        string moduleName = __MODULE__, A...)(lazy A args)
+        string moduleName = __MODULE__, A...)(lazy A args) @trusted
         if ((args.length > 0 && !is(Unqual!(A[0]) : bool)) || args.length == 0)
     {
         static if (isLoggingActiveAt!ll && ll >= moduleLogLevel!moduleName)
@@ -26,7 +26,7 @@ template defaultLogFunction(LogLevel ll)
     void defaultLogFunction(int line = __LINE__, string file = __FILE__,
         string funcName = __FUNCTION__,
         string prettyFuncName = __PRETTY_FUNCTION__,
-        string moduleName = __MODULE__, A...)(lazy bool condition, lazy A args)
+        string moduleName = __MODULE__, A...)(lazy bool condition, lazy A args) @trusted
     {
         static if (isLoggingActiveAt!ll && ll >= moduleLogLevel!moduleName)
         {
@@ -48,7 +48,7 @@ template defaultLogFunctionf(LogLevel ll)
     void defaultLogFunctionf(int line = __LINE__, string file = __FILE__,
         string funcName = __FUNCTION__,
         string prettyFuncName = __PRETTY_FUNCTION__,
-        string moduleName = __MODULE__, A...)(lazy string msg, lazy A args)
+        string moduleName = __MODULE__, A...)(lazy string msg, lazy A args) @trusted
     {
         static if (isLoggingActiveAt!ll && ll >= moduleLogLevel!moduleName)
         {
@@ -61,8 +61,7 @@ template defaultLogFunctionf(LogLevel ll)
     void defaultLogFunctionf(int line = __LINE__, string file = __FILE__,
         string funcName = __FUNCTION__,
         string prettyFuncName = __PRETTY_FUNCTION__,
-        string moduleName = __MODULE__, A...)(lazy bool condition,
-            lazy string msg, lazy A args)
+        string moduleName = __MODULE__, A...)(lazy bool condition, lazy string msg, lazy A args) @trusted
     {
         static if (isLoggingActiveAt!ll && ll >= moduleLogLevel!moduleName)
         {

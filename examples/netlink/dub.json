@@ -1,0 +1,18 @@
+{
+    "name": "netlink",
+    "description": "Communicate with Linux kernel using Netlink",
+    "copyright": "Copyright © 2016, Moritz Maxeiner",
+    "authors": ["Moritz Maxeiner"],
+    "dependencies": {
+        "libasync": { "path": "../../" }
+    },
+
+    "targetName": "netlinkUser",
+    "buildTypes": {
+        "release": {
+            "versions": ["StdLoggerDisableTrace",
+                         "StdLoggerDisableInfo",
+                         "StdLoggerDisableWarning"]
+        }
+    }
+}

@@ -110,7 +110,7 @@ public:
 	in { assert(isConnected); }
 	body {
 		scope(exit) m_socket = 0;
-		return m_evLoop.kill(m_event, forced);
+		return m_event.kill(forced);
 	}
 }
 
