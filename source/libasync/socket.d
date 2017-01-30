@@ -140,7 +140,7 @@ public:
 		flags = 0;
 
 		m_buffer      = content;
-		contentStart  = content.ptr;
+		contentStart  = &content[0];
 		contentLength = content.length;
 	}
 
@@ -163,7 +163,7 @@ public:
 	{
 		m_count = count;
 		auto content = m_buffer[count .. $];
-		contentStart = content.ptr;
+		contentStart = &content[0];
 		contentLength = content.length;
 	}
 
@@ -953,11 +953,12 @@ struct NetworkAddress
 
 		switch (this.family) {
 			default: assert(false, "toAddressString() called for invalid address family.");
-			case AF_INET:
+			case AF_INET: {
 				ubyte[4] ip = () @trusted { return (cast(ubyte*) &addr_ip4.sin_addr.s_addr)[0 .. 4]; } ();
 				sink.formattedWrite("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
 				break;
-			case AF_INET6:
+			}
+			case AF_INET6: {
 				ubyte[16] ip = addr_ip6.sin6_addr.s6_addr;
 				foreach (i; 0 .. 8) {
 					if (i > 0) sink(":");
@@ -965,6 +966,7 @@ struct NetworkAddress
 					sink.formattedWrite("%x", bigEndianToNative!ushort(_dummy));
 				}
 				break;
+			}
 			version (Posix) {
 			case AF_UNIX:
 				sink.formattedWrite("%s", fromStringz(cast(char*) addr_un.sun_path));
