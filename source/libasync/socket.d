@@ -957,7 +957,7 @@ struct NetworkAddress
 				ubyte[4] ip = () @trusted { return (cast(ubyte*) &addr_ip4.sin_addr.s_addr)[0 .. 4]; } ();
 				sink.formattedWrite("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
 				break;
-            }
+			}
 			case AF_INET6: {
 				ubyte[16] ip = addr_ip6.sin6_addr.s6_addr;
 				foreach (i; 0 .. 8) {
@@ -966,7 +966,7 @@ struct NetworkAddress
 					sink.formattedWrite("%x", bigEndianToNative!ushort(_dummy));
 				}
 				break;
-            }
+			}
 			version (Posix) {
 			case AF_UNIX:
 				sink.formattedWrite("%s", fromStringz(cast(char*) addr_un.sun_path));
