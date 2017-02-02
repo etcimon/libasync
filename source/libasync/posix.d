@@ -137,8 +137,8 @@ package:
 		m_evLoop = evl;
 
 		import core.thread;
-		try Thread.getThis().priority = Thread.PRIORITY_MAX;
-		catch (Exception e) { assert(false, "Could not set thread priority"); }
+		//try Thread.getThis().priority = Thread.PRIORITY_MAX;
+		//catch (Exception e) { assert(false, "Could not set thread priority"); }
 
 		try
 			if (!g_mutex)
