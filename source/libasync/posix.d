@@ -2044,7 +2044,7 @@ private:
 					}
 					else {
 						EventInfo* evinfo;
-						try evinfo = m_watchers[fd]; catch { assert(false, "Could retrieve event info, directory watcher was not initialized properly, or you are operating on a closed directory watcher."); }
+						try evinfo = m_watchers[fd]; catch(Throwable) { assert(false, "Could retrieve event info, directory watcher was not initialized properly, or you are operating on a closed directory watcher."); }
 
 						static if (LOG) log("Adding path: " ~ path.toNativeString());
 
@@ -2111,7 +2111,7 @@ private:
 		}
 		catch (Exception e)
 		{
-			try setInternalError!"compareFiles"(Status.ERROR, "Fatal error in file comparison: " ~ e.toString()); catch {}
+			try setInternalError!"compareFiles"(Status.ERROR, "Fatal error in file comparison: " ~ e.toString()); catch(Throwable) {}
 			return false;
 		}
 		return true;
@@ -3293,7 +3293,7 @@ static if (!EPOLL)
 
 				gs_signalQueue[*g_threadId][idx] = cast(AsyncSignal) ctxt;
 			}
-		} catch {}
+		} catch(Throwable) {}
 
 		return idx;
 	}
