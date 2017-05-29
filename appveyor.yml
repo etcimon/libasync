@@ -33,13 +33,7 @@ environment:
     arch: x86
   - DC: ldc
     DVersion: beta
-    arch: x86
-  - DC: ldc
-    DVersion: beta
     arch: x64
-  - DC: ldc
-    DVersion: stable
-    arch: x86
   - DC: ldc
     DVersion: stable
     arch: x64
@@ -113,6 +107,11 @@ install:
             }
         }
   - ps: SetUpDCompiler
+  # some of the old releases aren't bundled with DUB, so for now we simply always download the newest DUB
+  - powershell -Command Invoke-WebRequest https://code.dlang.org/files/dub-1.2.1-windows-x86.zip -OutFile dub.zip
+  - 7z x dub.zip -odub > nul
+  - set PATH=%CD%\%binpath%;%CD%\dub;%PATH%
+  - dub --version
 
 build_script:
   - ps: if($env:arch -eq "x86"){
