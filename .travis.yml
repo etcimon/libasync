@@ -5,15 +5,23 @@ os:
   - osx
 
 d:
-  - dmd-2.071.0
-  - dmd-2.070.0
-  - dmd-2.069.2
+  - dmd-nightly
+  - dmd-beta
+  - dmd
+  - dmd-2.074.0
+  - dmd-2.072.2
   - dmd-2.068.2
-  - ldc-1.0.0
-  - ldc-0.17.1
-  - ldc-0.17.0
+  - ldc-beta
+  - ldc
+  - ldc-1.2.0
+  - ldc-0.17.2
+  - gdc
+
+matrix:
+  allow_failures:
+      - d: gdc
 
 script:
-  - dub test --compiler=$DC
+  - dub test
 
 sudo: false
