@@ -49,8 +49,8 @@ Some or all of these limitations are possibly being implemented currently and ma
 Installation Instructions
 -------------------------
 
-- Download and install DMD 2.067.0+ from [dlang.org](http://dlang.org/download.html)
-- Download and install dub 0.9.22+ from [code.dlang.org](http://code.dlang.org/download)
+- Download and install DMD 2.071.2+ from [dlang.org](http://dlang.org/download.html)
+- Download and install dub 1.0.0+ from [code.dlang.org](http://code.dlang.org/download)
 - Use Git to clone this repository
 - Run `dub test` to test the library on your operating system (submit any issue with a log report by uncommenting `enum LOG = true` in `types.d`)
 - Add the library to your project by including it in the dependencies, using `import libasync`
