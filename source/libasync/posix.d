@@ -30,6 +30,7 @@ version(linux) {
 	extern(C) nothrow @nogc {
 		int __libc_current_sigrtmin();
 		int __libc_current_sigrtmax();
+		version(CRuntime_Glibc) int __res_init();
 	}
 	bool g_signalsBlocked;
 	package nothrow void blockSignals() {
@@ -3083,6 +3084,18 @@ private:
 		}
 
 		if (err != EPosix.EOK) {
+			/// Unfortunately, glibc < 2.26 has a bug that the DNS resolver caches the contents
+			/// of /etc/resolve.conf. (See https://sourceware.org/bugzilla/show_bug.cgi?id=984)
+			/// An issue of Pidgen bug tracker(https://developer.pidgin.im/ticket/2825) shows
+			/// that calling res_init to refresh the nameserver list.
+			version (CRuntime_Glibc)
+			{
+				version (linux)
+				{
+					__res_init();
+				}
+				/// At least res_init isn't thread-safe on OSX/iOS, so nothing to do.
+			}
 			setInternalError!"getAddressInfo"(Status.ERROR, string.init, err);
 			return NetworkAddress.init;
 		}
