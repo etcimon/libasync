@@ -8,6 +8,10 @@ version (FreeBSD) {
 	public import core.sys.freebsd.sys.event;
 	immutable HasKqueue = true;
 }
+version (DragonFlyBSD) {
+	public import core.sys.dragonflybsd.sys.event;
+	immutable HasKqueue = true;
+}
 version (OSX) immutable HasKqueue = true;
 else immutable HasKqueue = false;
 

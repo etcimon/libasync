@@ -60,6 +60,10 @@ version(FreeBSD) {
 	import libasync.internals.kqueue;
 	const EPOLL = false;
 }
+version(DragonFlyBSD) {
+	import libasync.internals.kqueue;
+	const EPOLL = false;
+}
 
 __gshared Mutex g_mutex;
 

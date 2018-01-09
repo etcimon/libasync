@@ -28,11 +28,12 @@ immutable bufferSize = 64 * 1024;
 immutable repetitions = 1 << 12;
 immutable averageWindowSize = 1000;
 
-version (Windows)      immutable dataPath = "results/windows";
-else version (linux)   immutable dataPath = "results/linux";
-else version (OSX)     immutable dataPath = "results/osx";
-else version (FreeBSD) immutable dataPath = "results/freebsd";
-else                   immutable dataPath = "results/unknown";
+version (Windows)           immutable dataPath = "results/windows";
+else version (linux)        immutable dataPath = "results/linux";
+else version (OSX)          immutable dataPath = "results/osx";
+else version (FreeBSD)      immutable dataPath = "results/freebsd";
+else version (DragonFlyBSD) immutable dataPath = "results/dragonflybsd";
+else                        immutable dataPath = "results/unknown";
 
 immutable dataFilenameFormat = dataPath ~ "/runtimes_%s.dat";
 
