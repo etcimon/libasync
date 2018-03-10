@@ -256,6 +256,12 @@ else version( FreeBSD )
 
 	int accept4(int, sockaddr*, socklen_t*, int flags);
 }
+else version( DragonFlyBSD )
+{
+	enum SO_REUSEPORT = 0x0200;
+
+	int accept4(int, sockaddr*, socklen_t*, int flags);
+}
 else version (Solaris)
 {
 	enum SO_REUSEPORT = 0x0200;
