@@ -20,16 +20,22 @@ environment:
     DVersion: stable
     arch: x86
   - DC: dmd
-    DVersion: 2.067.2
+    DVersion: 2.072.0
     arch: x64
   - DC: dmd
-    DVersion: 2.067.2
+    DVersion: 2.072.0
     arch: x86
   - DC: dmd
-    DVersion: 2.068.2
+    DVersion: 2.074.0
     arch: x64
   - DC: dmd
-    DVersion: 2.068.2
+    DVersion: 2.074.0
+    arch: x86
+  - DC: dmd
+    DVersion: 2.076.0
+    arch: x64
+  - DC: dmd
+    DVersion: 2.076.0
     arch: x86
   - DC: ldc
     DVersion: beta
@@ -38,7 +44,7 @@ environment:
     DVersion: stable
     arch: x64
   - DC: ldc
-    DVersion: 0.17.3
+    DVersion: 1.8.0
     arch: x64
 
 skip_tags: false
