@@ -108,7 +108,7 @@ install:
               Invoke-WebRequest $url -OutFile "c:\ldc.7z";
               echo "finished.";
               pushd c:\\;
-              7z x ldc.zip > $null;
+              7z x ldc.7z > $null;
               popd;
             }
         }
