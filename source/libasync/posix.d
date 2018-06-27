@@ -147,8 +147,8 @@ package:
 		m_evLoop = evl;
 
 		import core.thread;
-		try Thread.getThis().priority = Thread.PRIORITY_MAX;
-		catch (Exception e) { assert(false, "Could not set thread priority"); }
+		//try Thread.getThis().priority = Thread.PRIORITY_MAX;
+		//catch (Exception e) { assert(false, "Could not set thread priority"); }
 
 		try
 			if (!g_mutex)
@@ -885,68 +885,42 @@ package:
 
 	}
 
-	uint recv(in fd_t fd, ubyte[] data)
+	pragma(inline, true)
+	uint recv(in fd_t fd, ref ubyte[] data)
 	{
-		static if (LOG) try log("Recv from FD: " ~ fd.to!string); catch {}
-		m_status = StatusInfo.init;
-		import libasync.internals.socket_compat : recv;
-		retry:
-			auto ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, 0);
+			static if (LOG) try log("Recv from FD: " ~ fd.to!string); catch {}
+			m_status = StatusInfo.init;
+			import libasync.internals.socket_compat : recv;
+			int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
 
-		static if (LOG) try log(".recv " ~ ret.to!string ~ " bytes of " ~ data.length.to!string ~ " @ " ~ fd.to!string); catch {}
-		if (catchError!".recv"(ret)) {
-			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-				m_status.code = Status.ASYNC;
-			} else switch (m_error) with (EPosix) {
-				case EINTR:
-					goto retry;
-				case EBADF, EFAULT, EINVAL, ENOTCONN, ENOTSOCK:
-					// Encountering any of these in the wild means it's bug hunting season
-					assert(false, ".recv encountered terminal socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string);
-				default:
-					static if (LOG) try log(".recv encountered socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string); catch {}
-					break;
+			static if (LOG) log(".recv " ~ ret.to!string ~ " bytes of " ~ data.length.to!string ~ " @ " ~ fd.to!string);
+			if (catchError!".recv"(ret)){
+					if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
+							m_status.code = Status.ASYNC;
+
+					return 0;
 			}
 
-			return 0;
-		}
-
-		m_status.code = Status.OK;
-		// FIXME: This may overflow
-		return cast(uint) ret;
+			return cast(uint) ret < 0 ? 0 : ret;
 	}
 
+	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
 	{
 		static if (LOG) try log("Send to FD: " ~ fd.to!string); catch {}
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : send;
-		retry:
-			auto ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, 0);
-
+		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
 		static if (LOG) try log("Sent: " ~ ret.to!string); catch {}
-		if (catchError!".send"(ret)) {
-			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
+		if (catchError!"send"(ret)) { // ret == -1
+			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 				m_status.code = Status.ASYNC;
-			} else switch (m_error) with (EPosix) {
-				case EINTR:
-					goto retry;
-				case EBADF, ECONNRESET, EDESTADDRREQ, EFAULT, EINVAL, EISCONN, EMSGSIZE, ENOTCONN, ENOTSOCK, EOPNOTSUPP, EPIPE:
-					// Encountering any of these in the wild means it's bug hunting season
-					assert(false, ".send encountered terminal socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string);
-				default:
-					static if (LOG) try log(".send encountered socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string); catch {}
-					break;
-			}
-
 			return 0;
+
 		}
-
-		m_status.code = Status.OK;
-		// FIXME: This may overflow
-		return cast(uint) ret;
+		return cast(uint) ret < 0 ? 0 : ret;
 	}
-
+	
 	size_t recvMsg(in fd_t fd, NetworkMessage* msg)
 	{
 		import libasync.internals.socket_compat : recvmsg, msghdr, iovec, sockaddr_storage;
@@ -1029,69 +1003,50 @@ package:
 		}
 	}
 
-	uint recvFrom(in fd_t fd, ubyte[] data, ref NetworkAddress addr)
+	uint recvFrom(in fd_t fd, ref ubyte[] data, ref NetworkAddress addr)
 	{
-		import libasync.internals.socket_compat : recvfrom, AF_INET6, AF_INET, socklen_t;
+			import libasync.internals.socket_compat : recvfrom, AF_INET6, AF_INET, socklen_t;
 
-		m_status = StatusInfo.init;
+			m_status = StatusInfo.init;
 
-		retry:
-			auto addrLen = NetworkAddress.sockAddrMaxLen();
-			auto ret = recvfrom(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, &addrLen);
+			addr.family = AF_INET6;
+			socklen_t addrLen = addr.sockAddrLen;
+			long ret = recvfrom(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, &addrLen);
 
-		static if (LOG) log(".recvFrom " ~ ret.to!string ~ " bytes @ " ~ fd.to!string);
-		if (catchError!".recvFrom"(ret)) {
-			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-				m_status.code = Status.ASYNC;
-			} else switch (m_error) with (EPosix) {
-				case EINTR:
-					goto retry;
-				case EBADF, EFAULT, EINVAL, ENOTCONN, ENOTSOCK:
-					// Encountering any of these in the wild means it's bug hunting season
-					assert(false, ".recvFrom encountered terminal socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string);
-				default:
-					static if (LOG) try log(".recvFrom encountered socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string); catch {}
-					break;
+			if (addrLen < addr.sockAddrLen) {
+					addr.family = AF_INET;
 			}
 
-			return 0;
-		}
+			static if (LOG) try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
+			if (catchError!".recvfrom"(ret)) { // ret == -1
+					if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
+							m_status.code = Status.ASYNC;
+					return 0;
+			}
 
-		m_status.code = Status.OK;
-		// FIXME: This may overflow
-		return cast(uint) ret;
+			m_status.code = Status.OK;
+
+			return cast(uint) ret;
 	}
 
 	uint sendTo(in fd_t fd, in ubyte[] data, in NetworkAddress addr)
 	{
-		import libasync.internals.socket_compat : sendto;
+			import libasync.internals.socket_compat : sendto;
 
-		m_status = StatusInfo.init;
+			m_status = StatusInfo.init;
 
-		static if (LOG) try log(".sendTo " ~ data.length.to!string ~ "bytes"); catch{}
-		retry:
-			auto ret = sendto(fd, data.ptr, data.length, 0, addr.sockAddr, addr.sockAddrLen);
+			static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B");
+			catch{}
+			long ret = sendto(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, addr.sockAddrLen);
 
-		if (catchError!".sendTo"(ret)) {
-			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-				m_status.code = Status.ASYNC;
-			} else switch (m_error) with (EPosix) {
-				case EINTR:
-					goto retry;
-				case EBADF, ECONNRESET, EDESTADDRREQ, EFAULT, EINVAL, EISCONN, EMSGSIZE, ENOTCONN, ENOTSOCK, EOPNOTSUPP, EPIPE:
-					// Encountering any of these in the wild means it's bug hunting season
-					assert(false, ".sendTo encountered terminal socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string);
-				default:
-					static if (LOG) try log(".sendTo encountered socket error " ~ m_error.to!string ~ " @ " ~ fd.to!string); catch {}
-					break;
+			if (catchError!".sendto"(ret)) { // ret == -1
+					if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
+							m_status.code = Status.ASYNC;
+					return 0;
 			}
 
-			return 0;
-		}
-
-		m_status.code = Status.OK;
-		// FIXME: This may overflow
-		return cast(uint) ret;
+			m_status.code = Status.OK;
+			return cast(uint) ret;
 	}
 
 	NetworkAddress localAddr(in fd_t fd, bool ipv6) {
