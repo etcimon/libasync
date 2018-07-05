@@ -897,6 +897,8 @@ package:
 			if (catchError!".recv"(ret)){
 					if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 							m_status.code = Status.ASYNC;
+					else if (m_error == EPosix.EINTR)
+							m_status.code = Status.RETRY;
 
 					return 0;
 			}
@@ -915,6 +917,8 @@ package:
 		if (catchError!"send"(ret)) { // ret == -1
 			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 				m_status.code = Status.ASYNC;
+			else if (m_error == EPosix.EINTR)
+				m_status.code = Status.RETRY;
 			return 0;
 
 		}

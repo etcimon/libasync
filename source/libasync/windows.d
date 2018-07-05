@@ -1506,6 +1506,8 @@ package:
 		if (catchSocketError!".recv"(ret)) { // ret == -1
 			if (m_error == error_t.WSAEWOULDBLOCK)
 				m_status.code = Status.ASYNC;
+			else if (m_error == error_t.WSAEINTR)
+				m_status.code = Status.RETRY;
 			return 0; // TODO: handle some errors more specifically
 		}
 
@@ -1523,6 +1525,8 @@ package:
 		if (catchSocketError!"send"(ret)) {
 			if (m_error == error_t.WSAEWOULDBLOCK)
 				m_status.code = Status.ASYNC;
+			else if (m_error == error_t.WSAEWOULDBLOCK)
+				m_status.code = Status.RETRY;
 			return 0; // TODO: handle some errors more specifically
 		}
 		return cast(uint) ret;
