@@ -1560,6 +1560,8 @@ package:
 		if (catchSocketError!".recvfrom"(ret)) { // ret == -1
 			if (m_error == WSAEWOULDBLOCK)
 				m_status.code = Status.ASYNC;
+			else if (m_error == WSAEINTR)
+				m_status.code = Status.RETRY;
 			return 0; // TODO: handle some errors more specifically
 		}
 		m_status.code = Status.OK;
@@ -1580,6 +1582,8 @@ package:
 		if (catchSocketError!".sendTo"(ret)) { // ret == -1
 			if (m_error == WSAEWOULDBLOCK)
 				m_status.code = Status.ASYNC;
+			else if (m_error == WSAEINTR)
+				m_status.code = Status.RETRY;
 			return 0; // TODO: handle some errors more specifically
 		}
 
