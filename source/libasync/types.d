@@ -4,7 +4,7 @@ enum LOG = false; //trace
 enum DEBUG = false;
 
 import std.typecons: Flag;
-alias isIPv6 = Flag!"IPv6";
+public alias isIPv6 = Flag!"IPv6";
 alias isTCP = Flag!"TCP";
 alias isForced = Flag!"ForceFind";
 
@@ -56,7 +56,7 @@ struct StatusInfo {
 	string text;
 }
 
-enum Status : char {
+public enum Status : char {
 	OK					=	0,
 	ASYNC				=	1,
 	RETRY				=	2,
