@@ -201,10 +201,12 @@ final class MallocAllocator : Allocator {
 		auto p = extractUnalignedPointer(mem.ptr);
 		size_t oldmisalign = mem.ptr - p;
 
+		ubyte misalign;
 		auto pn = cast(ubyte*).realloc(p, new_size+Allocator.alignment);
 		if (p == pn) return pn[oldmisalign .. new_size+oldmisalign];
 
-		auto pna = cast(ubyte*)adjustPointerAlignment(pn);
+		auto pna = cast(ubyte*)adjustPointerAlignment(pn, &misalign);
+		scope(exit) *(cast(ubyte*)pna-1) = misalign;
 		auto newmisalign = pna - pn;
 
 		// account for changed alignment after realloc (move memory back to aligned position)
@@ -678,11 +680,12 @@ private void* extractUnalignedPointer(void* base)
 	return base - misalign;
 }
 
-private void* adjustPointerAlignment(void* base)
+private void* adjustPointerAlignment(void* base, ubyte* misalign_ = null)
 {
 	ubyte misalign = Allocator.alignment - (cast(size_t)base & Allocator.alignmentMask);
 	base += misalign;
-	*(cast(ubyte*)base-1) = misalign;
+	if (misalign_) *misalign_ = misalign;
+	else *(cast(ubyte*)base-1) = misalign;
 	return base;
 }
 

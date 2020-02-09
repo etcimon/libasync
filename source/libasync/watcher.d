@@ -50,7 +50,7 @@ public:
 
 		m_fd = m_evLoop.run(this, handler);
 		// import std.stdio;
-		// try writeln("Running with FD: ", m_fd); catch {}
+		// try writeln("Running with FD: ", m_fd); catch (Throwable e) {}
 
 		if (m_fd == fd_t.init)
 			return false;
@@ -90,7 +90,7 @@ public:
 		catch (Exception e) {
 			static if (DEBUG) {
 				import std.stdio;
-				try writeln("Could not add directory: " ~ e.toString()); catch {}
+				try writeln("Could not add directory: " ~ e.toString()); catch (Throwable e) {}
 			}
 			return false;
 		}

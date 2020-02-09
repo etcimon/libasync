@@ -100,7 +100,7 @@ public:
 		else
 			m_rearmed = false;
 		m_timerId = m_evLoop.run(this, cb, m_timeout);
-		// try writeln("Timer starting", m_timerId); catch {}
+		// try writeln("Timer starting", m_timerId); catch (Throwable e) {}
 		if (m_timerId == 0)
 			return false;
 		else
@@ -135,7 +135,7 @@ package:
 
 	/*void handler() {
 		try m_evh();
-		catch {}
+		catch (Throwable e) {}
 		return;
 	}*/
 }
