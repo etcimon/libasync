@@ -30,7 +30,7 @@ mixin template RunKill()
 		/// Enable Nagel's algorithm if specified
 		if (ctxt.noDelay) {
 			if (!setOption(fd, TCPOption.NODELAY, true)) {
-				static if (LOG) try log("Closing connection"); catch {}
+				static if (LOG) try log("Closing connection"); catch (Throwable e) {}
 				close(fd);
 				return 0;
 			}
@@ -428,13 +428,13 @@ mixin template RunKill()
 			/// Automatically starts connections with noDelay if specified
 			if (ctxt.noDelay) {
 				if (!setOption(fd, TCPOption.NODELAY, true)) {
-					static if (LOG) try log("Closing connection"); catch {}
+					static if (LOG) try log("Closing connection"); catch (Throwable e) {}
 					close(fd);
 					return 0;
 				}
 			}
 
-		} catch { assert(false, "Error in synchronized listener starter"); }
+		} catch (Throwable e) { assert(false, "Error in synchronized listener starter"); }
 
 		/// Setup the event polling
 		if (!initTCPListener(fd, ctxt, del, reusing)) {
@@ -455,7 +455,7 @@ mixin template RunKill()
 		import core.sys.posix.unistd;
 		fd_t fd = ctxt.preInitializedSocket;
 
-		static if (LOG) try log("Address: " ~ ctxt.local.toString()); catch {}
+		static if (LOG) try log("Address: " ~ ctxt.local.toString()); catch (Throwable e) {}
 
 		if (fd == fd_t.init)
 			fd = socket(cast(int)ctxt.local.family, SOCK_DGRAM, IPPROTO_UDP);
@@ -743,7 +743,7 @@ mixin template RunKill()
 				assert(false, "Failed to allocate resources: " ~ e.msg);
 			}
 			ctxt.evInfo = evinfo;
-			try m_watchers[fd] = evinfo; catch {}
+			try m_watchers[fd] = evinfo; catch (Throwable e) {}
 
 			try m_changes[fd] = ThreadMem.alloc!(Array!DWChangeInfo)();
 			catch (Exception e) {
@@ -842,7 +842,7 @@ mixin template RunKill()
 			ctxt.disconnecting = false;
 			if (ctxt.evInfo) {
 				try ThreadMem.free(ctxt.evInfo);
-				catch { assert(false, "Failed to free resources"); }
+				catch (Throwable e) { assert(false, "Failed to free resources"); }
 				ctxt.evInfo = null;
 			}
 			if (ctxt.inbound) try ThreadMem.free(ctxt);
@@ -857,7 +857,7 @@ mixin template RunKill()
 		m_status = StatusInfo.init;
 		nothrow void cleanup() {
 			try ThreadMem.free(ctxt.evInfo);
-			catch { assert(false, "Failed to free resources"); }
+			catch (Throwable e) { assert(false, "Failed to free resources"); }
 			ctxt.evInfo = null;
 		}
 		scope(exit) {

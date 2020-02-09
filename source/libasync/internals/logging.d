@@ -19,7 +19,7 @@ template defaultLogFunction(LogLevel ll)
         {
             try stdThreadLocalLog.memLogFunctions!(ll).logImpl!(line, file, funcName,
                 prettyFuncName, moduleName)(args);
-            catch {}
+            catch (Throwable e) {}
         }
     }
 
@@ -32,7 +32,7 @@ template defaultLogFunction(LogLevel ll)
         {
             try stdThreadLocalLog.memLogFunctions!(ll).logImpl!(line, file, funcName,
                 prettyFuncName, moduleName)(condition, args);
-            catch {}
+            catch (Throwable e) {}
         }
     }
 }
@@ -54,7 +54,7 @@ template defaultLogFunctionf(LogLevel ll)
         {
             try stdThreadLocalLog.memLogFunctions!(ll).logImplf!(line, file, funcName,
                 prettyFuncName, moduleName)(msg, args);
-            catch {}
+            catch (Throwable e) {}
         }
     }
 
@@ -67,7 +67,7 @@ template defaultLogFunctionf(LogLevel ll)
         {
             try stdThreadLocalLog.memLogFunctions!(ll).logImplf!(line, file, funcName,
                 prettyFuncName, moduleName)(condition, msg, args);
-            catch {}
+            catch (Throwable e) {}
         }
     }
 }

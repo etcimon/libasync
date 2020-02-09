@@ -40,7 +40,7 @@ version(linux) {
 			// todo: use more signals for more event loops per thread.. (is this necessary?)
 			//foreach (j; __libc_current_sigrtmin() .. __libc_current_sigrtmax() + 1) {
 			//import std.stdio : writeln;
-			//try writeln("Blocked signal " ~ (__libc_current_sigrtmin() + j).to!string ~ " in instance " ~ m_instanceId.to!string); catch {}
+			//try writeln("Blocked signal " ~ (__libc_current_sigrtmin() + j).to!string ~ " in instance " ~ m_instanceId.to!string); catch (Throwable e) {}
 			sigemptyset(&mask);
 			sigaddset(&mask, cast(int) __libc_current_sigrtmin());
 			pthread_sigmask(SIG_BLOCK, &mask, null);
@@ -354,7 +354,7 @@ package:
 				static if (EPOLL)
 				{
 					epoll_event _event = events[i];
-					static if (LOG) try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch {}
+					static if (LOG) try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch (Throwable e) {}
 					EventInfo* info = cast(EventInfo*) _event.data.ptr;
 					int event_flags = cast(int) _event.events;
 				}
@@ -456,7 +456,7 @@ package:
 						break;
 
 					case EventType.Timer:
-						static if (LOG) try log("Got timer! " ~ info.fd.to!string); catch {}
+						static if (LOG) try log("Got timer! " ~ info.fd.to!string); catch (Throwable e) {}
 						static if (EPOLL) {
 							static long val;
 							import core.sys.posix.unistd : read;
@@ -480,11 +480,11 @@ package:
 						break;
 
 					case EventType.Signal:
-						static if (LOG) try log("Got signal!"); catch {}
+						static if (LOG) try log("Got signal!"); catch (Throwable e) {}
 
 						static if (EPOLL) {
 
-							static if (LOG) try log("Got signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch {}
+							static if (LOG) try log("Got signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch (Throwable e) {}
 							import core.sys.linux.sys.signalfd : signalfd_siginfo;
 							import core.sys.posix.unistd : read;
 							signalfd_siginfo fdsi;
@@ -551,7 +551,7 @@ package:
 						nothrow void abortTCPHandler(bool graceful) {
 
 							nothrow void closeAll() {
-								static if (LOG) try log("closeAll()"); catch {}
+								static if (LOG) try log("closeAll()"); catch (Throwable e) {}
 								if (info.evObj.tcpEvHandler.conn.connected)
 									closeSocket(info.fd, true, true);
 
@@ -754,7 +754,7 @@ package:
 					assert(false, "KEEPALIVE_INTERVAL value type must be Duration, not " ~ T.stringof);
 				else {
 					int val;
-					try val = value.total!"seconds".to!uint; catch { return false; }
+					try val = value.total!"seconds".to!uint; catch (Throwable e) { return false; }
 					socklen_t len = val.sizeof;
 					err = setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &val, len);
 					return errorHandler();
@@ -764,7 +764,7 @@ package:
 					assert(false, "KEEPALIVE_DEFER value type must be Duration, not " ~ T.stringof);
 				else {
 					int val;
-					try val = value.total!"seconds".to!uint; catch { return false; }
+					try val = value.total!"seconds".to!uint; catch (Throwable e) { return false; }
 					socklen_t len = val.sizeof;
 					err = setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &val, len);
 					return errorHandler();
@@ -794,7 +794,7 @@ package:
 					import core.sys.posix.sys.time : timeval;
 					time_t secs = cast(time_t) value.split!("seconds", "usecs")().seconds;
 					suseconds_t us;
-					try us = value.split!("seconds", "usecs")().usecs.to!suseconds_t; catch {}
+					try us = value.split!("seconds", "usecs")().usecs.to!suseconds_t; catch (Throwable e) {}
 					timeval t = timeval(secs, us);
 					socklen_t len = t.sizeof;
 					err = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &t, len);
@@ -818,7 +818,7 @@ package:
 					assert(false, "TIMEOUT_SEND value type must be Duration, not " ~ T.stringof);
 				else {
 					uint val;
-					try val = value.total!"msecs".to!uint; catch {
+					try val = value.total!"msecs".to!uint; catch (Throwable e) {
 						return false;
 					}
 					socklen_t len = val.sizeof;
@@ -888,7 +888,7 @@ package:
 	pragma(inline, true)
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
-			static if (LOG) try log("Recv from FD: " ~ fd.to!string); catch {}
+			static if (LOG) try log("Recv from FD: " ~ fd.to!string); catch (Throwable e) {}
 			m_status = StatusInfo.init;
 			import libasync.internals.socket_compat : recv;
 			int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
@@ -909,11 +909,11 @@ package:
 	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
 	{
-		static if (LOG) try log("Send to FD: " ~ fd.to!string); catch {}
+		static if (LOG) try log("Send to FD: " ~ fd.to!string); catch (Throwable e) {}
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : send;
 		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
-		static if (LOG) try log("Sent: " ~ ret.to!string); catch {}
+		static if (LOG) try log("Sent: " ~ ret.to!string); catch (Throwable e) {}
 		if (catchError!"send"(ret)) { // ret == -1
 			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 				m_status.code = Status.ASYNC;
@@ -1021,7 +1021,7 @@ package:
 					addr.family = AF_INET;
 			}
 
-			static if (LOG) try log("RECVFROM " ~ ret.to!string ~ "B"); catch {}
+			static if (LOG) try log("RECVFROM " ~ ret.to!string ~ "B"); catch (Throwable e) {}
 			if (catchError!".recvfrom"(ret)) { // ret == -1
 					if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 							m_status.code = Status.ASYNC;
@@ -1557,7 +1557,7 @@ package:
 						return cast(uint) i;
 				}
 				static if (LOG) foreach (j; 0 .. i) {
-					static if (LOG) try log("Change occured for FD#" ~ fd.to!string ~ ": " ~ dst[j].to!string); catch {}
+					static if (LOG) try log("Change occured for FD#" ~ fd.to!string ~ ": " ~ dst[j].to!string); catch (Throwable e) {}
 				}
 				nread = read(fd, buf.ptr, buf.sizeof);
 				if (catchError!"read()"(nread)) {
@@ -1634,7 +1634,7 @@ package:
 
 		static if (!EPOLL) {
 			kevent_t[2] events;
-			static if (LOG) try log("!!DISC delete events"); catch {}
+			static if (LOG) try log("!!DISC delete events"); catch (Throwable e) {}
 			EV_SET(&(events[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
 			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
 			kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
@@ -2169,11 +2169,11 @@ private:
 				try {
 					evh = del(conn);
 					if (evh == TCPEventHandler.init || !initTCPConnection(csock, conn, evh, true)) {
-						static if (LOG) try log("Failed to connect"); catch {}
+						static if (LOG) try log("Failed to connect"); catch (Throwable e) {}
 						closeClient();
 						continue;
 					}
-					static if (LOG) try log("Connection Started with " ~ csock.to!string); catch {}
+					static if (LOG) try log("Connection Started with " ~ csock.to!string); catch (Throwable e) {}
 				}
 				catch (Exception e) {
 					static if (LOG) log("Close socket");
@@ -2194,7 +2194,7 @@ private:
 				/*if (m_status.code == Status.ABORT)
 				{
 					try evh(TCPEvent.ERROR);
-					catch {}
+					catch (Throwable e) {}
 				}*/
 			} while(true);
 
@@ -2306,7 +2306,7 @@ private:
 
 		if (write && (!conn.stateful || conn.connected && !conn.disconnecting && conn.writeBlocked)) {
 			if (conn.stateful) conn.writeBlocked = false;
-			static if (LOG) try log("!write"); catch {}
+			static if (LOG) try log("!write"); catch (Throwable e) {}
 			try {
 				del(EventCode.WRITE);
 			}
@@ -2317,7 +2317,7 @@ private:
 		}
 
 		if (read && (!conn.stateful || conn.connected && !conn.disconnecting)) {
-			static if (LOG) try log("!read"); catch {}
+			static if (LOG) try log("!read"); catch (Throwable e) {}
 			try {
 				del(EventCode.READ);
 			}
@@ -2329,7 +2329,7 @@ private:
 
 		if (conn.stateful && close && conn.connected && !conn.disconnecting)
 		{
-			static if (LOG) try log("!close"); catch {}
+			static if (LOG) try log("!close"); catch (Throwable e) {}
 			// todo: See if this hack is still necessary
 			if (!conn.connected && conn.disconnecting)
 				return true;
@@ -2371,7 +2371,7 @@ private:
 		}
 
 		if (conn.stateful && connect) {
-			static if (LOG) try log("!connect"); catch {}
+			static if (LOG) try log("!connect"); catch (Throwable e) {}
 			conn.connected = true;
 			try del(EventCode.CONNECT);
 			catch (Exception e) {
@@ -2574,7 +2574,7 @@ private:
 		{
 			import libasync.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			int err;
-			static if (LOG) try log("Also got events: " ~ connect.to!string ~ " c " ~ read.to!string ~ " r " ~ write.to!string ~ " write"); catch {}
+			static if (LOG) try log("Also got events: " ~ connect.to!string ~ " c " ~ read.to!string ~ " r " ~ write.to!string ~ " write"); catch (Throwable e) {}
 			socklen_t errlen = err.sizeof;
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen);
 			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t)err);
@@ -2591,7 +2591,7 @@ private:
 
 		if (connect)
 		{
-			static if (LOG) try log("!connect"); catch {}
+			static if (LOG) try log("!connect"); catch (Throwable e) {}
 			conn.connected = true;
 			try del(TCPEvent.CONNECT);
 			catch (Exception e) {
@@ -2605,7 +2605,7 @@ private:
 		if ((read || write) && conn.connected && !conn.disconnecting && conn.writeBlocked)
 		{
 			conn.writeBlocked = false;
-			static if (LOG) try log("!write"); catch {}
+			static if (LOG) try log("!write"); catch (Throwable e) {}
 			try del(TCPEvent.WRITE);
 			catch (Exception e) {
 				setInternalError!"del@TCPEvent.WRITE"(Status.ABORT);
@@ -2618,7 +2618,7 @@ private:
 
 		if (read && conn.connected && !conn.disconnecting)
 		{
-			static if (LOG) try log("!read"); catch {}
+			static if (LOG) try log("!read"); catch (Throwable e) {}
 			try del(TCPEvent.READ);
 			catch (Exception e) {
 				setInternalError!"del@TCPEvent.READ"(Status.ABORT);
@@ -2628,7 +2628,7 @@ private:
 
 		if (close && conn.connected && !conn.disconnecting)
 		{
-			static if (LOG) try log("!close"); catch {}
+			static if (LOG) try log("!close"); catch (Throwable e) {}
 			// todo: See if this hack is still necessary
 			if (!conn.connected && conn.disconnecting)
 				return true;
@@ -2842,7 +2842,7 @@ private:
 		else /* if KQUEUE */
 		{
 			kevent_t[2] events = void;
-			static if (LOG) try log("Register event ptr " ~ ev.to!string); catch {}
+			static if (LOG) try log("Register event ptr " ~ ev.to!string); catch (Throwable e) {}
 			assert(ev.evType == EventType.TCPTraffic, "Bad event type for TCP Connection");
 			EV_SET(&(events[0]), fd, EVFILT_READ, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, cast(void*) ev);
 			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, cast(void*) ev);
@@ -3109,7 +3109,7 @@ static if (!EPOLL)
 		} catch (Throwable e) {
 			static if (DEBUG) {
 				import std.stdio : writeln;
-				try writeln(e.toString()); catch {}
+				try writeln(e.toString()); catch (Throwable e) {}
 			}
 
 		}
