@@ -26,7 +26,6 @@ alias fd_t = int;
 
 version(linux) {
 	import libasync.internals.epoll;
-	const EPOLL = true;
 	extern(C) nothrow @nogc {
 		int __libc_current_sigrtmin();
 		int __libc_current_sigrtmax();
@@ -52,17 +51,14 @@ version(linux) {
 		g_signalsBlocked = true;
 	}
 }
-version(OSX) {
+static if (is_OSX || is_iOS) {
 	import libasync.internals.kqueue;
-	const EPOLL = false;
 }
 version(FreeBSD) {
 	import libasync.internals.kqueue;
-	const EPOLL = false;
 }
 version(DragonFlyBSD) {
 	import libasync.internals.kqueue;
-	const EPOLL = false;
 }
 
 __gshared Mutex g_mutex;

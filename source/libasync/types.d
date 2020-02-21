@@ -8,6 +8,19 @@ public alias isIPv6 = Flag!"IPv6";
 alias isTCP = Flag!"TCP";
 alias isForced = Flag!"ForceFind";
 
+version(OSX) 	enum is_OSX = true;
+else		enum is_OSX = false;
+version(Posix) 	enum is_Posix = true;
+else		enum is_Posix = false;
+version(linux) 	enum is_linux = true;
+else		enum is_linux = false;
+version(iOS) 	enum is_iOS = true;
+else		enum is_iOS = false;
+
+static if (is_linux)
+	enum EPOLL = true;
+else	enum EPOLL = false;
+
 mixin template DefStatus() {
 
 	/// Check this property to make sure the event loop hasn't failed
@@ -829,7 +842,7 @@ enum EWIN : size_t {
 	WSA_QOS_RESERVED_PETYPE		=	11031	/* Reserved policy QOS element type. */
 }
 
-version(OSX) enum EPosix : int {
+static if (is_OSX || is_iOS) enum EPosix : int {
 
 	EAI_OVERFLOW	=		-12,	/* Argument buffer overflow.  */
 	EAI_SYSTEM		=		-11,	/* System error returned in `errno'.  */
@@ -960,7 +973,6 @@ version(OSX) enum EPosix : int {
 	ECAPMODE		=	94,		/* Not permitted in capability mode */
 	ELAST			=	94		/* Must be equal largest errno */
 }
-
 version(linux) enum EPosix : int {
 
 	EAI_OVERFLOW	=		-12,	/* Argument buffer overflow.  */

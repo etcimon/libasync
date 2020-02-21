@@ -13,7 +13,7 @@
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
 module libasync.internals.socket_compat;
-
+import libasync.types;
 version (Windows)
 {
 	public import libasync.internals.win32 :
@@ -29,7 +29,7 @@ version (Windows)
 
 public import core.sys.posix.sys.un;
 
-version(OSX) {
+static if (is_OSX || is_iOS) {
 	public import core.sys.posix.arpa.inet;
 	public import core.sys.posix.netdb;
 	public import core.sys.posix.netinet.tcp;
@@ -244,7 +244,7 @@ version( linux )
 
 	int accept4(int, sockaddr*, socklen_t*, int flags);
 }
-else version( OSX )
+else static if (is_OSX || is_iOS)
 {
 	enum SO_REUSEPORT = 0x0200;
 
