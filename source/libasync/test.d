@@ -5,22 +5,28 @@ import std.stdio;
 import std.datetime;
 import libasync.file;
 import std.conv : to;
+import core.stdc.stdlib : getenv;
+import std.string : fromStringz, toStringz;
 
 AsyncDirectoryWatcher g_watcher;
 shared AsyncDNS g_dns;
-
+string cache_path;
+		
 
 unittest {
+	cache_path = ".";
+	version(iOS) cache_path = getenv("HOME".toStringz).fromStringz.to!string ~ "/Library/Caches";
+
 	spawnAsyncThreads();
 	scope(exit)
 		destroyAsyncThreads();
-	// writeln("Unit test started");
+	//writeln("Unit test started");
 	g_cbCheck = new shared bool[19];
 	g_lastTimer = Clock.currTime();
 	gs_start = Clock.currTime();
 	g_evl = getThreadEventLoop();
 	g_evl.loop(1.msecs);
-	// writeln("Loading objects...");
+	//writeln("Loading objects...");
 	testDirectoryWatcher();
 
 	testDNS();
@@ -31,7 +37,7 @@ unittest {
 	testEvents();
 	testTCPListen("localhost", 8081);
 	testHTTPConnect();
-	// writeln("Loaded. Running event loop...");
+	//writeln("Loaded. Running event loop...");
 	testFile();
 	testTCPConnect("localhost", 8081);
 	while(Clock.currTime() - gs_start < 7.seconds)
@@ -42,7 +48,7 @@ unittest {
 		assert(b, "Callback not triggered: g_cbCheck[" ~ i.to!string ~ "]");
 		i++;
 	}
-	// writeln("Callback triggers were successful, run time: ", Clock.currTime - gs_start);
+	writeln("Callback triggers were successful, run time: ", Clock.currTime - gs_start);
 
 	assert(g_cbTimerCnt >= 3, "Multitimer expired only " ~ g_cbTimerCnt.to!string ~ " times"); // MultiTimer expired 3-4 times
 	g_watcher.kill();
@@ -60,16 +66,16 @@ void testDNS() {
 	g_swDns.start();
 	g_dns.handler((NetworkAddress addr) {
 		g_cbCheck[17] = true;
-		// writeln("Resolved to: ", addr.toString(), ", it took: ", g_swDns.peek().usecs, " usecs");
-	}).resolveHost("127.0.0.1");
+		writeln("Resolved to: ", addr.toString(), ", it took: ", g_swDns.peek().usecs, " usecs");
+	}).resolveHost("httpbin.org", false, true);
 }
 
 void testDirectoryWatcher() {
 	import std.file : mkdir, rmdir, exists;
-	if (exists("./hey/tmp.tmp"))
-		remove("./hey/tmp.tmp");
-	if (exists("./hey"))
-		rmdir("./hey");
+	if (exists(cache_path ~ "/hey/tmp.tmp"))
+		remove((cache_path ~ "/hey/tmp.tmp").toStringz);
+	if (exists(cache_path ~ "/hey"))
+		rmdir(cache_path ~ "/hey");
 	g_watcher = new AsyncDirectoryWatcher(g_evl);
 	g_watcher.run({
 		DWChangeInfo[1] change;
@@ -83,19 +89,19 @@ void testDirectoryWatcher() {
 				done = true;
 		}
 	});
-	g_watcher.watchDir(".");
+	g_watcher.watchDir(cache_path);
 	AsyncTimer tm = new AsyncTimer(g_evl);
 	tm.duration(1.seconds).run({
 		writeln("Creating directory ./hey");
-		mkdir("./hey");
-		assert(g_watcher.watchDir("./hey/"));
+		mkdir(cache_path ~ "/hey");
+		assert(g_watcher.watchDir(cache_path ~ "/hey/"));
 		tm.duration(1.seconds).run({
 			static import std.file;
 			writeln("Writing to ./hey/tmp.tmp for the first time");
-			std.file.write("./hey/tmp.tmp", "some string");
+			std.file.write(cache_path ~ "/hey/tmp.tmp", "some string");
 			tm.duration(100.msecs).run({
 				writeln("Removing ./hey/tmp.tmp");
-				remove("./hey/tmp.tmp");
+				remove((cache_path ~ "/hey/tmp.tmp").toStringz);
 				tm.kill();
 			});
 		});
@@ -106,29 +112,30 @@ void testFile() {
 	gs_file = new shared AsyncFile(g_evl);
 
 	{
-		File file = File("test.txt", "w");
+		File file = File(cache_path ~ "/test.txt", "w+");
 		file.rawWrite("This is the file content.");
 		file.close();
+		//writeln("Wrote to file");
 	}
 	gs_file.onReady({
-		writeln("Created and wrote to test.txt through AsyncFile");
+		//writeln("Created and wrote to test.txt through AsyncFile");
 		auto file = gs_file;
-		if (file.status.code == Status.ERROR)
-			writeln("ERROR: ", file.status.text);
-		import std.algorithm;
+		//if (file.status.code == Status.ERROR)
+			//writeln("ERROR: ", file.status.text);
+		
+		import std.string : startsWith;
 		if ((cast(string)file.buffer).startsWith("This is the file content.")) {
 			g_cbCheck[7] = true;
 		}
 		else {
-			//import std.stdio :  writeln;
-			// writeln("ERROR: ", cast(string)file.buffer);
+			writeln("ERROR: ", cast(string)file.buffer);
 			assert(false);
 		}
 		import std.file : remove;
 		gs_file.kill();
-		remove("test.txt");
-		writeln("Removed test.txt .. ");
-	}).read("test.txt");
+		remove(cache_path ~ "/test.txt");
+		//writeln("Removed test.txt .. ");
+	}).read(cache_path ~ "/test.txt");
 
 }
 
@@ -141,6 +148,7 @@ void testSignal() {
 		import std.stdio;
 		assert(title == "This is my title");
 		g_cbCheck[0] = true;
+		//writeln("Got signal title");
 
 		return;
 	};
@@ -154,6 +162,7 @@ void testEvents() {
 	gs_tlsEvent.run({
 		assert(g_message == "Some message here");
 		g_cbCheck[1] = true;
+		//writeln("Got valid TLS Event");
 	});
 
 	gs_shrEvent = new shared AsyncSignal(g_evl);
@@ -161,6 +170,7 @@ void testEvents() {
 	gs_shrEvent.run({
 		assert(gs_hshr.message == "Hello from shared!");
 		g_cbCheck[2] = true;
+		//writeln("Got valid shared event!");
 	});
 
 	testTLSEvent();
@@ -203,6 +213,7 @@ void testOneshotTimer() {
 	g_timerOneShot.duration(1.seconds).run({
 		assert(!g_cbCheck[4] && Clock.currTime() - gs_start > 900.msecs && Clock.currTime() - gs_start < 1400.msecs, "Timer completed in " ~ (Clock.currTime() - gs_start).total!"msecs".to!string ~ "ms" );
 		assert(g_timerOneShot.id != 0);
+		//writeln("Got timer callback!");
 		g_cbCheck[4] = true;
 
 	});
@@ -216,6 +227,7 @@ void testMultiTimer() {
 		assert(!g_timerMulti.oneShot);
 		g_lastTimer = Clock.currTime();
 		g_cbTimerCnt++;
+		//writeln("Got timer callback #", g_cbTimerCnt.to!string);
 		g_cbCheck[5] = true;
 	});
 
@@ -223,16 +235,16 @@ void testMultiTimer() {
 
 
 void trafficHandler(TCPEvent ev){
-	// writeln("##TrafficHandler!");
+	//writeln("##TrafficHandler!");
 	void doRead() {
 		static ubyte[] bin = new ubyte[4092];
 		while (true) {
 			uint len = g_conn.recv(bin);
-			// writeln("!!Server Received " ~ len.to!string ~ " bytes");
+			//writeln("!!Server Received " ~ len.to!string ~ " bytes");
 			// import std.file;
 			if (len > 0) {
 				auto res = cast(string)bin[0..len];
-				// writeln(res);
+				//writeln(res);
 				import std.algorithm : canFind;
 				if (res.canFind("Client Hello"))
 					g_cbCheck[8] = true;
@@ -253,30 +265,30 @@ void trafficHandler(TCPEvent ev){
 
 	final switch (ev) {
 		case TCPEvent.CONNECT:
-			// writeln("!!Server Connected");
+			//writeln("!!Server Connected");
 			doRead();
 			if (g_conn.socket != 0)
 				g_conn.send(cast(ubyte[])"Server Connect");
 			break;
 		case TCPEvent.READ:
-			// writeln("!!Server Read is ready");
+			//writeln("!!Server Read is ready");
 			g_cbCheck[11] = true;
 			if (g_conn.socket != 0)
 				g_conn.send(cast(ubyte[])"Server READ");
 			doRead();
 			break;
 		case TCPEvent.WRITE:
-			// writeln("!!Server Write is ready");
+			//writeln("!!Server Write is ready");
 			if (g_conn.socket != 0)
 				g_conn.send(cast(ubyte[])"Server WRITE");
 			break;
 		case TCPEvent.CLOSE:
 			doRead();
-			// writeln("!!Server Disconnect!");
+			//writeln("!!Server Disconnect!");
 			g_cbCheck[12] = true;
 			break;
 		case TCPEvent.ERROR:
-			// writeln("!!Server Error!");
+			//writeln("!!Server Error!");
 			break;
 	}
 
@@ -291,6 +303,7 @@ void testTCPListen(string ip, ushort port) {
 		g_conn = conn;
 		g_cbCheck[6] = true;
 		import std.functional : toDelegate;
+		//writeln("Got handler TCPListen");
 		return toDelegate(&trafficHandler);
 	}
 
@@ -308,9 +321,9 @@ void testTCPConnect(string ip, ushort port) {
 			while (true) {
 				assert(conn.socket > 0);
 				uint len = conn.recv(bin);
-				// writeln("!!Client Received " ~ len.to!string ~ " bytes");
-				// if (len > 0)
-					// writeln(cast(string)bin[0..len]);
+				//writeln("!!Client Received " ~ len.to!string ~ " bytes");
+				//if (len > 0)
+				//	writeln(cast(string)bin[0..len]);
 				if (len < bin.length)
 					break;
 			}
@@ -326,7 +339,7 @@ void testTCPConnect(string ip, ushort port) {
 				assert(conn.socket > 0);
 				break;
 			case TCPEvent.READ:
-				// writeln("!!Client Read is ready at writes: ", g_writes);
+				//writeln("!!Client Read is ready at writes: ", g_writes);
 				doRead();
 
 				// respond
@@ -346,15 +359,15 @@ void testTCPConnect(string ip, ushort port) {
 			case TCPEvent.WRITE:
 
 				g_writes += 1;
-				// writeln("!!Client Write is ready");
+				//writeln("!!Client Write is ready");
 				if (conn.socket != 0)
 					conn.send(cast(ubyte[])"Client WRITE");
 				break;
 			case TCPEvent.CLOSE:
-				// writeln("!!Client Disconnected");
+				//writeln("!!Client Disconnected");
 				break;
 			case TCPEvent.ERROR:
-				// writeln("!!Client Error!");
+				//writeln("!!Client Error!");
 				break;
 		}
 		return;
@@ -367,12 +380,12 @@ void testTCPConnect(string ip, ushort port) {
 
 void testHTTPConnect() {
 	auto conn = new AsyncTCPConnection(g_evl);
-	conn.peer = g_evl.resolveHost("example.org", 80);
+	conn.peer = g_evl.resolveHost("httpbin.org", 80);
 
 	auto del = (TCPEvent ev){
 		final switch (ev) {
 			case TCPEvent.CONNECT:
-				// writeln("!!Connected");
+				//writeln("!!Connected");
 				static ubyte[] abin = new ubyte[4092];
 				while (true) {
 					uint len = conn.recv(abin);
@@ -380,28 +393,29 @@ void testHTTPConnect() {
 						break;
 				}
 				g_cbCheck[15] = true;
-				// writeln(conn.local.toString());
-				// writeln(conn.peer.toString());
-				conn.send(cast(ubyte[])"GET http://example.org/\nHost: example.org\nConnection: close");
+				//writeln(conn.local.toString());
+				//writeln(conn.peer.toString());
+				conn.send(cast(ubyte[])"GET /ip\nHost: httpbin.org\nConnection: close\n\n");
 				break;
 			case TCPEvent.READ:
 				static ubyte[] bin = new ubyte[4092];
 				while (true) {
 					uint len = conn.recv(bin);
 					g_cbCheck[16] = true;
-					// writeln("!!Received " ~ len.to!string ~ " bytes");
+					if (len > 0) writeln("HTTP Response: ", cast(string)bin.ptr[0 .. len]);
+					//writeln("!!Received " ~ len.to!string ~ " bytes");
 					if (len < bin.length)
 						break;
 				}
 				break;
 			case TCPEvent.WRITE:
-				// writeln("!!Write is ready");
+				//writeln("!!Write is ready");
 				break;
 			case TCPEvent.CLOSE:
-				// writeln("!!Disconnected");
+				//writeln("!!Disconnected");
 				break;
 			case TCPEvent.ERROR:
-				// writeln("!!Error!");
+				//writeln("!!Error!");
 				break;
 		}
 		return;

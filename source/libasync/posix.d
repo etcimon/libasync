@@ -1036,7 +1036,7 @@ package:
 			m_status = StatusInfo.init;
 
 			static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B");
-			catch{}
+			catch (Throwable e) {}
 			long ret = sendto(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, addr.sockAddrLen);
 
 			if (catchError!".sendto"(ret)) { // ret == -1
@@ -3042,7 +3042,8 @@ private:
 			err = cast(error_t) getaddrinfo(chost, null, &hints, &infos);
 		}
 
-		if (err != EPosix.EOK) {
+		if (err != EPosix.EOK) {		
+
 			/// Unfortunately, glibc < 2.26 has a bug that the DNS resolver caches the contents
 			/// of /etc/resolve.conf. (See https://sourceware.org/bugzilla/show_bug.cgi?id=984)
 			/// An issue of Pidgen bug tracker(https://developer.pidgin.im/ticket/2825) shows
@@ -3055,7 +3056,13 @@ private:
 				}
 				/// At least res_init isn't thread-safe on OSX/iOS, so nothing to do.
 			}
-			setInternalError!"getAddressInfo"(Status.ERROR, string.init, err);
+			version(iOS) {
+				// ios uses a different error reporting for getaddrinfo
+				import libasync.internals.socket_compat : gai_strerror;
+				import std.string : fromStringz;
+				setInternalError!"getAddressInfo"(Status.ERROR, gai_strerror(cast(int) err).fromStringz.to!string);
+			}
+			else setInternalError!"getAddressInfo"(Status.ERROR, string.init, err);
 			return NetworkAddress.init;
 		}
 		ubyte* pAddr = cast(ubyte*) infos.ai_addr;
