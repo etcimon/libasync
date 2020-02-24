@@ -1,4 +1,5 @@
 ﻿module libasync.internals.kqueue;
+import libasync.types;
 nothrow:
 import core.stdc.stdint : intptr_t, uintptr_t;
 version(Posix)
@@ -12,14 +13,18 @@ version (DragonFlyBSD) {
 	public import core.sys.dragonflybsd.sys.event;
 	immutable HasKqueue = true;
 }
-version (OSX) immutable HasKqueue = true;
+static if (is_OSX || is_iOS) {
+	static if (__VERSION__ >= 2090)
+		public import core.sys.darwin.sys.event;
+	immutable HasKqueue = true;
+}
 else immutable HasKqueue = false;
 
 extern(C):
 @nogc:
 
 enum O_EVTONLY = 0x8000;
-
+static if (__VERSION__ < 2090):
 /* While these are in druntime, they are - as of 2.071 - not marked as @nogc.
  * So declare them here as such for platforms with kqueue. */
 static if (HasKqueue) {
@@ -30,7 +35,6 @@ static if (HasKqueue) {
 }
 
 version(OSX):
-
 enum : short
 {
 	EVFILT_READ     =  -1,

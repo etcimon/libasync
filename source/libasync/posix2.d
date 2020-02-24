@@ -1,7 +1,6 @@
 ﻿module libasync.posix2;
-
+import libasync.types;
 version (Posix):
-
 // workaround for IDE indent bug on too big files
 mixin template RunKill()
 {
