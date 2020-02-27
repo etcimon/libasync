@@ -239,6 +239,10 @@ version( linux )
 	{
 		enum SO_REUSEPORT = 15;
 	}
+	else version (AArch64)
+	{
+		enum SO_REUSEPORT = 15;
+	}
 	else
 		static assert(0, "unimplemented");
 
@@ -270,15 +274,7 @@ else version (Solaris)
 }
 else version( Android )
 {
-	version (X86)
-	{
-		enum SO_REUSEPORT = 15;
-	}
-	else
-	{
-		static assert(false, "Architecture not supported.");
-	}
-
+	enum SO_REUSEPORT = 15;
 	// constants needed for std.socket
 	enum IPPROTO_IGMP = 2;
 	enum IPPROTO_PUP  = 12;
