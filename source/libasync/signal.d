@@ -18,13 +18,13 @@ private:
 	Thread m_owner;
 	EventLoop m_evLoop;
 	fd_t m_evId;
-	Mutex m_mutex;
+	shared Mutex m_mutex;
 
 	void lock() @trusted const nothrow
-	{ assumeWontThrow((cast(Mutex) m_mutex).lock()); }
+	{ assumeWontThrow((m_mutex).lock()); }
 
 	void unlock() @trusted const nothrow
-	{ assumeWontThrow((cast(Mutex) m_mutex).unlock()); }
+	{ assumeWontThrow((m_mutex).unlock()); }
 
 public:
 
@@ -37,7 +37,7 @@ public:
 		m_evLoop = cast(shared) evl;
 		import core.thread : Thread;
 		m_owner = cast(shared) Thread.getThis();
-		m_mutex = cast(shared) new Mutex;
+		m_mutex = new shared Mutex;
 
 		version(Posix) {
 			static if (EPOLL) {

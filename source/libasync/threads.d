@@ -28,8 +28,8 @@ bool doOffThread(void delegate() work) {
 }
 
 nothrow
-void destroyAsyncThreads() {
-	try taskPool.finish(true);
+void destroyAsyncThreads(bool wait = true) {
+	try taskPool.finish(wait);
 	catch (Exception e) {
 		critical("Failed to terminate worker threads: ", e.toString());
 		assert(false);
