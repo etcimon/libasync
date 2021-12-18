@@ -3,6 +3,7 @@ version(unittest):
 import libasync.events;
 import std.stdio;
 import std.datetime;
+import std.datetime.stopwatch : StopWatch;
 import libasync.file;
 import std.conv : to;
 import core.stdc.stdlib : getenv;
@@ -10,8 +11,7 @@ import std.string : fromStringz, toStringz;
 
 AsyncDirectoryWatcher g_watcher;
 shared AsyncDNS g_dns;
-string cache_path;
-		
+string cache_path;	
 
 unittest {
 	cache_path = ".";
@@ -66,7 +66,7 @@ void testDNS() {
 	g_swDns.start();
 	g_dns.handler((NetworkAddress addr) {
 		g_cbCheck[17] = true;
-		writeln("Resolved to: ", addr.toString(), ", it took: ", g_swDns.peek().usecs, " usecs");
+		writeln("Resolved to: ", addr.toString(), ", it took: ", g_swDns.peek().total!"usecs", " usecs");
 	}).resolveHost("httpbin.org", false, true);
 }
 
