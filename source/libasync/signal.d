@@ -21,10 +21,10 @@ private:
 	shared Mutex m_mutex;
 
 	void lock() @trusted const nothrow
-	{ assumeWontThrow((m_mutex).lock()); }
+	{ assumeWontThrow((cast(shared) m_mutex).lock()); }
 
 	void unlock() @trusted const nothrow
-	{ assumeWontThrow((m_mutex).unlock()); }
+	{ assumeWontThrow((cast(shared) m_mutex).unlock()); }
 
 public:
 
