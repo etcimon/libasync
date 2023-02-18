@@ -89,13 +89,13 @@ public:
 				obj.queue.next = head;
 			}
 			head = obj;
-			debug .tracef(T.stringof ~ ".Queue.insertFront: Inserted %s", obj);
+			//(impure) static if (LOG) .tracef(T.stringof ~ ".Queue.insertFront: Inserted %s", obj);
 		}
 
 		void removeFront() @safe pure /+@nogc+/ nothrow
 		{
 			assert(!empty, T.stringof ~ ".Queue.removeFront: Queue is empty");
-			debug .tracef(T.stringof ~ ".Queue.removeFront: Removing %s", head);
+			//(impure) static if (LOG) .tracef(T.stringof ~ ".Queue.removeFront: Removing %s", head);
 			auto newHead = head.queue.next;
 			if (newHead) newHead.queue.tail = head.queue.tail;
 			head.queue.next = null;
@@ -116,7 +116,7 @@ public:
 				head.queue.tail.queue.next = obj;
 				head.queue.tail = obj;
 			}
-			debug .tracef(T.stringof ~ ".Queue.insertBack: Inserted %s", obj);
+			//(impure) static if (LOG) .tracef(T.stringof ~ ".Queue.insertBack: Inserted %s", obj);
 		}
 
 		auto opSlice() @safe pure @nogc nothrow

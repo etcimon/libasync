@@ -7,7 +7,7 @@ mixin template RunKill()
 
 	fd_t run(AsyncTCPConnection ctxt, TCPEventHandler del)
 	in { assert(ctxt.socket == fd_t.init, "TCP Connection is active. Use another instance."); }
-	body {
+	do {
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : socket, SOCK_STREAM, IPPROTO_TCP;
 		import core.sys.posix.unistd : close;
@@ -47,7 +47,7 @@ mixin template RunKill()
 
 	fd_t run(AsyncUDSConnection ctxt)
 	in { assert(ctxt.socket == fd_t.init, "UDS Connection is active. Use another instance."); }
-	body {
+	do {
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : socket, connect, SOCK_STREAM, AF_UNIX;
 		import core.sys.posix.unistd : close;
@@ -86,7 +86,7 @@ mixin template RunKill()
 		assert(ctxt.socket == fd_t.init, "UDS Listener already bound. Please run another instance.");
 		assert(ctxt.local !is UnixAddress.init, "No locally binding address specified. Use AsyncUDSListener.local = new UnixAddress(*)");
 	}
-	body {
+	do {
 		import libasync.internals.socket_compat : socket, bind, listen, SOCK_STREAM, AF_UNIX, SOMAXCONN;
 		import core.sys.posix.unistd : close, unlink;
 		import core.sys.posix.sys.un : sockaddr_un;
@@ -388,7 +388,7 @@ mixin template RunKill()
 		//assert(ctxt.socket == fd_t.init, "TCP Listener already bound. Please run another instance.");
 		assert(ctxt.local.addr !is typeof(ctxt.local.addr).init, "No locally binding address specified. Use AsyncTCPListener.local = EventLoop.resolve*");
 	}
-	body {
+	do {
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : socket, SOCK_STREAM, socklen_t, setsockopt, SOL_SOCKET, SO_REUSEADDR, IPPROTO_TCP;
 		import core.sys.posix.unistd : close;
@@ -474,7 +474,7 @@ mixin template RunKill()
 		}
 
 		static if (LOG) try log("UDP Socket started FD#" ~ fd.to!string);
-		catch{}
+		catch (Throwable e) {}
 		/*
 		static if (!EPOLL) {
 			gs_fdPool.insert(fd);

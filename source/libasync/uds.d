@@ -42,7 +42,7 @@ public:
 	///
 	this(EventLoop evl, fd_t preInitializedSocket = fd_t.init)
 	in { assert(evl !is null); }
-	body {
+	do {
 		m_evLoop = evl;
 		m_preInitializedSocket = preInitializedSocket;
 	}
@@ -71,14 +71,14 @@ public:
 		assert(!isConnected, "Cannot change remote address on a connected socket");
 		assert(addr !is UnixAddress.init);
 	}
-	body {
+	do {
 		m_peer = addr;
 	}
 
 	///
 	bool run(void delegate(EventCode) del)
 	in { assert(!isConnected); }
-	body {
+	do {
 		m_socket = m_evLoop.run(this);
 		if (m_socket == 0) return false;
 
@@ -108,7 +108,7 @@ public:
 	/// cleans up the underlying resources.
 	bool kill(bool forced = false)
 	in { assert(isConnected); }
-	body {
+	do {
 		scope(exit) m_socket = 0;
 		return m_event.kill(forced);
 	}
@@ -158,7 +158,7 @@ public:
 	///
 	this(EventLoop evl, bool unlinkFirst = true)
 	in { assert(evl !is null); }
-	body {
+	do {
 		m_evLoop = evl;
 		m_unlinkFirst = unlinkFirst;
 	}
@@ -174,7 +174,7 @@ public:
 	/// Sets the local internet address as an OS-specific structure.
 	@property void local(UnixAddress addr)
 	in { assert(!m_started, "Cannot rebind a listening socket"); }
-	body {
+	do {
 		m_local = addr;
 	}
 
@@ -183,7 +183,7 @@ public:
 	in {
 		assert(m_local !is UnixAddress.init, "Cannot bind without an address. Please set .local");
 	}
-	body {
+	do {
 		m_del = del;
 		m_socket = m_evLoop.run(this);
 		if (m_socket == 0) return false;
@@ -197,7 +197,7 @@ public:
 	/// NOTE: MUST be called to clean up the domain socket path
 	bool kill()
 	in { assert(m_socket != 0); }
-	body {
+	do {
 		import core.sys.posix.unistd : unlink;
 		import core.sys.posix.sys.un : sockaddr_un;
 

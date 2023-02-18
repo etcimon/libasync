@@ -74,7 +74,7 @@ public:
 		assert(!m_busy, "Resolver is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncDNS must be running before being operated on.");
 	}
-	body {
+	do {
 		if (force_async == true) {
 			try synchronized(m_cmdInfo.mtx) {
 				m_cmdInfo.command = DNSCmd.RESOLVEHOST;
@@ -99,7 +99,7 @@ public:
 		assert(!m_busy, "Resolver is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncDNS must be running before being operated on.");
 	}
-	body {
+	do {
 		return (cast(EventLoop)m_evLoop).resolveIP(url, 0, ipv6?isIPv6.yes:isIPv6.no);
 	}
 

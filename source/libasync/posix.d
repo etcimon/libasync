@@ -128,7 +128,7 @@ package:
 
 	bool init(EventLoop evl)
 	in { assert(!m_started); }
-	body
+	do
 	{
 
 		import core.atomic;
@@ -928,15 +928,15 @@ package:
 		while (true) {
 			auto err = recvmsg(fd, msg.header, 0);
 
-			.tracef("recvmsg system call on FD %d returned %d", fd, err);
+			static if (LOG) .tracef("recvmsg system call on FD %d returned %d", fd, err);
 			if (err == SOCKET_ERROR) {
 				m_error = lastError();
 
 				if (m_error == EPosix.EINTR) {
-					.tracef("recvmsg system call on FD %d was interrupted before any transfer occured", fd);
+					static if (LOG) .tracef("recvmsg system call on FD %d was interrupted before any transfer occured", fd);
 					continue;
 				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-					.tracef("recvmsg system call on FD %d would have blocked", fd);
+					static if (LOG) .tracef("recvmsg system call on FD %d would have blocked", fd);
 					m_status.code = Status.ASYNC;
 					return 0;
 				} else if (m_error == EBADF ||
@@ -951,7 +951,7 @@ package:
 					return 0;
 				}
 			} else {
-				.tracef("Received %d bytes on FD %d", err, fd);
+				static if (LOG) .tracef("Received %d bytes on FD %d", err, fd);
 				m_status.code = Status.OK;
 				return err;
 			}
@@ -961,21 +961,21 @@ package:
 	size_t sendMsg(in fd_t fd, NetworkMessage* msg) {
 		import libasync.internals.socket_compat : sendmsg;
 
-		.tracef("Send message on FD %d with size %d", fd, msg.header.msg_iov.iov_len);
+		static if (LOG) .tracef("Send message on FD %d with size %d", fd, msg.header.msg_iov.iov_len);
 		m_status = StatusInfo.init;
 
 		while (true) {
 			auto err = sendmsg(fd, msg.header, 0);
 
-			.tracef("sendmsg system call on FD %d returned %d", fd, err);
+			static if (LOG) .tracef("sendmsg system call on FD %d returned %d", fd, err);
 			if (err == SOCKET_ERROR) {
 				m_error = lastError();
 
 				if (m_error == EPosix.EINTR) {
-					.tracef("sendmsg system call on FD %d was interrupted before any transfer occured", fd);
+					static if (LOG) .tracef("sendmsg system call on FD %d was interrupted before any transfer occured", fd);
 					continue;
 				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-					.tracef("sendmsg system call on FD %d would have blocked", fd);
+					static if (LOG) .tracef("sendmsg system call on FD %d would have blocked", fd);
 					m_status.code = Status.ASYNC;
 					return 0;
 				} else if (m_error == ECONNRESET ||
@@ -996,7 +996,7 @@ package:
 					return 0;
 				}
 			} else {
-				.tracef("Sent %d bytes on FD %d", err, fd);
+				static if (LOG) .tracef("Sent %d bytes on FD %d", err, fd);
 				m_status.code = Status.OK;
 				return err;
 			}
@@ -1680,7 +1680,7 @@ package:
 		 debug import libasync.internals.validator : validateHost;
 		 debug assert(validateHost(host), "Trying to connect to an invalid domain");
 		 }
-		body */{
+		do */{
 		import libasync.internals.socket_compat : addrinfo;
 		addrinfo hints;
 		return getAddressInfo(host, port, ipv6, tcp, hints);
@@ -1829,15 +1829,15 @@ private:
 		while (true) {
 			auto err = recv(fd, &buffer, 1, MSG_PEEK);
 
-			.tracef("recv system call on FD %d returned %d", fd, err);
+			static if (LOG) .tracef("recv system call on FD %d returned %d", fd, err);
 			if (err == SOCKET_ERROR) {
 				m_error = lastError();
 
 				if (m_error == EPosix.EINTR) {
-					.tracef("recv system call on FD %d was interrupted before any transfer occured", fd);
+					static if (LOG) .tracef("recv system call on FD %d was interrupted before any transfer occured", fd);
 					continue;
 				} else if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN) {
-					.tracef("recv system call on FD %d would have blocked", fd);
+					static if (LOG) .tracef("recv system call on FD %d would have blocked", fd);
 					m_status.code = Status.ASYNC;
 					socket.readBlocked = true;
 					return false;
@@ -1853,7 +1853,7 @@ private:
 					return false;
 				}
 			} else {
-				.tracef("Received %d bytes on FD %d", err, fd);
+				static if (LOG) .tracef("Received %d bytes on FD %d", err, fd);
 				m_status.code = Status.OK;
 				if (socket.connectionOriented && !err) {
 					socket.readBlocked = true;
@@ -1875,7 +1875,7 @@ private:
 	bool attemptMessageReception(AsyncSocket socket, NetworkMessage* msg)
 	in {
 		assert(socket.connectionOriented && !msg.receivedAll || !msg.receivedAny, "Message already received");
-	} body {
+	} do {
 		bool received;
 		size_t recvCount = void;
 
@@ -1911,7 +1911,7 @@ private:
 	 */
 	bool attemptMessageTransmission(AsyncSocket socket, NetworkMessage* msg)
 	in { assert(!msg.sent, "Message already sent"); }
-	body {
+	do {
 		size_t sentCount = void;
 
 		do {
@@ -2724,7 +2724,7 @@ private:
 	in {
 		assert(ctxt.local !is NetworkAddress.init);
 	}
-	body {
+	do {
 		import libasync.internals.socket_compat : bind, listen, SOMAXCONN;
 		fd_t err;
 
@@ -2796,7 +2796,7 @@ private:
 	in {
 		assert(ctxt.peer.port != 0, "Connecting to an invalid port");
 	}
-	body {
+	do {
 
 		fd_t err;
 

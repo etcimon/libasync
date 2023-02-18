@@ -21,10 +21,10 @@ private:
 	shared Mutex m_mutex;
 
 	void lock() @trusted const nothrow
-	{ assumeWontThrow((m_mutex).lock()); }
+	{ assumeWontThrow((cast()this).m_mutex.lock()); }
 
 	void unlock() @trusted const nothrow
-	{ assumeWontThrow((m_mutex).unlock()); }
+	{ assumeWontThrow((cast()this).m_mutex.unlock()); }
 
 public:
 
@@ -33,7 +33,7 @@ public:
 	in {
 		assert(evl !is null);
 	}
-	body {
+	do {
 		m_evLoop = cast(shared) evl;
 		import core.thread : Thread;
 		m_owner = cast(shared) Thread.getThis();
@@ -70,7 +70,7 @@ public:
 	in {
 		debug assert(Thread.getThis() is cast(Thread)m_owner);
 	}
-	body {
+	do {
 		lock();
 		scope (exit) unlock();
 
@@ -88,7 +88,7 @@ public:
 	in {
 		debug assert(Thread.getThis() is cast(Thread)m_owner);
 	}
-	body {
+	do {
 		return (cast(EventLoop)m_evLoop).kill(cast(shared AsyncSignal) this);
 	}
 

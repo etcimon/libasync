@@ -19,7 +19,7 @@ public:
 	///
 	this(EventLoop evl, fd_t preInitializedSocket = fd_t.init)
 	in { assert(evl !is null); }
-	body {
+	do {
 		m_evLoop = evl;
 		m_preInitializedSocket = preInitializedSocket;
 	}
@@ -36,14 +36,14 @@ public:
 	/// Grants broadcast permissions to the socket (must be set before run).
 	bool broadcast(bool b)
 	in { assert(m_socket != fd_t.init, "Cannot change state on unbound UDP socket"); }
-	body {
+	do {
 		return m_evLoop.broadcast(m_socket, b);
 	}
 
 	/// Sets the hostname and port to which the UDP socket must be bound locally.
 	typeof(this) host(string hostname, size_t port)
 	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
-	body
+	do
 	{
 		m_local = m_evLoop.resolveHost(hostname, cast(ushort) port);
 		return this;
@@ -52,7 +52,7 @@ public:
 	/// Sets the IP and port to which the UDP socket will be bound locally.
 	typeof(this) ip(string ip, size_t port)
 	in { assert(m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
-	body {
+	do {
 		m_local = m_evLoop.resolveIP(ip, cast(ushort) port);
 		return this;
 	}
@@ -63,7 +63,7 @@ public:
 		assert(l != NetworkAddress.init, "The local address is empty");
 		assert(m_socket == fd_t.init, "Cannot rebind an UDP socket");
 	}
-	body {
+	do {
 		m_local = l;
 	}
 
@@ -79,7 +79,7 @@ public:
 
 	private bool run(UDPHandler del)
 	in { assert(m_local != NetworkAddress.init && m_socket == fd_t.init, "Cannot rebind an UDP socket"); }
-	body {
+	do {
 		m_socket = m_evLoop.run(this, del);
 		if (m_socket == fd_t.init)
 			return false;
@@ -105,7 +105,7 @@ public:
 	/// Cleans up the resources associated with this object in the underlying OS.
 	bool kill()
 	in { assert(m_socket != fd_t.init); }
-	body {
+	do {
 		return m_evLoop.kill(this);
 	}
 

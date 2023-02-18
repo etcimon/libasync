@@ -465,7 +465,7 @@ package:
 		version (Posix) assert(!m_receiveContinuously || m_pendingReceives.empty, "Cannot receive message manually while receiving continuously");
 		assert(m_connectionOriented || !exact, "Connectionless datagram sockets must receive one datagram at a time");
 		assert(!message || message.m_buffer.length > 0, "Only zero byte receives may refrain from providing a non-empty message buffer");
-	} body {
+	} do {
 		auto request = assumeWontThrow(AsyncReceiveRequest.alloc(this, message, onReceive, exact));
 		m_evLoop.submitRequest(request);
 	}
@@ -485,7 +485,7 @@ package:
 		assert(!m_connectionOriented || !message.hasAddress, "Connected peer is already known through .remoteAddress");
 		assert(m_connectionOriented || message.hasAddress || assumeWontThrow({ remoteAddress; return true; }().ifThrown(false)), "Remote address required");
 		assert(onSend !is null, "Completion callback required");
-	} body {
+	} do {
 		auto request = AsyncSendRequest.alloc(this, message, onSend);
 		m_evLoop.submitRequest(request);
 	}
@@ -503,7 +503,7 @@ public:
 	in {
 		assert(evLoop !is EventLoop.init);
 		if (handle != INVALID_SOCKET) assert(handle.isSocket);
-	} body {
+	} do {
 		m_evLoop = evLoop;
 		m_preInitializedSocket = handle;
 		m_info = SocketInfo(domain, type, protocol);
@@ -587,7 +587,7 @@ public:
 	/// Sets this socket's $(D OnConnect) callback.
 	@property void onConnect(OnConnect onConnect) @safe pure @nogc
 	in { assert(m_connectionOriented); }
-	body { m_onConnect = onConnect; }
+	do { m_onConnect = onConnect; }
 
 	/**
 	 * Type of callback triggered when a connection-oriented, active socket completes disconnects.
@@ -598,7 +598,7 @@ public:
 	/// Sets this socket's $(D OnClose) callback.
 	@property void onClose(OnClose onClose) @safe pure @nogc
 	in { assert(m_connectionOriented); }
-	body { m_onClose = onClose; }
+	do { m_onClose = onClose; }
 
 	/**
 	 * Type of callback triggered when a socker error occured.
@@ -614,7 +614,7 @@ public:
 	/// registers the event handler in the underlying OS event loop.
 	bool run()
 	in { assert(m_socket == INVALID_SOCKET); }
-	body {
+	do {
 		m_socket = m_evLoop.run(this);
 		return m_socket != INVALID_SOCKET;
 	}
@@ -675,7 +675,7 @@ public:
 		assert(alive, "Cannot accept on an unrun / killed socket");
 		assert(m_connectionOriented && m_passive, "Can only accept on connection-oriented, passive sockets");
 	}
-	body {
+	do {
 		auto request = AsyncAcceptRequest.alloc(this, INVALID_SOCKET, onAccept);
 		m_evLoop.submitRequest(request);
 	}
@@ -693,7 +693,7 @@ public:
 	@property void receiveContinuously(bool toggle) @safe pure
 	in {
 		version (Posix) assert(m_pendingReceives.empty, "Cannot start/stop receiving continuously when there are still pending receive requests");
-	} body {
+	} do {
 		if (m_receiveContinuously == toggle) return;
 		m_receiveContinuously = toggle;
 	}
@@ -737,7 +737,7 @@ public:
 	void receive(AsyncReceiveRequest.OnDataAvailable onReceive)
 	in {
 		assert(!m_receiveContinuously, "Continuous receiving and zero byte receives may not be mixed");
-	} body {
+	} do {
 		receiveMessage(null,
 		               AsyncReceiveRequest.OnComplete(onReceive),
 		               false);
@@ -855,7 +855,7 @@ struct NetworkAddress
 	in {
 		assert(addrlen <= sockaddr_storage.sizeof,
 			   "POSIX.1-2013 requires sockaddr_storage be able to store any socket address");
-	} body {
+	} do {
 		import std.algorithm : copy;
 		copy((cast(ubyte*) addr)[0 .. addrlen],
 			 (cast(ubyte*) &addr_storage)[0 .. addrlen]);
@@ -921,16 +921,16 @@ struct NetworkAddress
 
 	@property inout(sockaddr_in)* sockAddrInet4() inout pure nothrow
 	in { assert (family == AF_INET); }
-	body { return &addr_ip4; }
+	do { return &addr_ip4; }
 
 	@property inout(sockaddr_in6)* sockAddrInet6() inout pure nothrow
 	in { assert (family == AF_INET6); }
-	body { return &addr_ip6; }
+	do { return &addr_ip6; }
 
 	version (Posix)
 	@property inout(sockaddr_un)* sockAddrUnix() inout pure nothrow
 	in { assert (family == AF_UNIX); }
-	body { return &addr_un; }
+	do { return &addr_un; }
 
 	/** Returns a string representation of the IP address
 	*/

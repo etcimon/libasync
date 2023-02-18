@@ -78,7 +78,7 @@ package:
 	}
 	bool init(EventLoop evl)
 	in { assert(!m_started); }
-	body
+	do
 	{
 		try if (!gs_mtx)
 			gs_mtx = new Mutex; catch (Throwable) {}
@@ -215,7 +215,7 @@ package:
 		assert(Fiber.getThis() is null);
 		assert(m_started);
 	}
-	body {
+	do {
 		DWORD msTimeout;
 
 		if (timeout == -1.seconds)
@@ -460,7 +460,7 @@ package:
 		assert(ctxt.socket == fd_t.init);
 		assert(ctxt.peer.family != AF_UNSPEC);
 	}
-	body {
+	do {
 		m_status = StatusInfo.init;
 		fd_t fd = ctxt.preInitializedSocket;
 
@@ -1375,7 +1375,7 @@ package:
 
 		int err = void;
 		if (!request.message) {
-			.tracef("WSARecv on FD %s with zero byte buffer", socket.handle);
+			static if (LOG) .tracef("WSARecv on FD %s with zero byte buffer", socket.handle);
 			WSABUF buffer;
 			DWORD flags;
 			err = WSARecv(socket.handle,
@@ -1386,7 +1386,7 @@ package:
 			              cast(const(WSAOVERLAPPEDX*)) overlapped,
 			              cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedReceiveComplete);
 		} else if (request.message.name) {
-			.tracef("WSARecvFrom on FD %s with buffer size %s",
+			static if (LOG) .tracef("WSARecvFrom on FD %s with buffer size %s",
 			        socket.handle, request.message.header.msg_iov.len);
 			err = WSARecvFrom(socket.handle,
 			                  request.message.buffers,
@@ -1398,7 +1398,7 @@ package:
 			                  cast(const(WSAOVERLAPPEDX*)) overlapped,
 			                  cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedReceiveComplete);
 		} else {
-			.tracef("WSARecv on FD %s with buffer size %s",
+			static if (LOG) .tracef("WSARecv on FD %s with buffer size %s",
 			        socket.handle, request.message.header.msg_iov.len);
 			err = WSARecv(socket.handle,
 			              request.message.buffers,
@@ -1444,7 +1444,7 @@ package:
 
 		int err = void;
 		if (request.message.name) {
-			.tracef("WSASendTo on FD %s for %s with buffer size %s",
+			static if (LOG) .tracef("WSASendTo on FD %s for %s with buffer size %s",
 			        socket.handle,
 			        NetworkAddress(request.message.name, request.message.header.msg_namelen),
 			        request.message.header.msg_iov.len);
@@ -1458,7 +1458,7 @@ package:
 		                    cast(const(WSAOVERLAPPEDX*)) overlapped,
 		                    cast(LPWSAOVERLAPPED_COMPLETION_ROUTINEX) &onOverlappedSendComplete);
 		} else {
-			.tracef("WSASend on FD %s with buffer size %s", socket.handle, request.message.header.msg_iov.len);
+			static if (LOG) .tracef("WSASend on FD %s with buffer size %s", socket.handle, request.message.header.msg_iov.len);
 			err = WSASend(socket.handle,
 		                    request.message.buffers,
 		                    cast(DWORD) request.message.bufferCount,
@@ -1720,7 +1720,7 @@ package:
 		debug import libasync.internals.validator : validateHost;
 		debug assert(validateHost(host), "Trying to connect to an invalid domain");
 	}
-	body */{
+	do */{
 		m_status = StatusInfo.init;
 		import std.conv : to;
 		NetworkAddress addr;
@@ -2152,7 +2152,7 @@ private:
 		assert(m_threadId == GetCurrentThreadId());
 		assert(ctxt.local !is NetworkAddress.init);
 	}
-	body {
+	do {
 		INT err;
 		if (!reusing) {
 			err = .bind(fd, ctxt.local.sockAddr, ctxt.local.sockAddrLen);
@@ -2182,7 +2182,7 @@ private:
 		assert(ctxt.peer !is NetworkAddress.init);
 		assert(ctxt.peer.port != 0, "Connecting to an invalid port");
 	}
-	body {
+	do {
 		INT err;
 		NetworkAddress bind_addr;
 		bind_addr.family = ctxt.peer.family;
@@ -2600,7 +2600,7 @@ nothrow extern(System)
 {
 	void onOverlappedReceiveComplete(error_t error, DWORD recvCount, AsyncOverlapped* overlapped, DWORD flags)
 	{
-		.tracef("onOverlappedReceiveComplete: error: %s, recvCount: %s, flags: %s", error, recvCount, flags);
+		static if (LOG) .tracef("onOverlappedReceiveComplete: error: %s, recvCount: %s, flags: %s", error, recvCount, flags);
 
 		auto request = overlapped.receive;
 
@@ -2652,7 +2652,7 @@ nothrow extern(System)
 
 	void onOverlappedSendComplete(error_t error, DWORD sentCount, AsyncOverlapped* overlapped, DWORD flags)
 	{
-		.tracef("onOverlappedSendComplete: error: %s, sentCount: %s, flags: %s", error, sentCount, flags);
+		static if (LOG) .tracef("onOverlappedSendComplete: error: %s, sentCount: %s, flags: %s", error, sentCount, flags);
 
 		auto request = overlapped.send;
 

@@ -23,7 +23,7 @@ public:
 	in {
 		assert(evl !is null && ev_id > 0);
 	}
-	body {
+	do {
 		m_evLoop = evl;
 		import core.thread : Thread;
 		m_owner = Thread.getThis();
@@ -52,7 +52,7 @@ public:
 	in {
 		debug assert(Thread.getThis() is cast(Thread)m_owner);
 	}
-	body {
+	do {
 
 		EventHandler handler;
 		handler.del = del;
@@ -73,7 +73,7 @@ public:
 	/// Removes the event from the event loop, closing the file descriptor if necessary,
 	/// and cleans up the underlying resources.
 	bool kill(bool forced = false)
-	body {
+	do {
 		scope(exit) m_evId = 0;
 		return m_evLoop.kill(this, forced);
 	}

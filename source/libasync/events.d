@@ -7,7 +7,6 @@ import core.thread;
 import std.container : Array;
 import std.datetime : Duration;
 import std.typecons : Flag;
-import libasync.internals.memory : FreeListObjectAlloc;
 
 public import libasync.types;
 public import libasync.bufferedtcp;

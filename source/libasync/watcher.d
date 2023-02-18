@@ -25,7 +25,7 @@ public:
 	///
 	this(EventLoop evl)
 	in { assert(evl !is null); }
-	body { m_evLoop = evl; }
+	do { m_evLoop = evl; }
 
 	mixin DefStatus;
 
@@ -133,7 +133,7 @@ public:
 	/// Cleans up underlying resources.
 	bool kill()
 	in { assert(m_fd != fd_t.init); }
-	body {
+	do {
 		return m_evLoop.kill(this);
 	}
 

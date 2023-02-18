@@ -23,7 +23,7 @@ public:
 	///
 	this(EventLoop evl)
 	in { assert(evl !is null); }
-	body { m_evLoop = evl; }
+	do { m_evLoop = evl; }
 
 	mixin DefStatus;
 
@@ -44,7 +44,7 @@ public:
 	/// after it is killed (periodic).
 	typeof(this) periodic(bool b = true)
 	in { assert(m_timerId == 0 || m_oneshot); }
-	body
+	do
 	{
 		m_oneshot = !b;
 		return this;
@@ -66,7 +66,7 @@ public:
 		// assert(m_shooting);
 		assert(m_oneshot, "Cannot rearm a periodic timer, it must fist be killed.");
 	}
-	body {
+	do {
 		m_rearmed = true;
 
 		m_timerId = m_evLoop.run(this, m_evh, dur);
@@ -84,7 +84,7 @@ public:
 		assert(m_timeout > 0.seconds);
 		assert(m_oneshot || !m_timerId, "Cannot rearm a periodic timer, it must fist be killed.");
 	}
-	body {
+	do {
 		TimerHandler handler;
 		handler.del = del;
 		handler.ctxt = this;

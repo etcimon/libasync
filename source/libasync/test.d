@@ -5,6 +5,7 @@ import std.stdio;
 import std.datetime;
 import libasync.file;
 import std.conv : to;
+import std.datetime.stopwatch;
 import core.stdc.stdlib : getenv;
 import std.string : fromStringz, toStringz;
 
@@ -66,7 +67,7 @@ void testDNS() {
 	g_swDns.start();
 	g_dns.handler((NetworkAddress addr) {
 		g_cbCheck[17] = true;
-		writeln("Resolved to: ", addr.toString(), ", it took: ", g_swDns.peek().usecs, " usecs");
+		writeln("Resolved to: ", addr.toString(), ", it took: ", g_swDns.peek().total!"usecs", " usecs");
 	}).resolveHost("httpbin.org", false, true);
 }
 

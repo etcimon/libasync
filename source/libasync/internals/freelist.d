@@ -45,11 +45,11 @@ public:
 			static if (Args.length > 0) {
 				emplace!(T)(obj, args);
 			}
-			.tracef(T.stringof ~ ".FreeList.alloc: Pulled %s", obj);
+			static if (LOG) .tracef(T.stringof ~ ".FreeList.alloc: Pulled %s", obj);
 		// Otherwise, allocate a new instance.
 		} else {
 			obj = assumeWontThrow(ThreadMem.alloc!T(args));
-			.tracef(T.stringof ~ ".FreeList.alloc: Allocated %s", obj);
+			static if (LOG) .tracef(T.stringof ~ ".FreeList.alloc: Allocated %s", obj);
 		}
 
 		return obj;
@@ -62,16 +62,16 @@ public:
 				obj.freelist.next = freelist.head;
 				freelist.head = obj;
 				freelist.count += 1;
-				.tracef(T.stringof ~ ".FreeList.free: Pushed %s", obj);
+				static if (LOG) .tracef(T.stringof ~ ".FreeList.free: Pushed %s", obj);
 			} else {
-				.tracef(T.stringof ~ ".FreeList.free: Deallocating %s", obj);
+				static if (LOG) .tracef(T.stringof ~ ".FreeList.free: Deallocating %s", obj);
 				ThreadMem.free(obj);
 			}
 		} else {
 			obj.freelist.next = freelist.head;
 			freelist.head = obj;
 			freelist.count += 1;
-			.tracef(T.stringof ~ ".FreeList.free: Pushed %s", obj);
+			static if (LOG) .tracef(T.stringof ~ ".FreeList.free: Pushed %s", obj);
 		}
 	}
 }

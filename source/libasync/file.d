@@ -11,7 +11,6 @@ import libasync.internals.path;
 import libasync.threads;
 import std.file;
 import std.conv : to;
-import libasync.internals.memory;
 import libasync.internals.logging;
 
 /// Runs all blocking file I/O commands in a thread pool and calls the handler
@@ -99,7 +98,7 @@ public:
 		assert(!m_busy, "File is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
-	body {
+	do {
 		if (buffer.length == 0) {
 			try m_handler(); catch (Exception) { }
 			return true;
@@ -172,7 +171,7 @@ public:
 		assert(!m_busy, "File is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
-	body {
+	do {
 		if (buffer.length == 0) {
 			try m_handler(); catch (Exception) { return false; }
 			return true;
@@ -243,7 +242,7 @@ public:
 		assert(!m_busy, "File is busy or closed");
 		assert(m_handler.ctxt !is null, "AsyncFile must be run before being operated on.");
 	}
-	body {
+	do {
 		if (buffer.length == 0) {
 			try m_handler(); catch (Exception) { return false; }
 			return true;

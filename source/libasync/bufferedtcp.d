@@ -46,7 +46,7 @@ final class BufferedTCPConnection(size_t size = 4092)
     {
         assert(evl !is null);
     }
-    body
+    do
     {
         asyncConn = new AsyncTCPConnection(evl, preInitializedSocket);
 
@@ -65,7 +65,7 @@ final class BufferedTCPConnection(size_t size = 4092)
     {
         assert(conn !is null);
     }
-    body
+    do
     {
         asyncConn = conn;
 
@@ -187,7 +187,7 @@ final class BufferedTCPConnection(size_t size = 4092)
     {
         assert(isConnected, "No socket to operate on");
     }
-    body
+    do
     {
         uint cnt = asyncConn.recv(workBuffer);
         if (cnt > 0)
@@ -203,7 +203,7 @@ final class BufferedTCPConnection(size_t size = 4092)
     {
         assert(isConnected, "No socket to operate on");
     }
-    body
+    do
     {
         copy(writeBuffer[], workBuffer);
         return asyncConn.send(workBuffer[0..writeBuffer.length].array);
@@ -218,7 +218,7 @@ final class BufferedTCPConnection(size_t size = 4092)
     {
         assert(isConnected);
     }
-    body
+    do
     {
         bool ret = asyncConn.kill(forced);
         return ret;

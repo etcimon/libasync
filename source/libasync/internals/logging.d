@@ -1,6 +1,7 @@
 module libasync.internals.logging;
 
-import std.experimental.logger;
+import libasync.types;
+import std.logger;
 
 nothrow:
 // The below is adapted for nothrow from
@@ -15,10 +16,9 @@ template defaultLogFunction(LogLevel ll)
         string moduleName = __MODULE__, A...)(lazy A args) @trusted
         if ((args.length > 0 && !is(Unqual!(A[0]) : bool)) || args.length == 0)
     {
-        static if (isLoggingActiveAt!ll && ll >= moduleLogLevel!moduleName)
+        static if (ll >= LOGLEVEL)
         {
-            try stdThreadLocalLog.memLogFunctions!(ll).logImpl!(line, file, funcName,
-                prettyFuncName, moduleName)(args);
+            try stdThreadLocalLog.log!(line, file, funcName, prettyFuncName, moduleName)("", args);
             catch (Throwable e) {}
         }
     }
@@ -28,10 +28,9 @@ template defaultLogFunction(LogLevel ll)
         string prettyFuncName = __PRETTY_FUNCTION__,
         string moduleName = __MODULE__, A...)(lazy bool condition, lazy A args) @trusted
     {
-        static if (isLoggingActiveAt!ll && ll >= moduleLogLevel!moduleName)
+        static if (ll >= LOGLEVEL)
         {
-            try stdThreadLocalLog.memLogFunctions!(ll).logImpl!(line, file, funcName,
-                prettyFuncName, moduleName)(condition, args);
+            try log!(line, file, funcName, prettyFuncName, moduleName)(condition, args);
             catch (Throwable e) {}
         }
     }
@@ -50,10 +49,9 @@ template defaultLogFunctionf(LogLevel ll)
         string prettyFuncName = __PRETTY_FUNCTION__,
         string moduleName = __MODULE__, A...)(lazy string msg, lazy A args) @trusted
     {
-        static if (isLoggingActiveAt!ll && ll >= moduleLogLevel!moduleName)
+        static if (ll >= LOGLEVEL)
         {
-            try stdThreadLocalLog.memLogFunctions!(ll).logImplf!(line, file, funcName,
-                prettyFuncName, moduleName)(msg, args);
+            try logf!(line, file, funcName, prettyFuncName, moduleName)(msg, args);
             catch (Throwable e) {}
         }
     }
@@ -63,10 +61,9 @@ template defaultLogFunctionf(LogLevel ll)
         string prettyFuncName = __PRETTY_FUNCTION__,
         string moduleName = __MODULE__, A...)(lazy bool condition, lazy string msg, lazy A args) @trusted
     {
-        static if (isLoggingActiveAt!ll && ll >= moduleLogLevel!moduleName)
+        static if (ll >= LOGLEVEL)
         {
-            try stdThreadLocalLog.memLogFunctions!(ll).logImplf!(line, file, funcName,
-                prettyFuncName, moduleName)(condition, msg, args);
+            try logf!(line, file, funcName, prettyFuncName, moduleName)(condition, msg, args);
             catch (Throwable e) {}
         }
     }

@@ -25,7 +25,7 @@ public:
 	///
 	this(EventLoop evl, fd_t preInitializedSocket = fd_t.init)
 	in { assert(evl !is null); }
-	body {
+	do {
 		m_evLoop = evl;
 		m_preInitializedSocket = preInitializedSocket;
 	}
@@ -54,7 +54,7 @@ public:
 	/// Changes the default OS configurations for this underlying TCP Socket.
 	bool setOption(T)(TCPOption op, in T val)
 	in { assert(isConnected, "No socket to operate on"); }
-	body {
+	do {
 		return m_evLoop.setOption(m_socket, op, val);
 	}
 
@@ -71,7 +71,7 @@ public:
 	in {
 		assert(isConnected && m_peer != NetworkAddress.init, "Cannot get local address from a non-connected socket");
 	}
-	body {
+	do {
 		return m_evLoop.localAddr(m_socket, m_peer.ipv6);
 	}
 
@@ -81,7 +81,7 @@ public:
 		assert(!isConnected, "Cannot change remote address on a connected socket");
 		assert(addr != NetworkAddress.init);
 	}
-	body {
+	do {
 		m_peer = addr;
 	}
 
@@ -91,7 +91,7 @@ public:
 	in {
 		assert(!isConnected, "Cannot change remote address on a connected socket");
 	}
-	body {
+	do {
 		m_peer = m_evLoop.resolveHost(hostname, cast(ushort) port);
 		return this;
 	}
@@ -101,7 +101,7 @@ public:
 	in {
 		assert(!isConnected, "Cannot change remote address on a connected socket");
 	}
-	body {
+	do {
 		m_peer = m_evLoop.resolveIP(ip, cast(ushort) port);
 		return this;
 	}
@@ -118,7 +118,7 @@ public:
 	///
 	bool run(TCPEventHandler del)
 	in { assert(!isConnected); }
-	body {
+	do {
 		m_socket = m_evLoop.run(this, del);
 		if (m_socket == 0)
 			return false;
@@ -131,7 +131,7 @@ public:
 	final pragma(inline, true)
 	uint recv(ref ubyte[] ub)
 	//in { assert(isConnected, "No socket to operate on"); }
-	//body
+	//do
 	{
 		return m_evLoop.recv(m_socket, ub);
 	}
@@ -140,7 +140,7 @@ public:
 	final pragma(inline, true)
 	uint send(in ubyte[] ub)
 	//in { assert(isConnected, "No socket to operate on"); }
-	//body
+	//do
 	{
 		uint ret = m_evLoop.send(m_socket, ub);
 		version(Posix)
@@ -153,7 +153,7 @@ public:
 	/// cleans up the underlying resources.
 	bool kill(bool forced = false)
 	in { assert(isConnected); }
-	body {
+	do {
 		bool ret = m_evLoop.kill(this, forced);
 		scope(exit) m_socket = 0;
 		return ret;
@@ -209,7 +209,7 @@ public:
 	/// Sets the default value for nagle's algorithm on new connections.
 	@property void noDelay(bool b)
 	in { assert(!m_started, "Cannot set noDelay on a running object."); }
-	body {
+	do {
 		m_noDelay = b;
 	}
 
@@ -222,14 +222,14 @@ public:
 	/// Sets the local internet address as an OS-specific structure.
 	@property void local(NetworkAddress addr)
 	in { assert(!m_started, "Cannot rebind a listening socket"); }
-	body {
+	do {
 		m_local = addr;
 	}
 
 	/// Sets the local listening interface to the specified hostname/port.
 	typeof(this) host(string hostname, size_t port)
 	in { assert(!m_started, "Cannot rebind a listening socket"); }
-	body {
+	do {
 		m_local = m_evLoop.resolveHost(hostname, cast(ushort) port);
 		return this;
 	}
@@ -237,7 +237,7 @@ public:
 	/// Sets the local listening interface to the specified ip/port.
 	typeof(this) ip(string ip, size_t port)
 	in { assert(!m_started, "Cannot rebind a listening socket"); }
-	body {
+	do {
 		m_local = m_evLoop.resolveIP(ip, cast(ushort) port);
 		return this;
 	}
@@ -254,7 +254,7 @@ public:
 	in {
 		assert(m_local != NetworkAddress.init, "Cannot bind without an address. Please run .host() or .ip()");
 	}
-	body {
+	do {
 		m_socket = m_evLoop.run(this, del);
 		if (m_socket == fd_t.init)
 			return false;
@@ -274,7 +274,7 @@ public:
 	/// Stops accepting connections and cleans up the underlying OS resources.
 	bool kill()
 	in { assert(m_socket != 0); }
-	body {
+	do {
 		bool ret = m_evLoop.kill(this);
 		if (ret)
 			m_started = false;

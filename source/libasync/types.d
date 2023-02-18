@@ -1,6 +1,8 @@
 ﻿module libasync.types;
 package:
+import std.logger.core : LogLevel;
 enum LOG = false; //trace
+enum LOGLEVEL = LogLevel.off;
 enum DEBUG = false;
 
 import std.typecons: Flag;

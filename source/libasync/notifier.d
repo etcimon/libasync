@@ -22,7 +22,7 @@ public:
 	in {
 		assert(evl !is null);
 	}
-	body {
+	do {
 		m_evLoop = evl;
 	}
 

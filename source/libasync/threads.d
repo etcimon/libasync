@@ -8,7 +8,7 @@ import libasync.internals.logging;
 bool spawnAsyncThreads(uint threadCount = totalCPUs > 1 ? totalCPUs - 1 : 1) nothrow
 in {
 	assert(threadCount >= 1, "Need at least one worker thread");
-} body {
+} do {
 	try defaultPoolThreads(threadCount);
 	catch (Exception e) {
 		critical("Failed to spawn worker threads: ", e.toString());
