@@ -32,8 +32,14 @@ environment:
     DVersion: stable
     arch: x64
   - DC: ldc
+    DVersion: stable
+    arch: x86
+  - DC: ldc
     DVersion: 1.8.0
     arch: x64
+  - DC: ldc
+    DVersion: 1.8.0
+    arch: x86
 
 skip_tags: false
 branches:
@@ -62,17 +68,18 @@ install:
   - ps: function ResolveLatestLDC
         {
             $version = $env:DVersion;
+            $arch = $env:arch;
             if($version -eq "stable") {
                 $latest = (Invoke-WebRequest "https://ldc-developers.github.io/LATEST").toString().replace("`n","").replace("`r","");
-                $url = "https://github.com/ldc-developers/ldc/releases/download/v$($latest)/ldc2-$($latest)-windows-x64.7z";
+                $url = "https://github.com/ldc-developers/ldc/releases/download/v$($latest)/ldc2-$($latest)-windows-$($arch).7z";
             }elseif($version -eq "beta") {
                 $latest = (Invoke-WebRequest "https://ldc-developers.github.io/LATEST_BETA").toString().replace("`n","").replace("`r","");
-                $url = "https://github.com/ldc-developers/ldc/releases/download/v$($latest)/ldc2-$($latest)-windows-x64.7z";
+                $url = "https://github.com/ldc-developers/ldc/releases/download/v$($latest)/ldc2-$($latest)-windows-$($arch).7z";
             } else {
                 $latest = $version;
-                $url = "https://github.com/ldc-developers/ldc/releases/download/v$($version)/ldc2-$($version)-windows-x64.7z";
+                $url = "https://github.com/ldc-developers/ldc/releases/download/v$($version)/ldc2-$($version)-windows-$($arch).7z";
             }
-            $env:PATH += ";C:\ldc2-$($latest)-windows-x64\bin";
+            $env:PATH += ";C:\ldc2-$($latest)-windows-$($arch)\bin";
             $env:DC = "ldc2";
             return $url;
         }

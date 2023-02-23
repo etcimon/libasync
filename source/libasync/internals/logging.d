@@ -1,7 +1,6 @@
 module libasync.internals.logging;
 
 import libasync.types;
-pragma(msg, __VERSION__);
 static if (__VERSION__ < 2103){
     import std.experimental.logger;
 }
