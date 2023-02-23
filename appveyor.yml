@@ -20,18 +20,6 @@ environment:
     DVersion: stable
     arch: x86
   - DC: dmd
-    DVersion: 2.072.0
-    arch: x64
-  - DC: dmd
-    DVersion: 2.072.0
-    arch: x86
-  - DC: dmd
-    DVersion: 2.074.0
-    arch: x64
-  - DC: dmd
-    DVersion: 2.074.0
-    arch: x86
-  - DC: dmd
     DVersion: 2.076.0
     arch: x64
   - DC: dmd
@@ -58,15 +46,15 @@ install:
             $version = $env:DVersion;
             if($version -eq "stable") {
                 $latest = (Invoke-WebRequest "http://downloads.dlang.org/releases/LATEST").toString();
-                $url = "http://downloads.dlang.org/releases/2.x/$($latest)/dmd.$($latest).windows.7z";
+                $url = "https://downloads.dlang.org/releases/2.x/$($latest)/dmd.$($latest).windows.7z";
             }elseif($version -eq "beta") {
                 $latest = (Invoke-WebRequest "http://downloads.dlang.org/pre-releases/LATEST").toString();
                 $latestVersion = $latest.split("-")[0].split("~")[0];
-                $url = "http://downloads.dlang.org/pre-releases/2.x/$($latestVersion)/dmd.$($latest).windows.7z";
+                $url = "https://downloads.dlang.org/pre-releases/2.x/$($latestVersion)/dmd.$($latest).windows.7z";
             }elseif($version -eq "nightly") {
-                $url = "http://downloads.dlang.org/nightlies/dmd-master/dmd.master.windows.7z"
+                $url = "https://downloads.dlang.org/nightlies/dmd-master/dmd.master.windows.7z"
             }else {
-                $url = "http://downloads.dlang.org/releases/2.x/$($version)/dmd.$($version).windows.7z";
+                $url = "https://downloads.dlang.org/releases/2.x/$($version)/dmd.$($version).windows.7z";
             }
             $env:PATH += ";C:\dmd2\windows\bin;";
             return $url;
