@@ -1,6 +1,11 @@
 ﻿module libasync.types;
 package:
-import std.logger.core : LogLevel;
+static if (__VERSION__ < 2103){
+    import std.experimental.logger.core : LogLevel;
+}
+else {
+    import std.logger.core : LogLevel;
+}
 enum LOG = false; //trace
 enum LOGLEVEL = LogLevel.off;
 enum DEBUG = false;

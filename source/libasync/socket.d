@@ -898,7 +898,7 @@ struct NetworkAddress
 
 	/** A pointer to a sockaddr struct suitable for passing to socket functions.
 	 */
-	@property inout(sockaddr)* sockAddr() inout pure @safe @nogc nothrow { return &addr; }
+	@property inout(sockaddr)* sockAddr() inout pure @safe @nogc nothrow return { return &addr; }
 
 	/** Size of the sockaddr struct that is returned by sockAddr().
 	 */

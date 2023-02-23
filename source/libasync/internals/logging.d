@@ -1,7 +1,13 @@
 module libasync.internals.logging;
 
 import libasync.types;
-import std.logger;
+pragma(msg, __VERSION__);
+static if (__VERSION__ < 2103){
+    import std.experimental.logger;
+}
+else {
+    import std.logger;
+}
 
 nothrow:
 // The below is adapted for nothrow from

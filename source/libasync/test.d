@@ -5,7 +5,7 @@ import std.stdio;
 import std.datetime;
 import libasync.file;
 import std.conv : to;
-import std.datetime.stopwatch;
+import std.datetime.stopwatch : StopWatch;
 import core.stdc.stdlib : getenv;
 import std.string : fromStringz, toStringz;
 
