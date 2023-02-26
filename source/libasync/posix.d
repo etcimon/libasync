@@ -298,6 +298,7 @@ package:
 		} else /* if KQUEUE */ {
 			import core.sys.posix.time : time_t;
 			import core.sys.posix.config : c_long;
+			import memutils.utils : allocArray;
 
 			static kevent_t[] events;
 			if (events.length == 0) {
@@ -1382,7 +1383,7 @@ package:
 						Array!fd_t remove_list; // keep track of unwatched folders recursively
 						Array!fd_t remove_file_list;
 						// search for subfolders and unset them / close their wd
-						foreach (ref const DWFolderInfo folder; m_dwFolders) {
+						foreach (const ref DWFolderInfo folder; m_dwFolders) {
 							if (folder.fd == fi.fd && folder.wi.path.startsWith(fi.wi.path)) {
 
 								if (!event_unset(folder.wi.wd))
