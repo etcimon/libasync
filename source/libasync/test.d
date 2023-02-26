@@ -251,7 +251,7 @@ void trafficHandler(TCPEvent ev){
 					g_cbCheck[8] = true;
 
 				if (res.canFind("Client WRITE"))
-					g_cbCheck[8] = false;
+					g_cbCheck[8] = true;
 
 				if (res.canFind("Client READ"))
 					g_cbCheck[9] = true;
