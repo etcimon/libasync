@@ -1577,7 +1577,7 @@ package:
 				}
 				if (cnt == changes.length)
 					changes.clear();
-				else if (cnt > 0) changes[] = (*changes)[cnt .. $];
+				else if (cnt > 0) (*changes)[] = (*changes)[cnt .. $];
 			}
 			catch (Exception e) {
 				setInternalError!"watcher.readChanges"(Status.ERROR, "Could not read directory changes: " ~ e.msg);
@@ -2037,7 +2037,7 @@ private:
 			foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles) {
 				if (file.folder != wd) continue; // skip those files in another folder than the evented one
 				bool found;
-				foreach (Path curr; currFiles) {
+				foreach (Path curr; currFiles[]) {
 					if (file.path == curr){
 						found = true;
 						break;
