@@ -298,11 +298,10 @@ package:
 		} else /* if KQUEUE */ {
 			import core.sys.posix.time : time_t;
 			import core.sys.posix.config : c_long;
-			import memutils.utils : allocArray;
 
 			static kevent_t[] events;
 			if (events.length == 0) {
-				try events = allocArray!kevent_t(manualAllocator(), 128);
+				try events = ThreadMem.alloc!(kevent_t[])(128);
 				catch (Exception e) { assert(false, "Could not allocate events array"); }
 			}
 		}
