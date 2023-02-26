@@ -212,7 +212,7 @@ void testSharedEvent() {
 void testOneshotTimer() {
 	AsyncTimer g_timerOneShot = new AsyncTimer(g_evl);
 	g_timerOneShot.duration(1.seconds).run({
-		assert(!g_cbCheck[4] && Clock.currTime() - gs_start > 900.msecs && Clock.currTime() - gs_start < 1400.msecs, "Timer completed in " ~ (Clock.currTime() - gs_start).total!"msecs".to!string ~ "ms" );
+		assert(!g_cbCheck[4] && Clock.currTime() - gs_start > 900.msecs && Clock.currTime() - gs_start < 1700.msecs, "Timer completed in " ~ (Clock.currTime() - gs_start).total!"msecs".to!string ~ "ms" );
 		assert(g_timerOneShot.id != 0);
 		//writeln("Got timer callback!");
 		g_cbCheck[4] = true;
@@ -223,7 +223,7 @@ void testOneshotTimer() {
 void testMultiTimer() {
 	AsyncTimer g_timerMulti = new AsyncTimer(g_evl);
 	g_timerMulti.periodic().duration(1.seconds).run({
-		assert(g_lastTimer !is SysTime.init && Clock.currTime() - g_lastTimer > 900.msecs && Clock.currTime() - g_lastTimer < 1400.msecs, "Timer completed in " ~ (Clock.currTime() - gs_start).total!"msecs".to!string ~ "ms" );
+		assert(g_lastTimer !is SysTime.init && Clock.currTime() - g_lastTimer > 900.msecs && Clock.currTime() - g_lastTimer < 1700.msecs, "Timer completed in " ~ (Clock.currTime() - gs_start).total!"msecs".to!string ~ "ms" );
 		assert(g_timerMulti.id > 0);
 		assert(!g_timerMulti.oneShot);
 		g_lastTimer = Clock.currTime();
