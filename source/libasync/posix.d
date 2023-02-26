@@ -1378,7 +1378,7 @@ package:
 					removeFolder(fi.wi.wd);
 
 					if (fi.wi.recursive) {
-						import std.container.array;
+						import memutils.vector : Array;
 						Array!fd_t remove_list; // keep track of unwatched folders recursively
 						Array!fd_t remove_file_list;
 						// search for subfolders and unset them / close their wd
