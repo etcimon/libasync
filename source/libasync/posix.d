@@ -8,7 +8,7 @@ import std.conv : to;
 import std.datetime : Duration, msecs, seconds, SysTime;
 import std.traits : isIntegral;
 import std.typecons : Tuple, tuple;
-import std.container : Array;
+import memutils.vector : Array;
 import std.exception;
 
 import core.stdc.errno;
@@ -283,7 +283,6 @@ package:
 	bool loop(Duration timeout = 0.seconds)
 		//in { assert(Fiber.getThis() is null); }
 	{
-		import libasync.internals.memory;
 
 		int num = void;
 
@@ -1576,7 +1575,9 @@ package:
 					dst[i] = (*changes)[i];
 					i++;
 				}
-				changes.linearRemove((*changes)[0 .. cnt]);
+				if (cnt == changes.length)
+					changes.clear();
+				else if (cnt > 0) changes[] = (*changes)[cnt .. $];
 			}
 			catch (Exception e) {
 				setInternalError!"watcher.readChanges"(Status.ERROR, "Could not read directory changes: " ~ e.msg);
@@ -3079,7 +3080,7 @@ private:
 
 static if (!EPOLL)
 {
-	import std.container : Array;
+	import memutils.vector : Array;
 	import core.sync.mutex : Mutex;
 	import core.sync.rwmutex : ReadWriteMutex;
 	size_t g_evIdxCapacity;
@@ -3176,7 +3177,8 @@ static if (!EPOLL)
 			}
 
 			synchronized (gs_queueMutex.writer) {
-				gs_idxQueue[*g_threadId].linearRemove(gs_idxQueue[*g_threadId][0 .. len]);
+				if (len > 0)
+					gs_idxQueue[*g_threadId][] = gs_idxQueue[*g_threadId][len .. $];
 			}
 		}
 		catch (Exception e) {

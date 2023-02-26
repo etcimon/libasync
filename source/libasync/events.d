@@ -4,7 +4,7 @@ module libasync.events;
 import std.stdio;
 
 import core.thread;
-import std.container : Array;
+import memutils.vector : Array;
 import std.datetime : Duration;
 import std.typecons : Flag;
 

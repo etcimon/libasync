@@ -5,7 +5,7 @@ import libasync.types;
 
 import libasync.events;
 import libasync.internals.path;
-import std.container : Array;
+import memutils.vector : Array;
 import std.file;
 
 /// Watches one or more directories in the local filesystem for the specified events
@@ -113,8 +113,11 @@ public:
 
 				if (!m_evLoop.unwatch(m_fd, m_directories[idx].wd))
 					return false;
-
-				m_directories.linearRemove(m_directories[idx .. idx+1]);
+				typeof(m_directories) dirList;
+				dirList.reserve(m_directories.length - 1);
+				dirList[] = m_directories[0 .. idx];
+				dirList ~= m_directories[idx+1 .. $];
+				m_directories = dirList;
 				return true;
 			}
 			removeWatch(path);

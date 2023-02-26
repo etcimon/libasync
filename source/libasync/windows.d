@@ -5,7 +5,7 @@ version (Windows):
 import core.atomic;
 import core.thread : Fiber;
 import libasync.types;
-import std.container : Array;
+import memutils.vector : Array;
 import std.string : toStringz;
 import std.conv : to;
 import std.datetime : Duration, msecs, seconds;
@@ -951,7 +951,9 @@ package:
 				dst[i] = (*changes)[i];
 				i++;
 			}
-			changes.linearRemove((*changes)[0 .. cnt]);
+			if (cnt == changes.length)
+				changes.clear();
+			else if (cnt > 0) (*changes)[] = (*changes)[cnt .. $];
 		}
 		catch (Exception e) {
 			setInternalError!"watcher.readChanges"(Status.ERROR, "Could not read directory changes: " ~ e.msg);
