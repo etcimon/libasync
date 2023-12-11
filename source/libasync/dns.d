@@ -75,13 +75,17 @@ public:
 		assert(m_handler.ctxt !is null, "AsyncDNS must be running before being operated on.");
 	}
 	do {
-		if (force_async == true) {
-			try synchronized(m_cmdInfo.mtx) {
-				m_cmdInfo.command = DNSCmd.RESOLVEHOST;
-				m_cmdInfo.ipv6 = ipv6;
-				m_cmdInfo.url = cast(shared) url;
-			} catch (Exception) {}
-		} else {
+		version(Libasync_Threading)
+			if (force_async == true) {
+				synchronized(m_cmdInfo.mtx) {
+					m_cmdInfo.command = DNSCmd.RESOLVEHOST;
+					m_cmdInfo.ipv6 = ipv6;
+					m_cmdInfo.url = cast(shared) url;
+				}
+				return doOffThread({ process(this); });
+			} 
+			
+		{
 			m_cmdInfo.command = DNSCmd.RESOLVEHOST;
 			m_cmdInfo.ipv6 = ipv6;
 			m_cmdInfo.url = cast(shared) url;
@@ -90,7 +94,6 @@ public:
 			return true;
 		}
 
-		return doOffThread({ process(this); });
 	}
 
 	/// Returns an OS-specific NetworkAddress structure from the specified IP.

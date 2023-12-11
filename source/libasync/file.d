@@ -134,7 +134,20 @@ public:
 				file = tmp;
 				m_cmdInfo.command = FileCmd.READ;
 			}
-			if (buffer.length <= 65_536) {
+			
+			version(Libasync_Threading)
+				if (buffer.length > 65_536) {
+					synchronized(m_cmdInfo.mtx) {
+						m_cmdInfo.buffer = buffer;
+						m_cmdInfo.command = FileCmd.READ;
+						filePath = Path(file_path);
+					}
+					offset = off;
+
+					return doOffThread({ process(this); });
+				}
+
+			{
 				m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
 
 				if (off != -1)
@@ -154,14 +167,6 @@ public:
 			try m_handler(); catch (Exception) { }
 			return false;
 		}
-		try synchronized(m_cmdInfo.mtx) {
-			m_cmdInfo.buffer = buffer;
-			m_cmdInfo.command = FileCmd.READ;
-			filePath = Path(file_path);
-		} catch (Exception) {}
-		offset = off;
-
-		return doOffThread({ process(this); });
 	}
 
 	/// Writes the data from the buffer into the file at the specified path starting at the
@@ -209,16 +214,26 @@ public:
 				m_cmdInfo.command = FileCmd.WRITE;
 			}
 
-			if (buffer.length <= 65_536) {
-				m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
-				if (off != -1)
-					file.seek(cast(long)off);
-				file.rawWrite(cast(ubyte[])buffer);
-				file.flush();
-				m_cursorOffset = cast(shared(ulong)) (off + buffer.length);
-				m_handler();
-				return true;
-			}
+			version(Libasync_Threading)
+				if (buffer.length > 65_536) {
+					synchronized(m_cmdInfo.mtx) {
+						m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
+						m_cmdInfo.command = FileCmd.WRITE;
+						filePath = Path(file_path);
+					}
+					offset = off;
+
+					return doOffThread({ process(this); });
+				}
+
+			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
+			if (off != -1)
+				file.seek(cast(long)off);
+			file.rawWrite(cast(ubyte[])buffer);
+			file.flush();
+			m_cursorOffset = cast(shared(ulong)) (off + buffer.length);
+			m_handler();
+			return true;
 		} catch (Exception e) {
 			auto status = StatusInfo.init;
 			status.code = Status.ERROR;
@@ -226,14 +241,6 @@ public:
 			m_status = cast(shared) status;
 			return false;
 		}
-		try synchronized(m_cmdInfo.mtx) {
-			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
-			m_cmdInfo.command = FileCmd.WRITE;
-			filePath = Path(file_path);
-		} catch (Exception) {}
-		offset = off;
-
-		return doOffThread({ process(this); });
 	}
 
 	/// Appends the data from the buffer into a file at the specified path.
@@ -278,14 +285,24 @@ public:
 				file = tmp;
 				m_cmdInfo.command = FileCmd.APPEND;
 			}
-			if (buffer.length < 65_536) {
-				m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
-				file.rawWrite(cast(ubyte[]) buffer);
-				m_cursorOffset = cast(shared(ulong)) file.size();
-				file.flush();
-				m_handler();
-				return true;
-			}
+
+			version(Libasync_Threading)
+				if (buffer.length > 65_536) {
+					synchronized(m_cmdInfo.mtx) {
+						m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
+						m_cmdInfo.command = FileCmd.APPEND;
+						filePath = Path(file_path);
+					}
+
+					return doOffThread({ process(this); });
+				}
+
+			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
+			file.rawWrite(cast(ubyte[]) buffer);
+			m_cursorOffset = cast(shared(ulong)) file.size();
+			file.flush();
+			m_handler();
+			return true;
 		} catch (Exception e) {
 			auto status = StatusInfo.init;
 			status.code = Status.ERROR;
@@ -293,13 +310,6 @@ public:
 			m_status = cast(shared) status;
 			return false;
 		}
-		try synchronized(m_cmdInfo.mtx) {
-			m_cmdInfo.buffer = cast(shared(ubyte[])) buffer;
-			m_cmdInfo.command = FileCmd.APPEND;
-			filePath = Path(file_path);
-		} catch (Exception) {}
-
-		return doOffThread({ process(this); });
 	}
 
 package:

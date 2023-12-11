@@ -18,7 +18,7 @@ unittest {
 	cache_path = ".";
 	version(iOS) cache_path = getenv("HOME".toStringz).fromStringz.to!string ~ "/Library/Caches";
 
-	spawnAsyncThreads();
+	version(Libasync_Threading) spawnAsyncThreads();
 	scope(exit)
 		destroyAsyncThreads();
 	//writeln("Unit test started");

@@ -5,7 +5,6 @@ version (Windows):
 import core.atomic;
 import core.thread : Fiber;
 import libasync.types;
-import memutils.vector : Array;
 import std.string : toStringz;
 import std.conv : to;
 import std.datetime : Duration, msecs, seconds;
@@ -612,10 +611,11 @@ package:
 	bool kill(AsyncDirectoryWatcher ctxt) {
 
 		try {
-			Array!DWFolderWatcher toFree;
+			Vector!DWFolderWatcher toFree;
 			foreach (ref const uint k, const DWFolderWatcher v; m_dwFolders) {
 				if (v.fd == ctxt.fd) {
 					CloseHandle(v.handle);
+					toFree ~= v;
 					m_dwFolders.remove(k);
 				}
 			}
@@ -938,9 +938,9 @@ package:
 
 	uint readChanges(in fd_t fd, ref DWChangeInfo[] dst) {
 		size_t i;
-		Array!DWChangeInfo* changes;
+		Vector!DWChangeInfo* changes;
 		try {
-			changes = &(m_dwHandlers.get(fd, DWHandlerInfo.init).buffer);
+			changes = &(cast() m_dwHandlers.get(fd, DWHandlerInfo.init).buffer);
 			if ((*changes).empty)
 				return 0;
 
@@ -949,11 +949,9 @@ package:
 			foreach (DWChangeInfo change; (*changes)[0 .. cnt]) {
 				static if (LOG) try log("reading change: " ~ change.path); catch (Throwable) {}
 				dst[i] = (*changes)[i];
+				changes.removeFront();
 				i++;
 			}
-			if (cnt == changes.length)
-				changes.clear();
-			else if (cnt > 0) (*changes)[] = (*changes)[cnt .. $];
 		}
 		catch (Exception e) {
 			setInternalError!"watcher.readChanges"(Status.ERROR, "Could not read directory changes: " ~ e.msg);
@@ -2454,7 +2452,7 @@ mixin template TCPListenerDistMixins()
 }*/
 private class DWHandlerInfo {
 	DWHandler handler;
-	Array!DWChangeInfo buffer;
+	Vector!DWChangeInfo buffer;
 
 	this(DWHandler cb) {
 		handler = cb;

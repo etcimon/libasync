@@ -29,5 +29,5 @@ void main() {
 		GC.minimize();
 	}
 	writeln("done");
-	destroyAsyncThreads();
+	version(Libasync_Threading) destroyAsyncThreads();
 }

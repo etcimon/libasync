@@ -4,7 +4,7 @@ import std.stdio : writeln;
 import libasync.threads;
 
 // You must deinitialize the worker thread manually when the application closes
-shared static ~this() { destroyAsyncThreads(); }
+version(Libasync_Threading) shared static ~this() { destroyAsyncThreads(); }
 
 // This is our main callback, it gets called when there are changes.
 void onDirectoryEvent(DWChangeInfo change) {

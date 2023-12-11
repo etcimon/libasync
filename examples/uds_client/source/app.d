@@ -81,7 +81,7 @@ class UDSClient {
 	}
 }
 
-shared static ~this() {
+version(Libasync_Threading) shared static ~this() {
 	destroyAsyncThreads();
 }
 

@@ -1,2 +1,6 @@
 build
 .dub
+*.pdb
+*.exe
+*.*~
+dub.selections.json

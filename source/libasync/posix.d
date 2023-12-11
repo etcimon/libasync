@@ -1949,8 +1949,6 @@ private:
 			foreach (de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
 				//writeln(de.name);
 				Path entryPath = Path(de.name);
-				if (!entryPath.absolute)
-					entryPath = path ~ entryPath;
 				bool found;
 
 				if (!de.isDir()) {

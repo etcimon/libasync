@@ -291,12 +291,13 @@ package:
 	*/
 	public bool loop(Duration max_timeout = 100.msecs)
 	{
-		if(!m_asyncThreadsStarted) {
-			if(!spawnAsyncThreads()) {
-				return false;
+		version(Libasync_Threading)
+			if(!m_asyncThreadsStarted) {
+				if(!spawnAsyncThreads()) {
+					return false;
+				}
+				m_asyncThreadsStarted = true;
 			}
-			m_asyncThreadsStarted = true;
-		}
 
 		if (!m_evLoop.loop(max_timeout) && m_evLoop.status.code == Status.EVLOOP_FAILURE) {
 			return false;

@@ -92,7 +92,7 @@ class UDSConnection {
 	}
 }
 
-shared static ~this() {
+version(Libasync_Threading) shared static ~this() {
 	destroyAsyncThreads();
 }
 

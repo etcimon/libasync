@@ -13,7 +13,7 @@ void main() {
 
 	while(!g_closed)
 		g_evl.loop();
-	destroyAsyncThreads();
+	version(Libasync_Threading) destroyAsyncThreads();
 }
 
 class TCPListener {
