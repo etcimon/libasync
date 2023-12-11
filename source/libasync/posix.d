@@ -1382,7 +1382,7 @@ package:
 						Array!fd_t remove_list; // keep track of unwatched folders recursively
 						Array!fd_t remove_file_list;
 						// search for subfolders and unset them / close their wd
-						foreach (const ref DWFolderInfo folder; m_dwFolders) {
+						foreach (ref DWFolderInfo folder; m_dwFolders) {
 							if (folder.fd == fi.fd && folder.wi.path.startsWith(fi.wi.path)) {
 
 								if (!event_unset(folder.wi.wd))
@@ -1970,7 +1970,7 @@ private:
 						}
 					}
 				} else {
-					foreach (ref const DWFolderInfo folder; m_dwFolders) {
+					foreach (ref DWFolderInfo folder; m_dwFolders) {
 						if (folder.wi.path == entryPath) {
 							found = true;
 							break;
