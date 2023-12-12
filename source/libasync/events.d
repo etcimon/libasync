@@ -31,13 +31,17 @@ version(Posix) {
 	public import libasync.posix;
 }
 
+private static EventLoop g_evLoop;
 ///
 EventLoop getThreadEventLoop() nothrow {
-	static EventLoop evLoop;
-	if (!evLoop)  {
-		evLoop = new EventLoop;
+	if (!g_evLoop)  {
+		g_evLoop = new EventLoop();
 	}
-	return evLoop;
+	return g_evLoop;
+}
+
+static ~this() {
+	if (g_evLoop) g_evLoop.destroy();	
 }
 
 /// Event handlers can be registered to the event loop by being run(), all events

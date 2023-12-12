@@ -168,8 +168,9 @@ package struct AsyncDNSRequest
 		import libasync.internals.win32;
 		PADDRINFOEX infos;
 	}
-	mixin FreeList!1_000;
+	mixin FreeList!1_000;	
 }
+
 
 
 package shared struct DNSCmdInfo

@@ -8,7 +8,6 @@ import std.conv : to;
 import std.datetime.stopwatch : StopWatch;
 import core.stdc.stdlib : getenv;
 import std.string : fromStringz, toStringz;
-
 AsyncDirectoryWatcher g_watcher;
 shared AsyncDNS g_dns;
 string cache_path;
@@ -53,8 +52,12 @@ unittest {
 
 	assert(g_cbTimerCnt >= 3, "Multitimer expired only " ~ g_cbTimerCnt.to!string ~ " times"); // MultiTimer expired 3-4 times
 	g_watcher.kill();
+	g_watcher.destroy();
 	g_notifier.kill();
+	g_notifier.destroy();
 	g_listnr.kill();
+	g_listnr.destroy();
+	g_dns.destroy();
 	version(LDC) {
 		import core.stdc.stdlib; exit(0);
 	}

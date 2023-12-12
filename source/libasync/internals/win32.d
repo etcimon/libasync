@@ -298,7 +298,7 @@ extern(System) nothrow
 	enum SO_UPDATE_CONNECT_CONTEXT   = 0x7010;
 
 	bool CancelIo(HANDLE hFile);
-	bool CancelIOEx(HANDLE hFile, OVERLAPPED* lpOverlapped);
+	bool CancelIoEx(HANDLE hFile, OVERLAPPED* lpOverlapped);
 
 	SOCKET WSAAccept(SOCKET s, sockaddr *addr, INT* addrlen, LPCONDITIONPROC lpfnCondition, DWORD_PTR dwCallbackData);
 	int WSAAsyncSelect(SOCKET s, HWND hWnd, uint wMsg, sizediff_t lEvent);

@@ -39,7 +39,12 @@ private:
 	HashMap!(fd_t, DWHandlerInfo) m_dwHandlers; // todo: Change this to an array too
 	HashMap!(uint, DWFolderWatcher) m_dwFolders;
 	HashMap!(fd_t, tcp_keepalive)* kcache;
-	~this() { kcache.destroy(); }
+	~this() { 
+		kcache.destroy(); 
+		foreach(fd, watcher; m_dwHandlers) {
+			watcher.destroy();
+		}
+	}
 nothrow:
 private:
 	struct TimerCache {
@@ -613,22 +618,21 @@ package:
 	bool kill(AsyncDirectoryWatcher ctxt) {
 
 		try {
-			Vector!DWFolderWatcher toFree;
-			foreach (ref const uint k, const DWFolderWatcher v; m_dwFolders) {
+			Vector!uint toFree;
+			foreach (ref const uint k, DWFolderWatcher v; m_dwFolders) {
 				if (v.fd == ctxt.fd) {
-					CloseHandle(v.handle);
-					toFree ~= v;
-					m_dwFolders.remove(k);
+					v.close();
+					ThreadMem.free(v);
+					toFree ~= k;
 				}
 			}
+			foreach (uint k; toFree[]) {				
+				m_dwFolders.remove(k);
+			}
 
-			foreach (DWFolderWatcher obj; toFree[])
-				ThreadMem.free(obj);
-
-			// todo: close all the handlers...
 			m_dwHandlers.remove(ctxt.fd);
 		}
-		catch (Exception e) {
+		catch (Throwable e) {
 			setInternalError!"in kill(AsyncDirectoryWatcher)"(Status.ERROR, e.msg);
 			return false;
 		}
@@ -978,7 +982,9 @@ package:
 			DWHandlerInfo handler = m_dwHandlers.get(fd, DWHandlerInfo.init);
 			assert(handler !is null);
 			static if (LOG) log("Watching: " ~ info.path.toNativeString());
-			(m_dwFolders)[wd] = ThreadMem.alloc!DWFolderWatcher(m_evLoop, fd, hndl, info.path, info.events, handler, info.recursive);
+			auto dwWatcher = ThreadMem.alloc!DWFolderWatcher(m_evLoop, fd, hndl, info.path, info.events, handler, info.recursive);
+			
+			(m_dwFolders)[wd] = dwWatcher;
 		} catch (Exception e) {
 			setInternalError!"watch"(Status.ERROR, "Could not start watching directory: " ~ e.msg);
 			return 0;
@@ -2532,6 +2538,11 @@ private:
 	shared AsyncSignal m_signal;
 	ubyte[FILE_NOTIFY_INFORMATION.sizeof + MAX_PATH + 1] m_buffer;
 	DWORD m_bytesTransferred;
+	OVERLAPPED* m_pendingOverlapped;
+	~this() {
+		if (m_handler) m_handler.destroy();
+		if (m_signal) m_signal.destroy();
+	}
 public:
 	this(EventLoop evl, in fd_t fd, in HANDLE hndl, in Path path, in DWFileEvent events, DWHandlerInfo handler, bool recursive) {
 		m_fd = fd;
@@ -2547,11 +2558,16 @@ public:
 	}
 package:
 	void close() {
+		if (m_pendingOverlapped) {
+			ThreadMem.free(m_pendingOverlapped);
+		}
+		CancelIoEx(m_handle, NULL);
 		CloseHandle(m_handle);
 		m_signal.kill();
 	}
 
 	void triggerChanged() {
+
 		m_signal.trigger();
 	}
 
@@ -2591,8 +2607,10 @@ package:
 		overlapped.Offset = 0;
 		overlapped.OffsetHigh = 0;
 		overlapped.Pointer = cast(void*)this;
+		m_pendingOverlapped = overlapped;
 		import std.stdio;
 		DWORD bytesReturned;
+		import std.stdio: writefln;
 		BOOL success = ReadDirectoryChangesW(m_handle, m_buffer.ptr, m_buffer.length, cast(BOOL) m_recursive, notifications, &bytesReturned, overlapped, &onIOCompleted);
 
 		static if (DEBUG) {
@@ -2615,8 +2633,10 @@ package:
 		void onIOCompleted(DWORD dwError, DWORD cbTransferred, OVERLAPPED* overlapped)
 		{
 			import std.stdio;
+			tracef("Triggered onIOCompleted: %X", cast(void*)overlapped);
 			DWFolderWatcher watcher = cast(DWFolderWatcher)(overlapped.Pointer);
 			watcher.m_bytesTransferred = cbTransferred;
+			watcher.m_pendingOverlapped = null;
 			try ThreadMem.free(overlapped); catch (Throwable) {}
 
 			static if (DEBUG) {
@@ -2670,6 +2690,7 @@ nothrow extern(System)
 		scope(exit) {
 			FreeAddrInfoExW(infos);
 			assumeWontThrow(AsyncDNSRequest.free(overlapped.resolve));
+			assumeWontThrow(AsyncOverlapped.free(overlapped));
 		}
 		if (err != EWIN.WSA_OK) {
 			evLoop.setInternalError!"GetAddrInfoExW"(Status.ABORT, string.init, err);
