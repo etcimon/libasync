@@ -8,6 +8,9 @@ import core.sync.mutex;
 import core.sync.condition;
 import core.atomic;
 import libasync.threads;
+import libasync.internals.freelist;
+import libasync.internals.queue;
+import libasync.internals.logging;
 
 ///
 enum DNSCmd {
@@ -21,8 +24,8 @@ enum DNSCmd {
 shared final class AsyncDNS
 {
 nothrow:
+	package EventLoop m_evLoop;
 private:
-	EventLoop m_evLoop;
 	bool m_busy;
 	bool m_error;
 	DNSReadyHandler m_handler;
@@ -75,6 +78,17 @@ public:
 		assert(m_handler.ctxt !is null, "AsyncDNS must be running before being operated on.");
 	}
 	do {
+		static if (LOG) .tracef("Resolving url: %s", url);	
+		version(Windows) {
+			if (force_async) {			
+				m_cmdInfo.command = DNSCmd.RESOLVEHOST;
+				m_cmdInfo.ipv6 = ipv6;
+				m_cmdInfo.url = cast(shared) url;
+				AsyncDNSRequest* dns_req = AsyncDNSRequest.alloc(this);
+				return (cast(EventLoop)m_evLoop).resolve(dns_req, cmdInfo.url, 0, cmdInfo.ipv6?isIPv6.yes:isIPv6.no);
+			}
+		}
+
 		version(Libasync_Threading)
 			if (force_async == true) {
 				synchronized(m_cmdInfo.mtx) {
@@ -135,20 +149,28 @@ package:
 		m_busy = cast(shared) b;
 	}
 
-	void callback() {
+	synchronized void callback() {
 
 		try {
 			m_handler(cast(NetworkAddress)m_cmdInfo.addr);
 		}
 		catch (Throwable e) {
-			static if (DEBUG) {
-				import std.stdio : writeln;
-				try writeln("Failed to send command. ", e.toString()); catch (Throwable) {}
-			}
+			warningf("Failed to send command. %s", e.toString());
 		}
 	}
 
 }
+
+package struct AsyncDNSRequest
+{
+	AsyncDNS dns;      /// DNS resolver to use
+	version(Windows) {
+		import libasync.internals.win32;
+		PADDRINFOEX infos;
+	}
+	mixin FreeList!1_000;
+}
+
 
 package shared struct DNSCmdInfo
 {

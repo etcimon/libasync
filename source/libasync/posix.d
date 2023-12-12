@@ -2976,13 +2976,13 @@ private:
 	void log(StatusInfo val)
 	{
 		static if (LOG) {
-			import std.stdio;
+			import libasync.internals.logging;
 			try {
-				writeln("Backtrace: ", m_status.text);
-				writeln(" | Status:  ", m_status.code);
-				writeln(" | Error: " , m_error);
+				trace("Backtrace: ", m_status.text);
+				trace(" | Status:  ", m_status.code);
+				trace(" | Error: " , m_error);
 				if ((m_error in EPosixMessages) !is null)
-					writeln(" | Message: ", EPosixMessages[m_error]);
+					trace(" | Message: ", EPosixMessages[m_error]);
 			} catch(Exception e) {
 				return;
 			}
@@ -2992,9 +2992,9 @@ private:
 	void log(T)(T val)
 	{
 		static if (LOG) {
-			import std.stdio;
+			import libasync.internals.logging;
 			try {
-				writeln(val);
+				trace(val);
 			} catch(Exception e) {
 				return;
 			}

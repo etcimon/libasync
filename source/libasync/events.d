@@ -99,6 +99,12 @@ package:
 		return m_evLoop.error;
 	}
 
+	/** Sends a request to underlying async DNS resolver. Non-blocking */
+	bool resolve(AsyncDNSRequest* req, in string host, ushort port = 0, isIPv6 ipv6 = isIPv6.no, isTCP tcp = isTCP.yes)
+	{
+		return m_evLoop.resolve(req, host, port, ipv6, tcp);
+	}
+
 	uint recvFrom(in fd_t fd, ubyte[] data, ref NetworkAddress addr) {
 		return m_evLoop.recvFrom(fd, data, addr);
 	}

@@ -6,6 +6,11 @@ static if (__VERSION__ < 2103){
 }
 else {
     import std.logger;
+    import std.stdio : stdout;
+}
+static __gshared FileLogger sharedLog;
+static this() {
+    sharedLog = new FileLogger(stdout, LOGLEVEL);
 }
 
 nothrow:
@@ -23,7 +28,7 @@ template defaultLogFunction(LogLevel ll)
     {
         static if (ll >= LOGLEVEL)
         {
-            try stdThreadLocalLog.log!(line, file, funcName, prettyFuncName, moduleName)("", args);
+            try sharedLog.log!(line, file, funcName, prettyFuncName, moduleName)("", args);
             catch (Throwable e) {}
         }
     }
@@ -35,7 +40,7 @@ template defaultLogFunction(LogLevel ll)
     {
         static if (ll >= LOGLEVEL)
         {
-            try log!(line, file, funcName, prettyFuncName, moduleName)(condition, args);
+            try sharedLog.log!(line, file, funcName, prettyFuncName, moduleName)(condition, args);
             catch (Throwable e) {}
         }
     }
@@ -56,7 +61,7 @@ template defaultLogFunctionf(LogLevel ll)
     {
         static if (ll >= LOGLEVEL)
         {
-            try logf!(line, file, funcName, prettyFuncName, moduleName)(msg, args);
+            try sharedLog.logf!(line, file, funcName, prettyFuncName, moduleName)(msg, args);
             catch (Throwable e) {}
         }
     }
@@ -68,7 +73,7 @@ template defaultLogFunctionf(LogLevel ll)
     {
         static if (ll >= LOGLEVEL)
         {
-            try logf!(line, file, funcName, prettyFuncName, moduleName)(condition, msg, args);
+            try sharedLog.logf!(line, file, funcName, prettyFuncName, moduleName)(condition, msg, args);
             catch (Throwable e) {}
         }
     }

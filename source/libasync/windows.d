@@ -243,6 +243,7 @@ package:
 		}
 
 		if (signal == WAIT_IO_COMPLETION) {
+
 			if (m_status.code != Status.OK) return false;
 
 			foreach (request; m_completedSocketReceives) {
@@ -393,6 +394,7 @@ package:
 					}
 				}
 				break;
+				
 			default:
 				.warning("Unknown event was triggered: ", signal);
 				break;
@@ -1715,6 +1717,62 @@ package:
 		return addr;
 	}
 
+	bool resolve(AsyncDNSRequest* ctx, in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true, in bool force = true)
+		/*in {
+		debug import libasync.internals.validator : validateHost;
+		debug assert(validateHost(host), "Trying to connect to an invalid domain");
+	}
+	do */{
+		trace("resolve");
+		m_status = StatusInfo.init;
+		auto overlapped = assumeWontThrow(AsyncOverlapped.alloc());
+		overlapped.resolve = ctx;
+		ADDRINFOEXW hints;
+		PADDRINFOEX infos;
+		hints.ai_flags |= AI_CANONNAME;
+
+		LPCWSTR wPort = port.to!(wchar[]).toUTFz!(const(wchar)*);
+		
+		if (ipv6) {
+			hints.ai_family = AF_INET6;
+		}
+		else {
+			hints.ai_family = AF_UNSPEC;
+		}
+
+		if (tcp) {
+			hints.ai_protocol = IPPROTO_TCP;
+			hints.ai_socktype = SOCK_STREAM;
+		}
+		else {
+			hints.ai_protocol = IPPROTO_UDP;
+			hints.ai_socktype = SOCK_DGRAM;
+		}
+		
+		LPCWSTR str;
+		
+		try {
+			str = cast(LPCWSTR) toUTFz!(immutable(wchar)*)(host);
+		} catch (Exception e) {
+			setInternalError!"toUTFz"(Status.ERROR, e.msg);
+			return false;
+		}
+		timeval timeout = timeval(5,0);
+		trace("Getting addr info");
+		error_t err = cast(error_t) GetAddrInfoExW(str, wPort, NS_DNS, NULL, &hints, 
+			&overlapped.resolve.infos, &timeout, cast(WSAOVERLAPPEDX*) overlapped, 
+			cast(LPLOOKUPSERVICE_COMPLETION_ROUTINE) &onOverlappedResolveComplete, NULL);
+		
+		if (err != WSA_IO_PENDING) {
+			setInternalError!"GetAddrInfoW"(Status.ABORT, string.init, err);
+			onOverlappedResolveComplete(cast(INT)err, 0, overlapped);
+			return false;
+		}
+
+		return true;
+	}
+
+
 	NetworkAddress getAddressFromDNS(in string host, in ushort port = 0, in bool ipv6 = true, in bool tcp = true, in bool force = true)
 		/*in {
 		debug import libasync.internals.validator : validateHost;
@@ -1732,7 +1790,7 @@ package:
 			addr.family = AF_INET6;
 		}
 		else {
-			hints.ai_family = AF_INET;
+			hints.ai_family = AF_UNSPEC;
 			addr.family = AF_INET;
 		}
 
@@ -1765,6 +1823,8 @@ package:
 		ubyte* pAddr = cast(ubyte*) infos.ai_addr;
 		ubyte* data = cast(ubyte*) addr.sockAddr;
 		data[0 .. infos.ai_addrlen] = pAddr[0 .. infos.ai_addrlen]; // perform bit copy
+		
+		addr.family = cast(ushort)infos.ai_family;
 		static if (LOG) try log("GetAddrInfoW Successfully resolved DNS to: " ~ addr.toAddressString());
 		catch (Exception e){}
 		return addr;
@@ -2306,13 +2366,13 @@ private:
 	void log(StatusInfo val)
 	{
 		static if (LOG) {
-			import std.stdio;
+			import libasync.internals.logging;
 			try {
-				writeln("Backtrace: ", m_status.text);
-				writeln(" | Status:  ", m_status.code);
-				writeln(" | Error: " , m_error);
+				trace("Backtrace: ", m_status.text);
+				trace(" | Status:  ", m_status.code);
+				trace(" | Error: " , m_error);
 				if ((m_error in EWSAMessages) !is null)
-					writeln(" | Message: ", EWSAMessages[m_error]);
+					trace(" | Message: ", EWSAMessages[m_error]);
 			} catch(Exception e) {
 				return;
 			}
@@ -2322,9 +2382,9 @@ private:
 	void log(T)(lazy T val)
 	{
 		static if (LOG) {
-			import std.stdio;
+			import libasync.internals.logging;
 			try {
-				writeln(val);
+				trace(val);
 			} catch(Exception e) {
 				return;
 			}
@@ -2587,6 +2647,7 @@ struct AsyncOverlapped
 		AsyncAcceptRequest* accept;
 		AsyncReceiveRequest* receive;
 		AsyncSendRequest* send;
+		AsyncDNSRequest* resolve;
 	}
 
 	@property void hEvent(HANDLE hEvent) @safe pure @nogc nothrow
@@ -2598,6 +2659,31 @@ struct AsyncOverlapped
 
 nothrow extern(System)
 {
+	void onOverlappedResolveComplete(error_t err, DWORD recvCount, AsyncOverlapped* overlapped)
+	{
+		static if (LOG) .tracef("onOverlappedResolveComplete: error: %s, recvCount: %s", err, recvCount);
+
+		PADDRINFOEX infos = overlapped.resolve.infos;
+		
+		auto evLoopMain = &(cast()overlapped.resolve.dns.m_evLoop);
+		EventLoopImpl* evLoop = &evLoopMain.m_evLoop;
+		scope(exit) {
+			FreeAddrInfoExW(infos);
+			assumeWontThrow(AsyncDNSRequest.free(overlapped.resolve));
+		}
+		if (err != EWIN.WSA_OK) {
+			evLoop.setInternalError!"GetAddrInfoExW"(Status.ABORT, string.init, err);
+			return;
+		}
+		NetworkAddress* addr = cast(NetworkAddress*)overlapped.resolve.dns.addr;
+		ubyte* pAddr = cast(ubyte*) infos.ai_addr;
+		ubyte* data = cast(ubyte*) addr.sockAddr;
+
+		data[0 .. infos.ai_addrlen] = pAddr[0 .. infos.ai_addrlen]; // perform bit copy
+		addr.family = cast(ushort)infos.ai_family;
+		overlapped.resolve.dns.cmdInfo().ready.trigger(*evLoopMain);
+	}
+	
 	void onOverlappedReceiveComplete(error_t error, DWORD recvCount, AsyncOverlapped* overlapped, DWORD flags)
 	{
 		static if (LOG) .tracef("onOverlappedReceiveComplete: error: %s, recvCount: %s, flags: %s", error, recvCount, flags);

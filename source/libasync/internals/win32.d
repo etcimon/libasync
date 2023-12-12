@@ -167,6 +167,8 @@ extern(System) nothrow
 		ADDRINFOEXW* ai_next;
 	}
 
+	alias PADDRINFOEX = ADDRINFOEXW*;
+
 	struct ADDRINFOA {
 		int ai_flags;
 		int ai_family;
