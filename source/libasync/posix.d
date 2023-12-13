@@ -117,12 +117,6 @@ package:
 	in { assert(!m_started); }
 	do
 	{
-		try {
-			assert(false);
-		}
-		catch (Throwable e) {
-			static if (LOG) tracef("%s", e.toString());
-		}
 		import core.atomic;
 		shared static ushort i;
 
