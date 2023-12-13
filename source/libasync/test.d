@@ -358,7 +358,7 @@ void testTCPConnect(string ip, ushort port) {
 				if (g_writes > 3) {
 					if (g_tcpConnect.socket != 0)
 						g_tcpConnect.send(cast(ubyte[])"Client KILL");
-					g_tcpConnect.kill(true);
+					g_tcpConnect.kill();
 
 					g_cbCheck[13] = true;
 				}
