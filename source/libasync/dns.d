@@ -45,6 +45,7 @@ public:
 			assert(false, "Failed to start DNS Signaling");
 		}
 		m_cmdInfo.ready.run(cast(void delegate())&callback);
+
 		m_owner = cast(shared)Thread.getThis();
 		try m_cmdInfo.mtx = cast(shared) new Mutex; catch (Exception) {}
 	}
@@ -82,7 +83,8 @@ public:
 	do {
 		static if (LOG) .tracef("Resolving url: %s", url);	
 		static if (is_Windows || EPOLL) {
-			if (force_async) {			
+			if (force_async) {
+				tracef("Resolving async with signal fd: %X", m_cmdInfo.ready.id);
 				m_cmdInfo.command = DNSCmd.RESOLVEHOST;
 				m_cmdInfo.ipv6 = ipv6;
 				m_cmdInfo.url = cast(shared) url;
@@ -176,6 +178,15 @@ package struct AsyncDNSRequest
 	version(Windows) {
 		import libasync.internals.win32;
 		PADDRINFOEX infos;
+		AsyncOverlapped* overlapped;
+		~this() {
+			try {
+				AsyncOverlapped.free(overlapped);
+			} catch (Exception e) {
+				import libasync.internals.logging;
+				static if (LOG) tracef("Exception freeing in AsyncDNSRequest: %s", e.toString());
+			}
+		}
 	}
 	static if (EPOLL) {
 		import libasync.internals.socket_compat : gaicb, sigevent, addrinfo;
