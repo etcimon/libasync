@@ -2633,7 +2633,7 @@ package:
 		void onIOCompleted(DWORD dwError, DWORD cbTransferred, OVERLAPPED* overlapped)
 		{
 			import std.stdio;
-			tracef("Triggered onIOCompleted: %X", cast(void*)overlapped);
+			static if (LOG) tracef("Triggered onIOCompleted: %X", cast(void*)overlapped);
 			DWFolderWatcher watcher = cast(DWFolderWatcher)(overlapped.Pointer);
 			watcher.m_bytesTransferred = cbTransferred;
 			watcher.m_pendingOverlapped = null;

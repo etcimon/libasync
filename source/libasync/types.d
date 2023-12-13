@@ -6,8 +6,8 @@ static if (__VERSION__ < 2103){
 else {
     import std.logger.core : LogLevel;
 }
-enum LOG = true; //trace
-enum LOGLEVEL = LogLevel.all;
+enum LOG = false; //trace
+enum LOGLEVEL = LogLevel.off;
 enum DEBUG = false;
 
 import std.typecons: Flag;

@@ -40,12 +40,6 @@ EventLoop getThreadEventLoop() nothrow {
 	return g_evLoop;
 }
 
-/*
-static ~this() {
-	if (g_evLoop) g_evLoop.destroy();	
-}
-*/
-
 /// Event handlers can be registered to the event loop by being run(), all events
 /// associated with them will trigger the OS to resume the underlying thread which
 /// enables the existence of all the asynchroneous event objects in this library.
@@ -68,6 +62,8 @@ public:
 	/// and requires the process to be shut down for the resources to be collected automatically.
 	/// Used as a placeholder in the meantime.
 	void exit() {
+		if (this is g_evLoop)
+			g_evLoop = null;
 		m_evLoop.exit();
 	}
 

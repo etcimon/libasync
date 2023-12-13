@@ -10,8 +10,9 @@ import core.stdc.stdlib : getenv;
 import std.string : fromStringz, toStringz;
 AsyncDirectoryWatcher g_watcher;
 shared AsyncDNS g_dns;
+import libasync.internals.logging;
 string cache_path;
-		
+
 
 unittest {
 	cache_path = ".";
@@ -25,10 +26,10 @@ unittest {
 	g_lastTimer = Clock.currTime();
 	gs_start = Clock.currTime();
 	g_evl = getThreadEventLoop();
+	scope(exit) g_evl.destroy();
 	g_evl.loop(1.msecs);
 	//writeln("Loading objects...");
 	testDirectoryWatcher();
-
 	testDNS();
  	testOneshotTimer();
 	testMultiTimer();
@@ -44,6 +45,19 @@ unittest {
 		g_evl.loop(100.msecs);
 
 	int i;
+	g_listnr.kill();
+	g_watcher.kill();
+	g_timerOneShot.kill();
+	g_timerMulti.kill();
+	g_notifier.kill();
+	g_evl.exit();
+
+	g_watcher.destroy();
+	g_notifier.destroy();
+	g_listnr.destroy();
+	g_dns.destroy();
+	g_tcpConnect.destroy();
+	g_conn.destroy();
 	foreach (bool b; g_cbCheck) {
 		assert(b, "Callback not triggered: g_cbCheck[" ~ i.to!string ~ "]");
 		i++;
@@ -51,16 +65,7 @@ unittest {
 	writeln("Callback triggers were successful, run time: ", Clock.currTime - gs_start);
 
 	assert(g_cbTimerCnt >= 3, "Multitimer expired only " ~ g_cbTimerCnt.to!string ~ " times"); // MultiTimer expired 3-4 times
-	g_watcher.kill();
-	g_watcher.destroy();
-	g_notifier.kill();
-	g_notifier.destroy();
-	g_listnr.kill();
-	g_listnr.destroy();
-	g_dns.destroy();
-	version(LDC) {
-		import core.stdc.stdlib; exit(0);
-	}
+
 
 }
 
@@ -210,10 +215,12 @@ void testSharedEvent() {
 
 	while(Clock.currTime() - gs_start < 4.seconds)
 		evl2.loop();
+
+	evl2.exit();
 }
 
 void testOneshotTimer() {
-	AsyncTimer g_timerOneShot = new AsyncTimer(g_evl);
+	g_timerOneShot = new AsyncTimer(g_evl);
 	g_timerOneShot.duration(1.seconds).run({
 		assert(!g_cbCheck[4] && Clock.currTime() - gs_start > 900.msecs && Clock.currTime() - gs_start < 1700.msecs, "Timer completed in " ~ (Clock.currTime() - gs_start).total!"msecs".to!string ~ "ms" );
 		assert(g_timerOneShot.id != 0);
@@ -224,7 +231,7 @@ void testOneshotTimer() {
 }
 
 void testMultiTimer() {
-	AsyncTimer g_timerMulti = new AsyncTimer(g_evl);
+	g_timerMulti = new AsyncTimer(g_evl);
 	g_timerMulti.periodic().duration(1.seconds).run({
 		assert(g_lastTimer !is SysTime.init && Clock.currTime() - g_lastTimer > 900.msecs && Clock.currTime() - g_lastTimer < 1700.msecs, "Timer completed in " ~ (Clock.currTime() - gs_start).total!"msecs".to!string ~ "ms" );
 		assert(g_timerMulti.id > 0);
@@ -316,15 +323,15 @@ void testTCPListen(string ip, ushort port) {
 }
 
 void testTCPConnect(string ip, ushort port) {
-	auto conn = new AsyncTCPConnection(g_evl);
-	conn.peer = g_evl.resolveHost(ip, port);
+	g_tcpConnect = new AsyncTCPConnection(g_evl);
+	g_tcpConnect.peer = g_evl.resolveHost(ip, port);
 
 	void delegate(TCPEvent) connHandler = (TCPEvent ev){
 		void doRead() {
 			static ubyte[] bin = new ubyte[4092];
 			while (true) {
-				assert(conn.socket > 0);
-				uint len = conn.recv(bin);
+				assert(g_tcpConnect.socket > 0);
+				uint len = g_tcpConnect.recv(bin);
 				//writeln("!!Client Received " ~ len.to!string ~ " bytes");
 				//if (len > 0)
 				//	writeln(cast(string)bin[0..len]);
@@ -335,12 +342,12 @@ void testTCPConnect(string ip, ushort port) {
 		final switch (ev) {
 			case TCPEvent.CONNECT:
 				// writeln("!!Client Connected");
-				conn.setOption(TCPOption.QUICK_ACK, true);
-				conn.setOption(TCPOption.NODELAY, true);
+				g_tcpConnect.setOption(TCPOption.QUICK_ACK, true);
+				g_tcpConnect.setOption(TCPOption.NODELAY, true);
 				g_cbCheck[14] = true;
-				if (conn.socket != 0)
-					conn.send(cast(ubyte[])"Client Hello");
-				assert(conn.socket > 0);
+				if (g_tcpConnect.socket != 0)
+					g_tcpConnect.send(cast(ubyte[])"Client Hello");
+				assert(g_tcpConnect.socket > 0);
 				break;
 			case TCPEvent.READ:
 				//writeln("!!Client Read is ready at writes: ", g_writes);
@@ -349,35 +356,34 @@ void testTCPConnect(string ip, ushort port) {
 				// respond
 				g_writes += 1;
 				if (g_writes > 3) {
-					if (conn.socket != 0)
-						conn.send(cast(ubyte[])"Client KILL");
-					conn.kill();
+					if (g_tcpConnect.socket != 0)
+						g_tcpConnect.send(cast(ubyte[])"Client KILL");
+					g_tcpConnect.kill(true);
 
 					g_cbCheck[13] = true;
 				}
 				else
-					if (conn.socket != 0)
-						conn.send(cast(ubyte[])"Client READ");
+					if (g_tcpConnect.socket != 0)
+						g_tcpConnect.send(cast(ubyte[])"Client READ");
 
 				break;
 			case TCPEvent.WRITE:
-
 				g_writes += 1;
-				//writeln("!!Client Write is ready");
-				if (conn.socket != 0)
-					conn.send(cast(ubyte[])"Client WRITE");
+				static if (LOG) tracef("!!Client Write is ready");
+				if (g_tcpConnect.socket != 0)
+					g_tcpConnect.send(cast(ubyte[])"Client WRITE");
 				break;
 			case TCPEvent.CLOSE:
-				//writeln("!!Client Disconnected");
+				static if (LOG) tracef("!!Client Disconnected");
 				break;
 			case TCPEvent.ERROR:
-				//writeln("!!Client Error!");
+				static if (LOG) tracef("!!Client Error!");
 				break;
 		}
 		return;
 	};
 
-	auto success = conn.run(connHandler);
+	auto success = g_tcpConnect.run(connHandler);
 	assert(success);
 
 }

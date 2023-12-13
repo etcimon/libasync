@@ -20,6 +20,7 @@ import libasync.internals.logging;
 import core.sync.mutex;
 import memutils.utils;
 import memutils.hashmap;
+import core.thread : Thread;
 
 alias fd_t = int;
 
@@ -30,25 +31,6 @@ version(linux) {
 		int __libc_current_sigrtmin();
 		int __libc_current_sigrtmax();
 		version(CRuntime_Glibc) int __res_init();
-	}
-	bool g_signalsBlocked;
-	package nothrow void blockSignals() {
-		try {
-			/// Block signals to reserve SIGRTMIN .. " +30 for AsyncSignal
-			sigset_t mask;
-			// todo: use more signals for more event loops per thread.. (is this necessary?)
-			//foreach (j; __libc_current_sigrtmin() .. __libc_current_sigrtmax() + 1) {
-			//import std.stdio : writeln;
-			//try writeln("Blocked signal " ~ (__libc_current_sigrtmin() + j).to!string ~ " in instance " ~ m_instanceId.to!string); catch (Throwable e) {}
-			sigemptyset(&mask);
-			sigaddset(&mask, cast(int) __libc_current_sigrtmin());
-			pthread_sigmask(SIG_BLOCK, &mask, null);
-			//}
-		} catch (Throwable) {}
-	}
-	static this() {
-		blockSignals();
-		g_signalsBlocked = true;
 	}
 }
 static if (is_OSX || is_iOS) {
@@ -113,7 +95,11 @@ private:
 		HashMap!(fd_t, Array!(DWChangeInfo)*) m_changes; // fd_t = id++ per AsyncDirectoryWatcher
 
 	}
-
+	~this() {
+		if (m_evSignal) {
+			exit();
+		}
+	}
 	AsyncAcceptRequest.Queue m_completedSocketAccepts;
 	AsyncReceiveRequest.Queue m_completedSocketReceives;
 	AsyncSendRequest.Queue m_completedSocketSends;
@@ -131,10 +117,14 @@ package:
 	in { assert(!m_started); }
 	do
 	{
-
+		try {
+			assert(false);
+		}
+		catch (Throwable e) {
+			static if (LOG) tracef("%s", e.toString());
+		}
 		import core.atomic;
 		shared static ushort i;
-		string* failer = null;
 
 
 		m_instanceId = i;
@@ -155,9 +145,7 @@ package:
 		static if (EPOLL)
 		{
 
-			if (!g_signalsBlocked)
-				blockSignals();
-			assert(m_instanceId <= __libc_current_sigrtmax(), "An additional event loop is unsupported due to SIGRTMAX restrictions in Linux Kernel");
+			assert(m_instanceId <= __libc_current_sigrtmax() - (5 + __libc_current_sigrtmin()), "An additional event loop is unsupported due to SIGRTMAX restrictions in Linux Kernel");
 			m_epollfd = epoll_create1(EPOLL_CLOEXEC);
 
 			if (catchError!"epoll_create1"(m_epollfd))
@@ -165,44 +153,85 @@ package:
 
 			import core.sys.linux.sys.signalfd;
 			import core.thread : getpid;
+			{ // setup AsyncSignal fd
+				fd_t err;
+				fd_t sfd;
 
-			fd_t err;
-			fd_t sfd;
+				sigset_t mask;
 
-			sigset_t mask;
+				try {
+					sigemptyset(&mask);
+					sigaddset(&mask, __libc_current_sigrtmin() + 5);
+					err = pthread_sigmask(SIG_BLOCK, &mask, null);
+					if (catchError!"sigprocmask"(err))
+					{
+						m_status.code = Status.EVLOOP_FAILURE;
+						return false;
+					}
+				} catch (Throwable) { }
 
-			try {
-				sigemptyset(&mask);
-				sigaddset(&mask, __libc_current_sigrtmin());
-				err = pthread_sigmask(SIG_BLOCK, &mask, null);
-				if (catchError!"sigprocmask"(err))
+				sfd = signalfd(-1, &mask, SFD_NONBLOCK);
+				static if (LOG) tracef("Got sfd %d", sfd);
+				assert(sfd > 0, "Failed to setup signalfd in epoll");
+
+				EventType evtype;
+
+				epoll_event _event;
+				_event.events = EPOLLIN;
+				evtype = EventType.Signal;
+				try
+					m_evSignal = ThreadMem.alloc!EventInfo(sfd, evtype, EventObject.init, m_instanceId);
+				catch (Exception e){
+					assert(false, "Allocation error");
+				}
+				_event.data.ptr = cast(void*) m_evSignal;
+
+				err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, sfd, &_event);
+				if (catchError!"EPOLL_CTL_ADD(sfd)"(err))
 				{
-					m_status.code = Status.EVLOOP_FAILURE;
 					return false;
 				}
-			} catch (Throwable) { }
-
-
-
-			sfd = signalfd(-1, &mask, SFD_NONBLOCK);
-			assert(sfd > 0, "Failed to setup signalfd in epoll");
-
-			EventType evtype;
-
-			epoll_event _event;
-			_event.events = EPOLLIN;
-			evtype = EventType.Signal;
-			try
-				m_evSignal = ThreadMem.alloc!EventInfo(sfd, evtype, EventObject.init, m_instanceId);
-			catch (Exception e){
-				assert(false, "Allocation error");
 			}
-			_event.data.ptr = cast(void*) m_evSignal;
+			{ // setup AsyncDNS fd
+				import core.sys.linux.sys.signalfd;
 
-			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, sfd, &_event);
-			if (catchError!"EPOLL_CTL_ADD(sfd)"(err))
-			{
-				return false;
+				fd_t err;
+				fd_t dnsfd;
+
+				sigset_t mask;
+
+				try {
+					sigemptyset(&mask);
+					sigaddset(&mask, __libc_current_sigrtmin() + 6);
+					err = pthread_sigmask(SIG_BLOCK, &mask, null);
+					if (catchError!"sigprocmask"(err))
+					{
+						m_status.code = Status.EVLOOP_FAILURE;
+						return false;
+					}
+				} catch (Throwable) { }
+
+				dnsfd = signalfd(-1, &mask, SFD_NONBLOCK);
+				static if (LOG) tracef("Got dnsfd %d", dnsfd);
+				assert(dnsfd > 0, "Failed to setup signalfd in epoll");
+
+				EventType evtype;
+
+				epoll_event _event;
+				_event.events = EPOLLIN;
+				evtype = EventType.DNSResolver;
+				try
+					m_evDNS = ThreadMem.alloc!EventInfo(dnsfd, evtype, EventObject.init, m_instanceId);
+				catch (Exception e){
+					assert(false, "Allocation error");
+				}
+				_event.data.ptr = cast(void*) m_evDNS;
+
+				err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, dnsfd, &_event);
+				if (catchError!"EPOLL_CTL_ADD(sfd)"(err))
+				{
+					return false;
+				}
 			}
 
 		}
@@ -253,7 +282,7 @@ package:
 				assert(false, "Add SIGXCPU failed at kevent call");
 		}
 
-		static if (LOG) try log("init in thread " ~ Thread.getThis().name); catch (Throwable) {}
+		static if (LOG) try trace("init in thread " ~ Thread.getThis().name); catch (Throwable) {}
 
 		return true;
 	}
@@ -261,6 +290,8 @@ package:
 	void exit() {
 		import core.sys.posix.unistd : close;
 		static if (EPOLL) {
+			close(m_evSignal.fd);
+			close(m_evDNS.fd);
 			close(m_epollfd); // not necessary?
 
 			try ThreadMem.free(m_evSignal);
@@ -343,7 +374,7 @@ package:
 				return false;
 
 			if (num > 0)
-				static if (LOG) log("Got " ~ num.to!string ~ " event(s)");
+				static if (LOG) trace("Got " ~ num.to!string ~ " event(s)");
 
 			foreach(i; 0 .. num) {
 				success = false;
@@ -351,7 +382,7 @@ package:
 				static if (EPOLL)
 				{
 					epoll_event _event = events[i];
-					static if (LOG) try log("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch (Throwable e) {}
+					static if (LOG) try trace("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch (Throwable e) {}
 					EventInfo* info = cast(EventInfo*) _event.data.ptr;
 					int event_flags = cast(int) _event.events;
 				}
@@ -364,9 +395,9 @@ package:
 					//log("event flags");
 				}
 
-				//if (info.owner != m_instanceId)
-				//	static if (LOG) try log("Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
-				//	catch{}
+				if (info.owner != m_instanceId)
+					static if (LOG)  trace("Event " ~ (cast(int)(info.evType)).to!string ~ " is invalid: supposidly created in instance #" ~ info.owner.to!string ~ ", received in " ~ m_instanceId.to!string ~ " event: " ~ event_flags.to!string);
+				
 				//log("owner");
 				switch (info.evType) {
 					case EventType.Event:
@@ -399,7 +430,8 @@ package:
 
 					case EventType.Notifier:
 
-						static if (LOG) log("Got notifier!");
+						static if (LOG) trace("Got notifier!");
+						static if (LOG) tracef("Thread: %d", Thread.getThis().id());
 						try info.evObj.notifierHandler();
 						catch (Exception e) {
 							setInternalError!"notifierHandler"(Status.ERROR);
@@ -408,6 +440,7 @@ package:
 
 					case EventType.DirectoryWatcher:
 						static if (LOG) log("Got DirectoryWatcher event!");
+						static if (LOG) tracef("Thread: %d", Thread.getThis().id());
 						static if (!EPOLL) {
 							// in KQUEUE all events will be consumed here, because they must be pre-processed
 							try {
@@ -453,7 +486,8 @@ package:
 						break;
 
 					case EventType.Timer:
-						static if (LOG) try log("Got timer! " ~ info.fd.to!string); catch (Throwable e) {}
+						static if (LOG) try trace("Got timer! " ~ info.fd.to!string); catch (Throwable e) {}
+						static if (LOG) tracef("Thread: %d", Thread.getThis().id());
 						static if (EPOLL) {
 							static long val;
 							import core.sys.posix.unistd : read;
@@ -477,37 +511,36 @@ package:
 						break;
 
 					case EventType.DNSResolver:
-						static if (LOG) try log("Got signal!"); catch (Throwable e) {}
+						static if (LOG) try trace("Got signal!"); catch (Throwable e) {}
+						static if (LOG) tracef("Thread: %d", Thread.getThis().id());
 
 						static if (EPOLL) {
 							import libasync.internals.socket_compat : freeaddrinfo, addrinfo, gaicb;
-							static if (LOG) try log("Got dns signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch (Throwable e) {}
+							static if (LOG) try trace("Got dns signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch (Throwable e) {}
 							import core.sys.linux.sys.signalfd : signalfd_siginfo;
 							import core.sys.posix.unistd : read;
 							signalfd_siginfo fdsi;
-							fd_t err = cast(fd_t)read(info.fd, &fdsi, fdsi.sizeof);
-							AsyncDNSRequest* req = cast(AsyncDNSRequest*) cast(void*) fdsi.ssi_ptr;
+							while((cast(fd_t)read(info.fd, &fdsi, fdsi.sizeof)) > 0) {
+								AsyncDNSRequest* req = cast(AsyncDNSRequest*) cast(void*) fdsi.ssi_ptr;
 
-							NetworkAddress addr;
-							addrinfo* res = req.host.ar_result;
+								NetworkAddress addr;
+								addrinfo* res = req.host.ar_result;
 
-							ubyte* pAddr = cast(ubyte*) res.ai_addr;
-							ubyte* data = cast(ubyte*) addr.sockAddr;
-							data[0 .. res.ai_addrlen] = pAddr[0 .. res.ai_addrlen]; // perform bit copy
-							addr.family = cast(ushort)res.ai_family;
-							*req.dns.addr = cast(shared)addr;
-
-							try req.dns.callback();
-							catch (Exception e) {
-								setInternalError!"signal handler"(Status.ERROR);
+								ubyte* pAddr = cast(ubyte*) res.ai_addr;
+								ubyte* data = cast(ubyte*) addr.sockAddr;
+								data[0 .. res.ai_addrlen] = pAddr[0 .. res.ai_addrlen]; // perform bit copy
+								addr.family = cast(ushort)res.ai_family;
+								*req.dns.addr = cast(shared)addr;
+								try if (req.dns.cmdInfo().ready.owner.id() == Thread.getThis().id()) {
+									req.dns.callback();
+								} else {
+									req.dns.cmdInfo().ready.trigger();
+								} catch (Exception e) {
+									setInternalError!"signal handler"(Status.ERROR);
+								}
+								import core.thread;
+								freeaddrinfo(res);
 							}
-
-
-							freeaddrinfo(res); 
-							try {
-								ThreadMem.free(&req.host.ar_request);
-								AsyncDNSRequest.free(req);
-							} catch (Exception e) {}
 
 
 						}
@@ -518,11 +551,12 @@ package:
 						break;
 
 					case EventType.Signal:
-						static if (LOG) try log("Got signal!"); catch (Throwable e) {}
+						static if (LOG) try trace("Got signal!"); catch (Throwable e) {}
+						static if (LOG) tracef("Thread: %d", Thread.getThis().id());
 
 						static if (EPOLL) {
 
-							static if (LOG) try log("Got signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch (Throwable e) {}
+							static if (LOG) try trace("Got signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch (Throwable e) {}
 							import core.sys.linux.sys.signalfd : signalfd_siginfo;
 							import core.sys.posix.unistd : read;
 							signalfd_siginfo fdsi;
@@ -591,7 +625,7 @@ package:
 						nothrow void abortTCPHandler(bool graceful) {
 
 							nothrow void closeAll() {
-								static if (LOG) try log("closeAll()"); catch (Throwable e) {}
+								static if (LOG) try trace("closeAll()"); catch (Throwable e) {}
 								if (info.evObj.tcpEvHandler.conn.connected)
 									closeSocket(info.fd, true, true);
 
@@ -601,24 +635,28 @@ package:
 							/// Close the connection after an unexpected socket error
 							if (graceful) {
 								try info.evObj.tcpEvHandler(TCPEvent.CLOSE);
-								catch (Exception e) { static if(LOG) log("Close failure"); }
+								catch (Exception e) { static if(LOG) trace("Close failure"); }
 								closeAll();
 							}
 
 							/// Kill the connection after an internal error
 							else {
 								try info.evObj.tcpEvHandler(TCPEvent.ERROR);
-								catch (Exception e) { static if(LOG) log("Error failure"); }
+								catch (Exception e) { static if(LOG) trace("Error failure"); }
 								closeAll();
 							}
 
 							if (info.evObj.tcpEvHandler.conn.inbound) {
-								static if (LOG) log("Freeing inbound connection FD#" ~ info.fd.to!string);
-								try ThreadMem.free(info.evObj.tcpEvHandler.conn);
+								static if (LOG) trace("Freeing inbound connection FD#" ~ info.fd.to!string);
+								try ThreadMem.free(info.evObj.tcpEvHandler.conn); // evInfo freed in the dtor
+								catch (Exception e){ assert(false, "Error freeing resources"); }
+							} else {
+								try {
+									info.evObj.tcpEvHandler.conn.evInfo = null;
+									ThreadMem.free(info);									
+								}
 								catch (Exception e){ assert(false, "Error freeing resources"); }
 							}
-							try ThreadMem.free(info);
-							catch (Exception e){ assert(false, "Error freeing resources"); }
 						}
 
 						if (!success && m_status.code == Status.ABORT) {
@@ -928,7 +966,7 @@ package:
 	pragma(inline, true)
 	uint recv(in fd_t fd, ref ubyte[] data)
 	{
-			static if (LOG) try log("Recv from FD: " ~ fd.to!string); catch (Throwable e) {}
+			static if (LOG) try trace("Recv from FD: " ~ fd.to!string); catch (Throwable e) {}
 			m_status = StatusInfo.init;
 			import libasync.internals.socket_compat : recv;
 			int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
@@ -949,11 +987,11 @@ package:
 	pragma(inline, true)
 	uint send(in fd_t fd, in ubyte[] data)
 	{
-		static if (LOG) try log("Send to FD: " ~ fd.to!string); catch (Throwable e) {}
+		static if (LOG) try trace("Send to FD: " ~ fd.to!string); catch (Throwable e) {}
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : send;
 		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
-		static if (LOG) try log("Sent: " ~ ret.to!string); catch (Throwable e) {}
+		static if (LOG) try trace("Sent: " ~ ret.to!string); catch (Throwable e) {}
 		if (catchError!"send"(ret)) { // ret == -1
 			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 				m_status.code = Status.ASYNC;
@@ -1061,7 +1099,7 @@ package:
 					addr.family = AF_INET;
 			}
 
-			static if (LOG) try log("RECVFROM " ~ ret.to!string ~ "B"); catch (Throwable e) {}
+			static if (LOG) try trace("RECVFROM " ~ ret.to!string ~ "B"); catch (Throwable e) {}
 			if (catchError!".recvfrom"(ret)) { // ret == -1
 					if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
 							m_status.code = Status.ASYNC;
@@ -1079,7 +1117,7 @@ package:
 
 			m_status = StatusInfo.init;
 
-			static if (LOG) try log("SENDTO " ~ data.length.to!string ~ "B");
+			static if (LOG) try trace("SENDTO " ~ data.length.to!string ~ "B");
 			catch (Throwable e) {}
 			long ret = sendto(fd, cast(void*) data.ptr, data.length, 0, addr.sockAddr, addr.sockAddrLen);
 
@@ -1204,7 +1242,7 @@ package:
 					ret = inotify_add_watch(fd, path.toNativeString().toStringz, events);
 					if (catchError!"inotify_add_watch"(ret))
 						return fd_t.init;
-					static if (LOG) try log("inotify_add_watch(" ~ DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd).to!string ~ ")"); catch (Throwable) {}
+					static if (LOG) try trace("inotify_add_watch(" ~ DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd).to!string ~ ")"); catch (Throwable) {}
 					assert(m_dwFolders.get(tuple(cast(fd_t) fd, cast(uint)ret), DWFolderInfo.init) == DWFolderInfo.init, "Could not get a unique watch descriptor for path, got: " ~ m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)].to!string);
 					m_dwFolders[tuple(cast(fd_t)fd, cast(uint)ret)] = DWFolderInfo(WatchInfo(info.events, path, info.recursive, ret), fd);
 				} catch (Exception e) {
@@ -1597,7 +1635,7 @@ package:
 						return cast(uint) i;
 				}
 				static if (LOG) foreach (j; 0 .. i) {
-					static if (LOG) try log("Change occured for FD#" ~ fd.to!string ~ ": " ~ dst[j].to!string); catch (Throwable e) {}
+					static if (LOG) try trace("Change occured for FD#" ~ fd.to!string ~ ": " ~ dst[j].to!string); catch (Throwable e) {}
 				}
 				nread = read(fd, buf.ptr, buf.sizeof);
 				if (catchError!"read()"(nread)) {
@@ -1667,7 +1705,7 @@ package:
 	private bool closeRemoteSocket(fd_t fd, bool forced) {
 
 		int err;
-		static if (LOG) log("shutdown");
+		static if (LOG) tracef("shutdown forced(%d)", forced);
 		import libasync.internals.socket_compat : shutdown, SHUT_WR, SHUT_RDWR, SHUT_RD;
 		if (forced)
 			err = shutdown(fd, SHUT_RDWR);
@@ -1676,13 +1714,14 @@ package:
 
 		static if (!EPOLL) {
 			kevent_t[2] events;
-			static if (LOG) try log("!!DISC delete events"); catch (Throwable e) {}
+			static if (LOG) try trace("!!DISC delete events"); catch (Throwable e) {}
 			EV_SET(&(events[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
 			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
 			kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
 		}
 
 		if (err == SOCKET_ERROR && errno == ENOTCONN) {
+			static if (LOG) tracef("shutdown err: %d", err);
 			// The socket has already been shut down, we can recover from that
 		} else  if (catchError!"shutdown"(err)) {
 			return false;
@@ -1694,7 +1733,7 @@ package:
 	// for connected sockets
 	bool closeSocket(fd_t fd, bool connected, bool forced = false)
 	{
-		static if (LOG) log("closeSocket");
+		static if (LOG) tracef("closeSocket connected(%d) forced(%d)", connected, forced);
 		if (connected && !closeRemoteSocket(fd, forced) && !forced)
 			return false;
 
@@ -1702,7 +1741,7 @@ package:
 			// todo: flush the socket here?
 
 			import core.sys.posix.unistd : close;
-			static if (LOG) log("close");
+			static if (LOG) trace("close");
 			int err = close(fd);
 			if (catchError!"closesocket"(err))
 				return false;
@@ -1734,121 +1773,93 @@ package:
 
 	bool resolve(AsyncDNSRequest* req, in string url, in ushort port = 0, in bool ipv6 = true, in bool tcp = true) 
 	{
-		m_status = StatusInfo.init;
-		import libasync.internals.socket_compat : AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, IPPROTO_TCP, IPPROTO_UDP, getaddrinfo_a, sigevent, gaicb, addrinfo, GAI_NOWAIT, GAI_WAIT;
-		import std.string: format;
-		static bool is_sig_setup = false;
+		static if (EPOLL) {
 
-		if (!is_sig_setup) {
-					import core.sys.linux.sys.signalfd;
-			import core.thread : getpid;
+			m_status = StatusInfo.init;
+			import libasync.internals.socket_compat : AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, IPPROTO_TCP, IPPROTO_UDP, gaicb, addrinfo, sigval, sigevent, getaddrinfo_a, GAI_NOWAIT, GAI_WAIT;
+			import core.thread : Thread;
+			import std.string: format;
 
-			fd_t err;
-			fd_t dnsfd;
-
-			sigset_t mask;
-
-			try {
-				sigemptyset(&mask);
-				sigaddset(&mask, __libc_current_sigrtmin() + 1);
-				err = pthread_sigmask(SIG_BLOCK, &mask, null);
-				if (catchError!"sigprocmask"(err))
-				{
-					m_status.code = Status.EVLOOP_FAILURE;
-					return false;
-				}
-			} catch (Throwable) { }
-
-
-
-			dnsfd = signalfd(-1, &mask, SFD_NONBLOCK);
-			assert(dnsfd > 0, "Failed to setup signalfd in epoll");
-
-			EventType evtype;
-
-			epoll_event _event;
-			_event.events = EPOLLIN;
-			evtype = EventType.DNSResolver;
-			try
-				m_evDNS = ThreadMem.alloc!EventInfo(dnsfd, evtype, EventObject.init, m_instanceId);
-			catch (Exception e){
-				assert(false, "Allocation error");
+			addrinfo* hints = assumeWontThrow(ThreadMem.alloc!addrinfo());
+			error_t err;
+			if (ipv6) {
+				hints.ai_family = AF_INET6;
 			}
-			_event.data.ptr = cast(void*) m_evDNS;
+			else {
+				hints.ai_family = AF_INET;
+			}
+			if (tcp) {
+				hints.ai_socktype = SOCK_STREAM;
+				hints.ai_protocol = IPPROTO_TCP;
+			}
+			else {
+				hints.ai_socktype = SOCK_DGRAM;
+				hints.ai_protocol = IPPROTO_UDP;
+			}
+			
+			gaicb* host = assumeWontThrow(ThreadMem.alloc!gaicb());
+			sigevent* sig = &req.sig;
+			static if (LOG) tracef("Creating from thread: %d", Thread.getThis().id());
+			host.ar_request = hints;
+			host.ar_name = url.toStringz();
+			host.ar_service = null;
+			if (port != 0) {
+				host.ar_service = port.to!string.toStringz();
+			}
+			req.host = host;
 
-			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, dnsfd, &_event);
-			if (catchError!"EPOLL_CTL_ADD(sfd)"(err))
-			{
+			sig.sigev_notify = SIGEV_SIGNAL;
+			sig.sigev_value.sival_ptr = cast(void*)req;
+			
+			sig.sigev_signo = __libc_current_sigrtmin() + 6;
+
+			//sig.sigev_notify_thread_id = assumeWontThrow(cast(int)Thread.getThis().id());
+			
+			static if (LOG) {
+				log("Resolving " ~ url ~ ":" ~ port.to!string);
+			}
+			err = cast(error_t) getaddrinfo_a(GAI_NOWAIT, &req.host, 1, sig);
+			if (req.host.ar_result) {
+				auto res = req.host.ar_result;
+				NetworkAddress addr;
+				ubyte* pAddr = cast(ubyte*) res.ai_addr;
+				ubyte* data = cast(ubyte*) addr.sockAddr;
+				data[0 .. res.ai_addrlen] = pAddr[0 .. res.ai_addrlen]; // perform bit copy
+				addr.family = cast(ushort)res.ai_family;
+				*req.dns.addr = cast(shared)addr;
+				req.dns.callback();
+				return true;
+			}
+
+			static if (LOG) tracef("getaddrinfo_a ==> %d", err);
+
+			if (err != EPosix.EOK) {	
+
+				/// Unfortunately, glibc < 2.26 has a bug that the DNS resolver caches the contents
+				/// of /etc/resolve.conf. (See https://sourceware.org/bugzilla/show_bug.cgi?id=984)
+				/// An issue of Pidgen bug tracker(https://developer.pidgin.im/ticket/2825) shows
+				/// that calling res_init to refresh the nameserver list.
+				version (CRuntime_Glibc)
+				{
+					version (linux)
+					{
+						__res_init();
+					}
+					/// At least res_init isn't thread-safe on OSX/iOS, so nothing to do.
+				}
+				version(iOS) {
+					// ios uses a different error reporting for getaddrinfo
+					import libasync.internals.socket_compat : gai_strerror;
+					import std.string : fromStringz;
+					setInternalError!"getAddressInfo"(Status.ERROR, gai_strerror(cast(int) err).fromStringz.to!string);
+				}
+				else setInternalError!"getAddressInfo"(Status.ERROR, string.init, err);
 				return false;
 			}
+			return true;
+		} else {
+			assert(false, "Not implemented on KQUEUE");
 		}
-		addrinfo* hints = assumeWontThrow(ThreadMem.alloc!addrinfo());
-		error_t err;
-		if (ipv6) {
-			hints.ai_family = AF_INET6;
-		}
-		else {
-			hints.ai_family = AF_INET;
-		}
-		if (tcp) {
-			hints.ai_socktype = SOCK_STREAM;
-			hints.ai_protocol = IPPROTO_TCP;
-		}
-		else {
-			hints.ai_socktype = SOCK_DGRAM;
-			hints.ai_protocol = IPPROTO_UDP;
-		}
-		
-		gaicb* host = assumeWontThrow(ThreadMem.alloc!gaicb());
-		sigevent* sig = &req.sig;
-
-		host.ar_request = hints;
-		char[] url_chars = assumeWontThrow(ThreadMem.alloc!(char[])(url.length + 1));
-		url_chars[0 .. $-1] = url[0 .. $];
-		url_chars[$-1] = 0;
-
-		host.ar_name = url_chars.ptr;
-		host.ar_service = null;
-		if (port != 0) {
-			host.ar_service = null;
-		}
-		req.host = host;
-
-		sig.sigev_notify = SIGEV_SIGNAL;
-		sig.sigev_value.sival_ptr = cast(void*)req;
-		sig.sigev_signo = __libc_current_sigrtmin() + 1;
-
-		static if (LOG) {
-			log("Resolving " ~ url ~ ":" ~ port.to!string);
-		}
-		err = cast(error_t) getaddrinfo_a(GAI_WAIT, &req.host, 1, sig);
-		
-		tracef("getaddrinfo_a ==> %d", err);
-
-		if (err != EPosix.EOK) {		
-
-			/// Unfortunately, glibc < 2.26 has a bug that the DNS resolver caches the contents
-			/// of /etc/resolve.conf. (See https://sourceware.org/bugzilla/show_bug.cgi?id=984)
-			/// An issue of Pidgen bug tracker(https://developer.pidgin.im/ticket/2825) shows
-			/// that calling res_init to refresh the nameserver list.
-			version (CRuntime_Glibc)
-			{
-				version (linux)
-				{
-					__res_init();
-				}
-				/// At least res_init isn't thread-safe on OSX/iOS, so nothing to do.
-			}
-			version(iOS) {
-				// ios uses a different error reporting for getaddrinfo
-				import libasync.internals.socket_compat : gai_strerror;
-				import std.string : fromStringz;
-				setInternalError!"getAddressInfo"(Status.ERROR, gai_strerror(cast(int) err).fromStringz.to!string);
-			}
-			else setInternalError!"getAddressInfo"(Status.ERROR, string.init, err);
-			return false;
-		}
-		return true;
 	}
 
 	void setInternalError(string TRACE)(in Status s, string details = "", error_t error = cast(EPosix) errno())
@@ -2328,11 +2339,11 @@ private:
 				try {
 					evh = del(conn);
 					if (evh == TCPEventHandler.init || !initTCPConnection(csock, conn, evh, true)) {
-						static if (LOG) try log("Failed to connect"); catch (Throwable e) {}
+						static if (LOG) try trace("Failed to connect"); catch (Throwable e) {}
 						closeClient();
 						continue;
 					}
-					static if (LOG) try log("Connection Started with " ~ csock.to!string); catch (Throwable e) {}
+					static if (LOG) try trace("Connection Started with " ~ csock.to!string); catch (Throwable e) {}
 				}
 				catch (Exception e) {
 					static if (LOG) log("Close socket");
@@ -2465,7 +2476,7 @@ private:
 
 		if (write && (!conn.stateful || conn.connected && !conn.disconnecting && conn.writeBlocked)) {
 			if (conn.stateful) conn.writeBlocked = false;
-			static if (LOG) try log("!write"); catch (Throwable e) {}
+			static if (LOG) try trace("!write"); catch (Throwable e) {}
 			try {
 				del(EventCode.WRITE);
 			}
@@ -2476,7 +2487,7 @@ private:
 		}
 
 		if (read && (!conn.stateful || conn.connected && !conn.disconnecting)) {
-			static if (LOG) try log("!read"); catch (Throwable e) {}
+			static if (LOG) try trace("!read"); catch (Throwable e) {}
 			try {
 				del(EventCode.READ);
 			}
@@ -2488,7 +2499,7 @@ private:
 
 		if (conn.stateful && close && conn.connected && !conn.disconnecting)
 		{
-			static if (LOG) try log("!close"); catch (Throwable e) {}
+			static if (LOG) try trace("!close"); catch (Throwable e) {}
 			// todo: See if this hack is still necessary
 			if (!conn.connected && conn.disconnecting)
 				return true;
@@ -2530,7 +2541,7 @@ private:
 		}
 
 		if (conn.stateful && connect) {
-			static if (LOG) try log("!connect"); catch (Throwable e) {}
+			static if (LOG) try trace("!connect"); catch (Throwable e) {}
 			conn.connected = true;
 			try del(EventCode.CONNECT);
 			catch (Exception e) {
@@ -2563,21 +2574,21 @@ private:
 		}
 
 		if (read) {
-			tracef("Read on FD %d", socket.handle);
+			static if (LOG) tracef("Read on FD %d", socket.handle);
 
 			socket.readBlocked = false;
 			processPendingReceives(socket);
 		}
 
 		if (write) {
-			tracef("Write on FD %d", socket.handle);
+			static if (LOG) tracef("Write on FD %d", socket.handle);
 
 			socket.writeBlocked = false;
 			processPendingSends(socket);
 		}
 
 		if (error) {
-			tracef("Error on FD %d", socket.handle);
+			static if (LOG) tracef("Error on FD %d", socket.handle);
 
 			auto err = cast(error_t) socket.lastError;
 			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
@@ -2609,10 +2620,10 @@ private:
 			const bool close = cast(bool) (kqueue_flags & EV_EOF);
 		}
 
-		tracef("AsyncSocket events: (read: %s, write: %s, error: %s, connect: %s, close: %s)", read, write, error, connect, close);
+		static if (LOG) tracef("AsyncSocket events: (read: %s, write: %s, error: %s, connect: %s, close: %s)", read, write, error, connect, close);
 
 		if (error) {
-			tracef("Error on FD %d", socket.handle);
+			static if (LOG) tracef("Error on FD %d", socket.handle);
 
 			auto err = cast(error_t) socket.lastError;
 			if (err == ECONNRESET ||
@@ -2629,7 +2640,7 @@ private:
 		}
 
 		if (connect) {
-			tracef("Connect on FD %d", socket.handle);
+			static if (LOG) tracef("Connect on FD %d", socket.handle);
 
 			socket.connected = true;
 			socket.readBlocked = false;
@@ -2640,7 +2651,7 @@ private:
 		}
 
 		if ((/+read ||+/ write) && socket.connected && !socket.disconnecting && socket.writeBlocked) {
-			tracef("Write on FD %d", socket.handle);
+			static if (LOG) tracef("Write on FD %d", socket.handle);
 
 			socket.writeBlocked = false;
 			processPendingSends(socket);
@@ -2649,7 +2660,7 @@ private:
 		}+/
 
 		if (read && socket.connected && !socket.disconnecting && socket.readBlocked) {
-			tracef("Read on FD %d", socket.handle);
+			static if (LOG) tracef("Read on FD %d", socket.handle);
 
 			socket.readBlocked = false;
 			processPendingReceives(socket);
@@ -2657,7 +2668,7 @@ private:
 
 		if (close && socket.connected && !socket.disconnecting)
 		{
-			tracef("Close on FD %d", socket.handle);
+			static if (LOG) tracef("Close on FD %d", socket.handle);
 			socket.kill();
 			socket.handleClose();
 			return true;
@@ -2683,17 +2694,17 @@ private:
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
 		}
 
-		tracef("AsyncSocket events: (incoming: %s, error: %s)", incoming, error);
+		static if (LOG) tracef("AsyncSocket events: (incoming: %s, error: %s)", incoming, error);
 
 		if (incoming) {
-			tracef("Incoming on FD %d", socket.handle);
+			static if (LOG) tracef("Incoming on FD %d", socket.handle);
 
 			socket.readBlocked = false;
 			processPendingAccepts(socket);
 		}
 
 		if (error) {
-			tracef("Error on FD %d", socket.handle);
+			static if (LOG) tracef("Error on FD %d", socket.handle);
 
 			auto err = cast(error_t) socket.lastError;
 			setInternalError!"AsyncSocket.ERROR"(Status.ABORT, null, cast(error_t) err);
@@ -2733,7 +2744,7 @@ private:
 		{
 			import libasync.internals.socket_compat : socklen_t, getsockopt, SOL_SOCKET, SO_ERROR;
 			int err;
-			static if (LOG) try log("Also got events: " ~ connect.to!string ~ " c " ~ read.to!string ~ " r " ~ write.to!string ~ " write"); catch (Throwable e) {}
+			static if (LOG) try trace("Also got events: " ~ connect.to!string ~ " c " ~ read.to!string ~ " r " ~ write.to!string ~ " write"); catch (Throwable e) {}
 			socklen_t errlen = err.sizeof;
 			getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen);
 			setInternalError!"EPOLLERR"(Status.ABORT, null, cast(error_t)err);
@@ -2750,7 +2761,7 @@ private:
 
 		if (connect)
 		{
-			static if (LOG) try log("!connect"); catch (Throwable e) {}
+			static if (LOG) try trace("!connect"); catch (Throwable e) {}
 			conn.connected = true;
 			try del(TCPEvent.CONNECT);
 			catch (Exception e) {
@@ -2764,7 +2775,7 @@ private:
 		if ((read || write) && conn.connected && !conn.disconnecting && conn.writeBlocked)
 		{
 			conn.writeBlocked = false;
-			static if (LOG) try log("!write"); catch (Throwable e) {}
+			static if (LOG) try trace("!write"); catch (Throwable e) {}
 			try del(TCPEvent.WRITE);
 			catch (Exception e) {
 				setInternalError!"del@TCPEvent.WRITE"(Status.ABORT);
@@ -2777,7 +2788,7 @@ private:
 
 		if (read && conn.connected && !conn.disconnecting)
 		{
-			static if (LOG) try log("!read"); catch (Throwable e) {}
+			static if (LOG) try trace("!read"); catch (Throwable e) {}
 			try del(TCPEvent.READ);
 			catch (Exception e) {
 				setInternalError!"del@TCPEvent.READ"(Status.ABORT);
@@ -2787,7 +2798,7 @@ private:
 
 		if (close && conn.connected && !conn.disconnecting)
 		{
-			static if (LOG) try log("!close"); catch (Throwable e) {}
+			static if (LOG) try trace("!close"); catch (Throwable e) {}
 			// todo: See if this hack is still necessary
 			if (!conn.connected && conn.disconnecting)
 				return true;
@@ -2800,19 +2811,19 @@ private:
 
 			// Careful here, the delegate might have closed the connection already
 			if (conn.connected) {
-				closeSocket(fd, !conn.disconnecting, conn.connected);
+				closeSocket(fd, !conn.disconnecting, true);
 
 				m_status.code = Status.ABORT;
 				conn.disconnecting = true;
 				conn.connected = false;
 				conn.writeBlocked = true;
 				del.conn.socket = 0;
-
 				try ThreadMem.free(del.conn.evInfo);
 				catch (Exception e){ assert(false, "Error freeing resources"); }
+				del.conn.evInfo = null;
 
 				if (del.conn.inbound) {
-					static if (LOG) log("Freeing inbound connection");
+					static if (LOG) trace("Freeing inbound connection");
 					try ThreadMem.free(del.conn);
 					catch (Exception e){ assert(false, "Error freeing resources"); }
 				}
@@ -2990,7 +3001,7 @@ private:
 			_event.data.ptr = ev;
 			_event.events = 0 | EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP | EPOLLET;
 			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, fd, &_event);
-			static if (LOG) log("Connection FD#" ~ fd.to!string ~ " added to " ~ m_epollfd.to!string);
+			static if (LOG) trace("Connection FD#" ~ fd.to!string ~ " added to " ~ m_epollfd.to!string);
 			if (catchError!"epoll_ctl_add"(err))
 				return destroyEvInfo();
 
@@ -3001,7 +3012,7 @@ private:
 		else /* if KQUEUE */
 		{
 			kevent_t[2] events = void;
-			static if (LOG) try log("Register event ptr " ~ ev.to!string); catch (Throwable e) {}
+			static if (LOG) try trace("Register event ptr " ~ ev.to!string); catch (Throwable e) {}
 			assert(ev.evType == EventType.TCPTraffic, "Bad event type for TCP Connection");
 			EV_SET(&(events[0]), fd, EVFILT_READ, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, cast(void*) ev);
 			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, cast(void*) ev);
@@ -3191,7 +3202,7 @@ private:
 		}
 
 		static if (LOG) {
-			log("Resolving " ~ host ~ ":" ~ port.to!string);
+			trace("Resolving " ~ host ~ ":" ~ port.to!string);
 		}
 
 		auto chost = host.toStringz();

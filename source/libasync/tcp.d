@@ -4,7 +4,7 @@ import std.traits : isPointer;
 import libasync.types;
 import libasync.events;
 import std.typecons : Tuple;
-
+import libasync.internals.logging;
 /// Wraps a TCP stream between 2 network adapters, using a custom handler to
 /// signal related events. Many of these objects can be active concurrently
 /// in a thread if the event loop is running and the handlers do not block.
@@ -21,6 +21,23 @@ nothrow:
 	fd_t m_preInitializedSocket;
 	bool m_noDelay;
 	bool m_inbound;
+	version(Posix) {
+		~this() {
+			if (isConnected) {
+				import core.sys.posix.unistd : close;
+				close(m_socket);
+				m_socket = fd_t.init;
+			}
+			if (evInfo) {
+				static if (LOG) tracef("Calling AsyncTCPConnection.~this with evInfo: %X", cast(void*)evInfo);
+				import memutils.utils : ThreadMem;
+				import std.exception : assumeWontThrow;
+				assumeWontThrow(ThreadMem.free(evInfo));
+				evInfo = null;
+			}
+		}
+	}
+
 public:
 	///
 	this(EventLoop evl, fd_t preInitializedSocket = fd_t.init)

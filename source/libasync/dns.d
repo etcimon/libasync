@@ -32,7 +32,9 @@ private:
 	DNSCmdInfo m_cmdInfo;
 	StatusInfo m_status;
 	Thread m_owner;
-
+	static if (is_Windows || EPOLL) {
+		AsyncDNSRequest* m_activeReq;
+	}
 public:
 	///
 	this(EventLoop evl) {
@@ -85,6 +87,7 @@ public:
 				m_cmdInfo.ipv6 = ipv6;
 				m_cmdInfo.url = cast(shared) url;
 				AsyncDNSRequest* dns_req = AsyncDNSRequest.alloc(this);
+				m_activeReq = cast(shared)dns_req;
 				return (cast(EventLoop)m_evLoop).resolve(dns_req, cmdInfo.url, 0, cmdInfo.ipv6?isIPv6.yes:isIPv6.no);
 			}
 		}
@@ -150,7 +153,13 @@ package:
 	}
 
 	synchronized void callback() {
-
+		static if (is_Windows || EPOLL) {
+			if (m_activeReq) {
+				import std.exception : assumeWontThrow;
+				assumeWontThrow(AsyncDNSRequest.free(cast(AsyncDNSRequest*)m_activeReq));
+				m_activeReq = null;
+			} 
+		}
 		try {
 			m_handler(cast(NetworkAddress)m_cmdInfo.addr);
 		}
@@ -169,9 +178,19 @@ package struct AsyncDNSRequest
 		PADDRINFOEX infos;
 	}
 	static if (EPOLL) {
-		import libasync.internals.socket_compat : gaicb, sigevent;
+		import libasync.internals.socket_compat : gaicb, sigevent, addrinfo;
 		gaicb* host;
 		sigevent sig;
+		~this() {
+			static if (LOG) tracef("Destroying AsyncDNSRequest");
+			try {
+				ThreadMem.free(cast(addrinfo*)host.ar_request);
+				ThreadMem.free(cast(gaicb*)host);
+			} catch (Exception e) {
+				import libasync.internals.logging;
+				static if (LOG) tracef("Exception freeing in AsyncDNSRequest: %s", e.toString());
+			}
+		}
 	}
 	mixin FreeList!1_000;	
 }

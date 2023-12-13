@@ -106,7 +106,28 @@ else version (linux) {
 		EAI_INPROGRESS = -100,
 		EAI_SYSTEM = -10
 	}
+
+	extern(C) static union sigval_t {          /* Data passed with notification */
+		int     sival_int;         /* Integer value */
+		void   *sival_ptr;         /* Pointer value */
+	}
+
+	extern(C) static struct sigevent_t {
+		int          sigev_notify; /* Notification method */
+		int          sigev_signo;  /* Notification signal */
+		sigval_t		 sigev_value;  /* Data passed with
+										notification */
+		void function(sigval_t) sigev_notify_function;
+							/* Function used for thread
+							notification (SIGEV_THREAD) */
+		void        *sigev_notify_attributes;
+							/* Attributes for notification thread
+							(SIGEV_THREAD) */
+		pid_t        sigev_notify_thread_id;
+							/* ID of thread to signal (SIGEV_THREAD_ID) */
+	}
 	extern(C) nothrow @nogc int getaddrinfo_a(int mode, gaicb **list, int nitems, sigevent *sevp);
+
 }
 extern (C) nothrow @nogc:
 
