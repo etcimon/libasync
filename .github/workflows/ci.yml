@@ -31,13 +31,13 @@ jobs:
             os: macos-latest
             arch: x86_64
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: dlang-community/setup-dlang@v1
         with:
           compiler: ${{ matrix.dc }}
       - name: Install multi-lib for 32-bit systems
         if: matrix.arch == 'x86' && matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install gcc-multilib
+        run: sudo apt-get install gcc-multilib --fix-missing
       - id: build
         name: Test library
         run: |
