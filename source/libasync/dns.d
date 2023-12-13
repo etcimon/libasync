@@ -79,7 +79,7 @@ public:
 	}
 	do {
 		static if (LOG) .tracef("Resolving url: %s", url);	
-		version(Windows) {
+		static if (is_Windows || EPOLL) {
 			if (force_async) {			
 				m_cmdInfo.command = DNSCmd.RESOLVEHOST;
 				m_cmdInfo.ipv6 = ipv6;
@@ -167,6 +167,11 @@ package struct AsyncDNSRequest
 	version(Windows) {
 		import libasync.internals.win32;
 		PADDRINFOEX infos;
+	}
+	static if (EPOLL) {
+		import libasync.internals.socket_compat : gaicb, sigevent;
+		gaicb* host;
+		sigevent sig;
 	}
 	mixin FreeList!1_000;	
 }

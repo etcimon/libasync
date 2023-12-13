@@ -6,8 +6,8 @@ static if (__VERSION__ < 2103){
 else {
     import std.logger.core : LogLevel;
 }
-enum LOG = false; //trace
-enum LOGLEVEL = LogLevel.off;
+enum LOG = true; //trace
+enum LOGLEVEL = LogLevel.all;
 enum DEBUG = false;
 
 import std.typecons: Flag;
@@ -23,6 +23,8 @@ version(linux) 	enum is_linux = true;
 else		enum is_linux = false;
 version(iOS) 	enum is_iOS = true;
 else		enum is_iOS = false;
+version(Windows) enum is_Windows = true;
+else		enum is_Windows = false;
 
 static if (is_linux)
 	enum EPOLL = true;

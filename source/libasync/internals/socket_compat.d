@@ -94,6 +94,19 @@ else version (linux) {
 		TCP_CONGESTION = 13,
 		TCP_MD5SIG = 14
 	}
+	extern(C) nothrow @nogc struct gaicb {
+		const(char)* ar_name;
+		const(char)* ar_service;
+		const(addrinfo)* ar_request;
+		addrinfo* ar_result;
+	}
+	enum : int {
+		GAI_WAIT = 0,
+		GAI_NOWAIT = 1,
+		EAI_INPROGRESS = -100,
+		EAI_SYSTEM = -10
+	}
+	extern(C) nothrow @nogc int getaddrinfo_a(int mode, gaicb **list, int nitems, sigevent *sevp);
 }
 extern (C) nothrow @nogc:
 

@@ -100,6 +100,7 @@ private:
 	error_t m_error = EPosix.EOK;
 	EventInfo* m_evSignal;
 	static if (EPOLL){
+		EventInfo* m_evDNS;
 		fd_t m_epollfd;
 		HashMap!(Tuple!(fd_t, uint), DWFolderInfo) m_dwFolders; // uint = inotify_add_watch(Path)
 	}
@@ -262,9 +263,10 @@ package:
 		static if (EPOLL) {
 			close(m_epollfd); // not necessary?
 
-			// not necessary:
-			//try ThreadMem.free(m_evSignal);
-			//catch (Exception e) { assert(false, "Failed to free resources"); }
+			try ThreadMem.free(m_evSignal);
+			catch (Exception e) { assert(false, "Failed to free resources"); }
+			try ThreadMem.free(m_evDNS);
+			catch (Exception e) { assert(false, "Failed to free resources"); }
 
 		}
 		else
@@ -474,6 +476,47 @@ package:
 						}
 						break;
 
+					case EventType.DNSResolver:
+						static if (LOG) try log("Got signal!"); catch (Throwable e) {}
+
+						static if (EPOLL) {
+							import libasync.internals.socket_compat : freeaddrinfo, addrinfo, gaicb;
+							static if (LOG) try log("Got dns signal: " ~ info.fd.to!string ~ " of type: " ~ info.evType.to!string); catch (Throwable e) {}
+							import core.sys.linux.sys.signalfd : signalfd_siginfo;
+							import core.sys.posix.unistd : read;
+							signalfd_siginfo fdsi;
+							fd_t err = cast(fd_t)read(info.fd, &fdsi, fdsi.sizeof);
+							AsyncDNSRequest* req = cast(AsyncDNSRequest*) cast(void*) fdsi.ssi_ptr;
+
+							NetworkAddress addr;
+							addrinfo* res = req.host.ar_result;
+
+							ubyte* pAddr = cast(ubyte*) res.ai_addr;
+							ubyte* data = cast(ubyte*) addr.sockAddr;
+							data[0 .. res.ai_addrlen] = pAddr[0 .. res.ai_addrlen]; // perform bit copy
+							addr.family = cast(ushort)res.ai_family;
+							*req.dns.addr = cast(shared)addr;
+
+							try req.dns.callback();
+							catch (Exception e) {
+								setInternalError!"signal handler"(Status.ERROR);
+							}
+
+
+							freeaddrinfo(res); 
+							try {
+								ThreadMem.free(&req.host.ar_request);
+								AsyncDNSRequest.free(req);
+							} catch (Exception e) {}
+
+
+						}
+						else /* if KQUEUE */
+						{
+							assert(false, "Unsupported platform for async DNS");
+						}
+						break;
+
 					case EventType.Signal:
 						static if (LOG) try log("Got signal!"); catch (Throwable e) {}
 
@@ -483,12 +526,14 @@ package:
 							import core.sys.linux.sys.signalfd : signalfd_siginfo;
 							import core.sys.posix.unistd : read;
 							signalfd_siginfo fdsi;
-							fd_t err = cast(fd_t)read(info.fd, &fdsi, fdsi.sizeof);
-							shared AsyncSignal sig = cast(shared AsyncSignal) cast(void*) fdsi.ssi_ptr;
+							fd_t err;
+							while ((err = cast(fd_t)read(info.fd, &fdsi, fdsi.sizeof)) > 0) {
+								shared AsyncSignal sig = cast(shared AsyncSignal) cast(void*) fdsi.ssi_ptr;
 
-							try sig.handler();
-							catch (Exception e) {
-								setInternalError!"signal handler"(Status.ERROR);
+								try sig.handler();
+								catch (Exception e) {
+									setInternalError!"signal handler"(Status.ERROR);
+								}
 							}
 
 
@@ -501,16 +546,16 @@ package:
 								try sigarr = new AsyncSignal[32];
 								catch (Exception e) { assert(false, "Could not allocate signals array"); }
 							}
-
-							bool more = popSignals(sigarr);
-							foreach (AsyncSignal sig; sigarr)
-							{
-								shared AsyncSignal ptr = cast(shared AsyncSignal) sig;
-								if (ptr is null)
-									break;
-								try (cast(shared AsyncSignal)sig).handler();
-								catch (Exception e) {
-									setInternalError!"signal handler"(Status.ERROR);
+							while (popSignals(sigarr)) {
+								foreach (AsyncSignal sig; sigarr)
+								{
+									shared AsyncSignal ptr = cast(shared AsyncSignal) sig;
+									if (ptr is null)
+										break;
+									try (cast(shared AsyncSignal)sig).handler();
+									catch (Exception e) {
+										setInternalError!"signal handler"(Status.ERROR);
+									}
 								}
 							}
 						}
@@ -1685,6 +1730,125 @@ package:
 		import libasync.internals.socket_compat : addrinfo;
 		addrinfo hints;
 		return getAddressInfo(host, port, ipv6, tcp, hints);
+	}
+
+	bool resolve(AsyncDNSRequest* req, in string url, in ushort port = 0, in bool ipv6 = true, in bool tcp = true) 
+	{
+		m_status = StatusInfo.init;
+		import libasync.internals.socket_compat : AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, IPPROTO_TCP, IPPROTO_UDP, getaddrinfo_a, sigevent, gaicb, addrinfo, GAI_NOWAIT, GAI_WAIT;
+		import std.string: format;
+		static bool is_sig_setup = false;
+
+		if (!is_sig_setup) {
+					import core.sys.linux.sys.signalfd;
+			import core.thread : getpid;
+
+			fd_t err;
+			fd_t dnsfd;
+
+			sigset_t mask;
+
+			try {
+				sigemptyset(&mask);
+				sigaddset(&mask, __libc_current_sigrtmin() + 1);
+				err = pthread_sigmask(SIG_BLOCK, &mask, null);
+				if (catchError!"sigprocmask"(err))
+				{
+					m_status.code = Status.EVLOOP_FAILURE;
+					return false;
+				}
+			} catch (Throwable) { }
+
+
+
+			dnsfd = signalfd(-1, &mask, SFD_NONBLOCK);
+			assert(dnsfd > 0, "Failed to setup signalfd in epoll");
+
+			EventType evtype;
+
+			epoll_event _event;
+			_event.events = EPOLLIN;
+			evtype = EventType.DNSResolver;
+			try
+				m_evDNS = ThreadMem.alloc!EventInfo(dnsfd, evtype, EventObject.init, m_instanceId);
+			catch (Exception e){
+				assert(false, "Allocation error");
+			}
+			_event.data.ptr = cast(void*) m_evDNS;
+
+			err = epoll_ctl(m_epollfd, EPOLL_CTL_ADD, dnsfd, &_event);
+			if (catchError!"EPOLL_CTL_ADD(sfd)"(err))
+			{
+				return false;
+			}
+		}
+		addrinfo* hints = assumeWontThrow(ThreadMem.alloc!addrinfo());
+		error_t err;
+		if (ipv6) {
+			hints.ai_family = AF_INET6;
+		}
+		else {
+			hints.ai_family = AF_INET;
+		}
+		if (tcp) {
+			hints.ai_socktype = SOCK_STREAM;
+			hints.ai_protocol = IPPROTO_TCP;
+		}
+		else {
+			hints.ai_socktype = SOCK_DGRAM;
+			hints.ai_protocol = IPPROTO_UDP;
+		}
+		
+		gaicb* host = assumeWontThrow(ThreadMem.alloc!gaicb());
+		sigevent* sig = &req.sig;
+
+		host.ar_request = hints;
+		char[] url_chars = assumeWontThrow(ThreadMem.alloc!(char[])(url.length + 1));
+		url_chars[0 .. $-1] = url[0 .. $];
+		url_chars[$-1] = 0;
+
+		host.ar_name = url_chars.ptr;
+		host.ar_service = null;
+		if (port != 0) {
+			host.ar_service = null;
+		}
+		req.host = host;
+
+		sig.sigev_notify = SIGEV_SIGNAL;
+		sig.sigev_value.sival_ptr = cast(void*)req;
+		sig.sigev_signo = __libc_current_sigrtmin() + 1;
+
+		static if (LOG) {
+			log("Resolving " ~ url ~ ":" ~ port.to!string);
+		}
+		err = cast(error_t) getaddrinfo_a(GAI_WAIT, &req.host, 1, sig);
+		
+		tracef("getaddrinfo_a ==> %d", err);
+
+		if (err != EPosix.EOK) {		
+
+			/// Unfortunately, glibc < 2.26 has a bug that the DNS resolver caches the contents
+			/// of /etc/resolve.conf. (See https://sourceware.org/bugzilla/show_bug.cgi?id=984)
+			/// An issue of Pidgen bug tracker(https://developer.pidgin.im/ticket/2825) shows
+			/// that calling res_init to refresh the nameserver list.
+			version (CRuntime_Glibc)
+			{
+				version (linux)
+				{
+					__res_init();
+				}
+				/// At least res_init isn't thread-safe on OSX/iOS, so nothing to do.
+			}
+			version(iOS) {
+				// ios uses a different error reporting for getaddrinfo
+				import libasync.internals.socket_compat : gai_strerror;
+				import std.string : fromStringz;
+				setInternalError!"getAddressInfo"(Status.ERROR, gai_strerror(cast(int) err).fromStringz.to!string);
+			}
+			else setInternalError!"getAddressInfo"(Status.ERROR, string.init, err);
+			return false;
+		}
+		return true;
 	}
 
 	void setInternalError(string TRACE)(in Status s, string details = "", error_t error = cast(EPosix) errno())
@@ -3424,7 +3588,8 @@ enum EventType : char {
 	Signal,
 	Timer,
 	DirectoryWatcher,
-	Event // custom
+	Event, // custom
+	DNSResolver
 }
 
 struct EventInfo {
