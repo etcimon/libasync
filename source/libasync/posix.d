@@ -538,10 +538,6 @@ package:
 
 
 						}
-						else /* if KQUEUE */
-						{
-							assert(false, "Unsupported platform for async DNS");
-						}
 						break;
 
 					case EventType.Signal:
@@ -2115,12 +2111,20 @@ private:
 			//writeln("m_dwFiles length: ", m_dwFiles.length);
 
 			// get a list of the folder
-			foreach (de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
+			foreach (DirEntry de; dirEntries(path.toNativeString(), SpanMode.shallow)) {
 				//writeln(de.name);
 				Path entryPath = Path(de.name);
 				bool found;
 
-				if (!de.isDir()) {
+				if (fi.wi.recursive && de.isDir()) {
+					foreach (ref DWFolderInfo folder; m_dwFolders) {
+						if (folder.wi.path == entryPath) {
+							found = true;
+							break;
+						}
+					}
+				}
+				else  {
 					// compare it to the cached list fixme: make it faster using another container?
 					foreach (ref const fd_t id, ref const DWFileInfo file; m_dwFiles) {
 						if (file.folder != wd) continue; // this file isn't in the evented folder
@@ -2138,14 +2142,7 @@ private:
 							break;
 						}
 					}
-				} else {
-					foreach (ref DWFolderInfo folder; m_dwFolders) {
-						if (folder.wi.path == entryPath) {
-							found = true;
-							break;
-						}
-					}
-				}
+				} 
 
 				// This file/folder is new in the folder
 				if (!found) {
@@ -2157,7 +2154,7 @@ private:
 						/// Useful e.g. when mkdir -p is used.
 						watch(fd, WatchInfo(fi.wi.events, entryPath, fi.wi.recursive, wd) );
 						void genEvents(Path subpath) {
-							foreach (de; dirEntries(subpath.toNativeString(), SpanMode.shallow)) {
+							foreach (DirEntry de; dirEntries(subpath.toNativeString(), SpanMode.shallow)) {
 								auto subsubpath = Path(de.name);
 								if (!subsubpath.absolute())
 									subsubpath = subpath ~ subsubpath;
