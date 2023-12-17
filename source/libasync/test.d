@@ -99,6 +99,7 @@ void testDirectoryWatcher() {
 		}
 	});
 	g_watcher.watchDir(cache_path);
+	
 	AsyncTimer tm = new AsyncTimer(g_evl);
 	tm.duration(1.seconds).run({
 		writeln("Creating directory ./hey");

@@ -816,7 +816,7 @@ mixin template RunKill()
 				foreach (wd; remove_list[]) {
 					unwatch(ctxt.fd, wd); // deletes all related m_dwFolders and m_dwFiles entries
 				}
-
+				ThreadMem.free(m_watchers[ctxt.fd]);
 				ThreadMem.free(m_changes[ctxt.fd]);
 				m_watchers.remove(ctxt.fd);
 				m_changes.remove(ctxt.fd);
