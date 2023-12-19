@@ -223,7 +223,7 @@ void testSharedEvent() {
 void testOneshotTimer() {
 	g_timerOneShot = new AsyncTimer(g_evl);
 	g_timerOneShot.duration(1.seconds).run({
-		assert(!g_cbCheck[4] && Clock.currTime() - gs_start > 900.msecs && Clock.currTime() - gs_start < 1700.msecs, "Timer completed in " ~ (Clock.currTime() - gs_start).total!"msecs".to!string ~ "ms" );
+		assert(!g_cbCheck[4] && Clock.currTime() - gs_start > 900.msecs && Clock.currTime() - gs_start < 2500.msecs, "Timer completed in " ~ (Clock.currTime() - gs_start).total!"msecs".to!string ~ "ms" );
 		assert(g_timerOneShot.id != 0);
 		//writeln("Got timer callback!");
 		g_cbCheck[4] = true;

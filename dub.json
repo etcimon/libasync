@@ -17,7 +17,5 @@
                     "name": "regular",
                     "sourceFiles-windows-x86-dmd": ["ws2_32_ex.lib"]
             }
-    ],
-    "versions": ["EnableDebugger"]
-
+    ]
 }
