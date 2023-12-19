@@ -1,4 +1,3 @@
-﻿[![Build status](https://ci.appveyor.com/api/projects/status/ryvd5tlgjyqmjpsm?svg=true)](https://ci.appveyor.com/project/etcimon/libasync)
 [![CI](https://github.com/etcimon/libasync/actions/workflows/ci.yml/badge.svg)](https://github.com/etcimon/libasync/actions/workflows/ci.yml)
 
 About
