@@ -2228,7 +2228,7 @@ private:
 				return false;
 			}
 
-			err = .listen(fd, 128);
+			err = .listen(fd, SOMAXCONN);
 			if (catchSocketError!"listen"(err)) {
 				closesocket(fd);
 				return false;
