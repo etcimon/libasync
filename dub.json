@@ -15,8 +15,7 @@
     "configurations": [
             {
                     "name": "regular",
-                    "sourceFiles-windows-x86-dmd": ["ws2_32_ex.lib"],
-		    "libs-windows-x86-dmd": ["ws2_32_ex.lib"]
+                    "sourceFiles-windows-x86-dmd": ["ws2_32_ex.lib"]
             }
     ]
 }
