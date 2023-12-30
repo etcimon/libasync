@@ -1,6 +1,6 @@
 {
     "name": "libasync",
-    "description": "A cross-platform event loop library of asynchroneous objects.",
+    "description": "A cross-platform event loop library of asynchronous objects.",
     "license": "MIT",
     "authors": ["Etienne Cimon", "Sönke Ludwig"],
     "targetName": "async",
