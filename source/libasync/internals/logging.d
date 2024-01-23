@@ -1,12 +1,12 @@
 module libasync.internals.logging;
 
+import std.stdio : stdout;
 import libasync.types;
 static if (__VERSION__ < 2103){
     import std.experimental.logger;
 }
 else {
     import std.logger;
-    import std.stdio : stdout;
 }
 static __gshared FileLogger sharedLog;
 static this() {
