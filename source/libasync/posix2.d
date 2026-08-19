@@ -829,6 +829,41 @@ mixin template RunKill()
 		return true;
 	}
 
+	bool shutdown(AsyncTCPConnection ctxt, bool shut_read, bool shut_write)
+	{
+		m_status = StatusInfo.init;
+		fd_t fd = ctxt.socket;
+		if (fd <= 0) return true;
+		if (shut_read && shut_write)
+			return kill(ctxt, true);
+
+		import libasync.internals.socket_compat : shutdown, SHUT_WR, SHUT_RDWR, SHUT_RD;
+		int how = shut_read ? (shut_write ? SHUT_RDWR : SHUT_RD) : SHUT_WR;
+		int err = shutdown(fd, how);
+		if (err == SOCKET_ERROR && errno == ENOTCONN) {
+			static if (LOG) tracef("shutdown already closed");
+		} else if (catchError!"shutdown"(err)) {
+			return false;
+		}
+		if (shut_write) ctxt.writeShut = true;
+		if (shut_read) ctxt.readShut = true;
+
+		// kqueue: drop only the shut side. Keep the other filter so a
+		// subsequent peer FIN (EV_EOF + EVFILT_READ) still surfaces.
+		static if (!EPOLL) {
+			kevent_t ev;
+			if (shut_read) {
+				EV_SET(&ev, fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
+				kevent(m_kqueuefd, &ev, 1, null, 0, null);
+			}
+			if (shut_write) {
+				EV_SET(&ev, fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
+				kevent(m_kqueuefd, &ev, 1, null, 0, null);
+			}
+		}
+		return true;
+	}
+
 	bool kill(AsyncTCPConnection ctxt, bool forced = false)
 	{
 
@@ -837,16 +872,26 @@ mixin template RunKill()
 		fd_t fd = ctxt.socket;
 		bool has_socket = fd > 0;
 		ctxt.disconnecting = true;
+		if (!forced) ctxt.writeShut = true;
+		// Holders drop refs while the object is still valid. inbound
+		// ThreadMem.free happens in AsyncTCPConnection.kill after this.
+		if (ctxt.evInfo)
+			ctxt.notifyDestroy(ctxt.evInfo.evObj.tcpEvHandler.del);
+		else
+			ctxt.notifyDestroy(null);
 		if (forced) {
 			ctxt.connected = false;
 			ctxt.disconnecting = false;
+			// Close the fd first so epoll drops the EventInfo. Freeing
+			// evInfo before close left a dangling ptr in the current
+			// epoll batch (WRITE+HUP) and crashed pumpWrite.
+			auto ok = has_socket ? closeSocket(fd, true, forced) : true;
 			if (ctxt.evInfo) {
 				try ThreadMem.free(ctxt.evInfo);
 				catch (Throwable e) { assert(false, "Failed to free resources"); }
 				ctxt.evInfo = null;
 			}
-			if (ctxt.inbound) try ThreadMem.free(ctxt);
-			catch (Throwable t) { assert(false, "Failed to free resources for context " ~ (cast(void*)ctxt).to!string ~ ": " ~ t.to!string); }
+			return ok;
 		}
 		return has_socket ? closeSocket(fd, true, forced) : true;
 	}

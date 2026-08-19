@@ -382,10 +382,9 @@ package:
 				m_status = StatusInfo.init;
 				static if (EPOLL)
 				{
-					epoll_event _event = events[i];
 					static if (LOG) try trace("Event " ~ i.to!string ~ " of: " ~ events.length.to!string); catch (Throwable e) {}
-					EventInfo* info = cast(EventInfo*) _event.data.ptr;
-					int event_flags = cast(int) _event.events;
+					EventInfo* info = cast(EventInfo*) events[i].data.ptr;
+					int event_flags = cast(int) events[i].events;
 				}
 				else /* if KQUEUE */
 				{
@@ -628,39 +627,41 @@ package:
 
 						nothrow void abortTCPHandler(bool graceful) {
 
-							nothrow void closeAll() {
-								static if (LOG) try trace("closeAll()"); catch (Throwable e) {}
-								if (info.evObj.tcpEvHandler.conn.connected)
-									closeSocket(info.fd, true, true);
-
-								info.evObj.tcpEvHandler.conn.socket = 0;
-							}
-
-							/// Close the connection after an unexpected socket error
+							/// CLOSE/ERROR first while the fd is still live.
 							if (graceful) {
 								try info.evObj.tcpEvHandler(TCPEvent.CLOSE);
 								catch (Exception e) { static if(LOG) trace("Close failure"); }
-								closeAll();
-							}
-
-							/// Kill the connection after an internal error
-							else {
+							} else {
 								try info.evObj.tcpEvHandler(TCPEvent.ERROR);
 								catch (Exception e) { static if(LOG) trace("Error failure"); }
-								closeAll();
 							}
 
-							if (info.evObj.tcpEvHandler.conn.inbound) {
-								static if (LOG) trace("Freeing inbound connection FD#" ~ info.fd.to!string);
-								try ThreadMem.free(info.evObj.tcpEvHandler.conn); // evInfo freed in the dtor
-								catch (Exception e){ assert(false, "Error freeing resources"); }
-							} else {
-								try {
-									info.evObj.tcpEvHandler.conn.evInfo = null;
-									ThreadMem.free(info);									
-								}
-								catch (Exception e){ assert(false, "Error freeing resources"); }
+							// kill() delivers DESTROY then ThreadMem.free inbound.
+							auto abConn = info.evObj.tcpEvHandler.conn;
+							if (abConn && abConn.isConnected) {
+								try abConn.kill(true);
+								catch (Exception e) { assert(false, "Error killing connection"); }
+								return;
 							}
+							if (abConn && abConn.inbound) {
+								try info.evObj.tcpEvHandler.del(TCPEvent.DESTROY);
+								catch (Exception e) {}
+								try {
+									abConn.evInfo = null;
+									ThreadMem.free(info);
+									ThreadMem.free(abConn);
+								}
+								catch (Exception e){ assert(false, "Error freeing inbound"); }
+								return;
+							}
+							if (abConn && abConn.connected)
+								closeSocket(info.fd, true, true);
+							if (abConn) abConn.socket = 0;
+							try {
+								if (abConn) abConn.evInfo = null;
+								ThreadMem.free(info);
+							}
+							catch (Exception e){ assert(false, "Error freeing resources"); }
 						}
 
 						if (!success && m_status.code == Status.ABORT) {
@@ -973,19 +974,26 @@ package:
 			static if (LOG) try trace("Recv from FD: " ~ fd.to!string); catch (Throwable e) {}
 			m_status = StatusInfo.init;
 			import libasync.internals.socket_compat : recv;
-			int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
+			for (;;) {
+				int ret = cast(int) recv(fd, cast(void*) data.ptr, data.length, cast(int)0);
 
-			static if (LOG) log(".recv " ~ ret.to!string ~ " bytes of " ~ data.length.to!string ~ " @ " ~ fd.to!string);
-			if (catchError!".recv"(ret)){
-					if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
-							m_status.code = Status.ASYNC;
-					else if (m_error == EPosix.EINTR)
-							m_status.code = Status.RETRY;
-
+				static if (LOG) log(".recv " ~ ret.to!string ~ " bytes of " ~ data.length.to!string ~ " @ " ~ fd.to!string);
+				if (ret >= 0) return cast(uint) ret;
+				// EAGAIN is the ET drain edge — do not go through catchError
+				// (that sets ABORT + lastError try/catch before we reclassify).
+				immutable err = errno;
+				if (err == EPosix.EINTR)
+					continue;
+				if (err == EPosix.EWOULDBLOCK || err == EPosix.EAGAIN) {
+					m_error = cast(error_t) err;
+					m_status.code = Status.ASYNC;
 					return 0;
+				}
+				m_error = cast(error_t) err;
+				m_status.text = ".recv";
+				m_status.code = Status.ABORT;
+				return 0;
 			}
-
-			return cast(uint) ret < 0 ? 0 : ret;
 	}
 
 	pragma(inline, true)
@@ -994,17 +1002,26 @@ package:
 		static if (LOG) try trace("Send to FD: " ~ fd.to!string); catch (Throwable e) {}
 		m_status = StatusInfo.init;
 		import libasync.internals.socket_compat : send;
-		int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, cast(int)0);
-		static if (LOG) try trace("Sent: " ~ ret.to!string); catch (Throwable e) {}
-		if (catchError!"send"(ret)) { // ret == -1
-			if (m_error == EPosix.EWOULDBLOCK || m_error == EPosix.EAGAIN)
+		version (linux) import core.sys.posix.sys.socket : MSG_NOSIGNAL;
+		version (linux) enum sendFlags = MSG_NOSIGNAL;
+		else enum sendFlags = 0;
+		for (;;) {
+			int ret = cast(int) send(fd, cast(const(void)*) data.ptr, data.length, sendFlags);
+			static if (LOG) try trace("Sent: " ~ ret.to!string); catch (Throwable e) {}
+			if (ret >= 0) return cast(uint) ret;
+			immutable err = errno;
+			if (err == EPosix.EINTR)
+				continue;
+			if (err == EPosix.EWOULDBLOCK || err == EPosix.EAGAIN) {
+				m_error = cast(error_t) err;
 				m_status.code = Status.ASYNC;
-			else if (m_error == EPosix.EINTR)
-				m_status.code = Status.RETRY;
+				return 0;
+			}
+			m_error = cast(error_t) err;
+			m_status.text = "send";
+			m_status.code = Status.ABORT;
 			return 0;
-
 		}
-		return cast(uint) ret < 0 ? 0 : ret;
 	}
 	
 	size_t recvMsg(in fd_t fd, NetworkMessage* msg)
@@ -1728,11 +1745,19 @@ package:
 			err = shutdown(fd, SHUT_WR);
 
 		static if (!EPOLL) {
+			// Forced close: drop both filters. Half-close (SHUT_WR) must
+			// keep EVFILT_READ so the peer FIN still arrives — deleting
+			// both is why kqueue never completed a graceful shutdown.
 			kevent_t[2] events;
 			static if (LOG) try trace("!!DISC delete events"); catch (Throwable e) {}
-			EV_SET(&(events[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
-			EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
-			kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
+			if (forced) {
+				EV_SET(&(events[0]), fd, EVFILT_READ, EV_DELETE | EV_DISABLE, 0, 0, null);
+				EV_SET(&(events[1]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
+				kevent(m_kqueuefd, &(events[0]), 2, null, 0, null);
+			} else {
+				EV_SET(&(events[0]), fd, EVFILT_WRITE, EV_DELETE | EV_DISABLE, 0, 0, null);
+				kevent(m_kqueuefd, &(events[0]), 1, null, 0, null);
+			}
 		}
 
 		if (err == SOCKET_ERROR && errno == ENOTCONN) {
@@ -2352,10 +2377,12 @@ private:
 				conn.peer = addr;
 				conn.socket = csock;
 				conn.inbound = true;
+				// Listener.noDelay is the documented default for accepted
+				// sockets; it was never applied on the inbound path.
+				if (del.ctxt && del.ctxt.noDelay)
+					setOption(csock, TCPOption.NODELAY, true);
 
 				nothrow void closeClient() {
-					try ThreadMem.free(conn);
-					catch (Exception e){ assert(false, "Free failure"); }
 					closeSocket(csock, true, true);
 				}
 
@@ -2363,9 +2390,22 @@ private:
 				TCPEventHandler evh;
 				try {
 					evh = del(conn);
-					if (evh == TCPEventHandler.init || !initTCPConnection(csock, conn, evh, true)) {
+					if (evh == TCPEventHandler.init || evh.del is null) {
 						static if (LOG) try trace("Failed to connect"); catch (Throwable e) {}
 						closeClient();
+						try ThreadMem.free(conn);
+						catch (Exception e) { assert(false, "Error freeing inbound"); }
+						continue;
+					}
+					// del() (eventcore acceptHook) already owns `conn`.
+					// DESTROY lets it drop Slot.stream before ThreadMem.free.
+					if (!initTCPConnection(csock, conn, evh, true)) {
+						static if (LOG) try trace("Failed to connect"); catch (Throwable e) {}
+						try evh.del(TCPEvent.DESTROY);
+						catch (Exception e) {}
+						closeSocket(csock, true, true);
+						try ThreadMem.free(conn);
+						catch (Exception e) { assert(false, "Error freeing inbound"); }
 						continue;
 					}
 					static if (LOG) try trace("Connection Started with " ~ csock.to!string); catch (Throwable e) {}
@@ -2373,6 +2413,12 @@ private:
 				catch (Exception e) {
 					static if (LOG) log("Close socket");
 					closeClient();
+					if (evh.del) {
+						try evh.del(TCPEvent.DESTROY);
+						catch (Exception e2) {}
+					}
+					try ThreadMem.free(conn);
+					catch (Exception e2) { assert(false, "Error freeing inbound"); }
 					continue;
 				}
 
@@ -2494,8 +2540,10 @@ private:
 			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
 			if (conn.stateful) {
-				connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !conn.disconnecting && !conn.connected);
-				close = cast(bool) (kqueue_flags & EV_EOF);
+				connect = cast(bool) ((kqueue_events == EVFILT_READ || kqueue_events == EVFILT_WRITE) && !conn.disconnecting && !conn.connected);
+				// EV_EOF on EVFILT_WRITE is local SHUT_WR (epoll has no
+				// EPOLLRDHUP for that). Only a read-side EOF is peer close.
+				close = cast(bool) ((kqueue_flags & EV_EOF) && kqueue_events == EVFILT_READ && !conn.readShut);
 			}
 		}
 
@@ -2641,8 +2689,8 @@ private:
 			bool read = cast(bool) (kqueue_events & EVFILT_READ);
 			bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
-			const bool connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !socket.disconnecting && !socket.connected);
-			const bool close = cast(bool) (kqueue_flags & EV_EOF);
+			const bool connect = cast(bool) ((kqueue_events == EVFILT_READ || kqueue_events == EVFILT_WRITE) && !socket.disconnecting && !socket.connected);
+			const bool close = cast(bool) ((kqueue_flags & EV_EOF) && kqueue_events == EVFILT_READ && !socket.readShut);
 		}
 
 		static if (LOG) tracef("AsyncSocket events: (read: %s, write: %s, error: %s, connect: %s, close: %s)", read, write, error, connect, close);
@@ -2758,11 +2806,13 @@ private:
 		{
 			const short kqueue_events = cast(short) (events >> 16);
 			const ushort kqueue_flags = cast(ushort) (events & 0xffff);
-			const bool connect = cast(bool) ((kqueue_events & EVFILT_READ || kqueue_events & EVFILT_WRITE) && !conn.disconnecting && !conn.connected);
-			bool read = cast(bool) (kqueue_events & EVFILT_READ) && !connect;
-			const bool write = cast(bool) (kqueue_events & EVFILT_WRITE);
+			const bool connect = cast(bool) ((kqueue_events == EVFILT_READ || kqueue_events == EVFILT_WRITE) && !conn.disconnecting && !conn.connected);
+			bool read = (kqueue_events == EVFILT_READ) && !connect;
+			const bool write = kqueue_events == EVFILT_WRITE;
 			const bool error = cast(bool) (kqueue_flags & EV_ERROR);
-			const bool close = cast(bool) (kqueue_flags & EV_EOF);
+			// Match epoll EPOLLRDHUP: peer shut write. Local SHUT_WR is
+			// EV_EOF on EVFILT_WRITE only and must not tear the socket down.
+			const bool close = cast(bool) ((kqueue_flags & EV_EOF) && kqueue_events == EVFILT_READ && !conn.readShut);
 		}
 
 		if (error)
@@ -2807,9 +2857,6 @@ private:
 				return false;
 			}
 		}
-		else {
-			read = true;
-		}
 
 		if (read && conn.connected && !conn.disconnecting)
 		{
@@ -2834,25 +2881,10 @@ private:
 				return false;
 			}
 
-			// Careful here, the delegate might have closed the connection already
-			if (conn.connected) {
-				closeSocket(fd, !conn.disconnecting, true);
-
-				m_status.code = Status.ABORT;
-				conn.disconnecting = true;
-				conn.connected = false;
-				conn.writeBlocked = true;
-				del.conn.socket = 0;
-				try ThreadMem.free(del.conn.evInfo);
-				catch (Exception e){ assert(false, "Error freeing resources"); }
-				del.conn.evInfo = null;
-
-				if (del.conn.inbound) {
-					static if (LOG) trace("Freeing inbound connection");
-					try ThreadMem.free(del.conn);
-					catch (Exception e){ assert(false, "Error freeing resources"); }
-				}
-			}
+			// Do not closeSocket / free evInfo / zero the fd here.
+			// kill() delivers DESTROY from evInfo and then frees.
+			// Freeing evInfo in this batch left Slot.stream dangling
+			// (no DESTROY) and the next ThreadMem.alloc reused it.
 		}
 		return true;
 	}
@@ -3009,6 +3041,7 @@ private:
 		catch (Exception e){ assert(false, "Allocation error"); }
 		assert(ev !is null);
 		ctxt.evInfo = ev;
+		ctxt.eventDelegate(del.del);
 		nothrow bool destroyEvInfo() {
 			try ThreadMem.free(ev);
 			catch(Exception e){ assert(false, "Failed to free resources"); }
@@ -3165,12 +3198,7 @@ private:
 
 	pragma(inline, true)
 	error_t lastError() {
-		try {
-			return cast(error_t) errno;
-		} catch(Exception e) {
-			return EPosix.EACCES;
-		}
-
+		return cast(error_t) errno;
 	}
 
 	void log(StatusInfo val)
@@ -3515,6 +3543,8 @@ mixin template COSocketMixins() {
 		bool disconnecting;
 		bool writeBlocked;
 		bool readBlocked;
+		bool writeShut;
+		bool readShut;
 	}
 
 	@property bool disconnecting() const @safe pure @nogc {
@@ -3555,6 +3585,22 @@ mixin template COSocketMixins() {
 
 	@property void evInfo(EventInfo* info) @safe pure @nogc {
 		m_impl.evInfo = info;
+	}
+
+	@property bool writeShut() const @safe pure @nogc {
+		return m_impl.writeShut;
+	}
+
+	@property void writeShut(bool b) @safe pure @nogc {
+		m_impl.writeShut = b;
+	}
+
+	@property bool readShut() const @safe pure @nogc {
+		return m_impl.readShut;
+	}
+
+	@property void readShut(bool b) @safe pure @nogc {
+		m_impl.readShut = b;
 	}
 
 }

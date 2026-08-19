@@ -478,6 +478,7 @@ package:
 
 		try {
 			(m_tcpHandlers)[fd] = del;
+			ctxt.eventDelegate(del.del);
 		}
 		catch (Exception e) {
 			setInternalError!"m_tcpHandlers assign"(Status.ERROR, e.msg);
@@ -640,6 +641,22 @@ package:
 		return true;
 	}
 
+	bool shutdown(AsyncTCPConnection ctxt, bool shut_read, bool shut_write)
+	{
+		m_status = StatusInfo.init;
+		fd_t fd = ctxt.socket;
+		if (!fd) return true;
+		if (shut_read && shut_write)
+			return kill(ctxt, true);
+		INT how = shut_read ? (shut_write ? SD_BOTH : SD_RECEIVE) : SD_SEND;
+		INT err = .shutdown(fd, how);
+		if (shut_write) ctxt.writeShut = true;
+		if (shut_read) ctxt.readShut = true;
+		if (catchSocketError!"shutdown"(err))
+			return false;
+		return true;
+	}
+
 	bool kill(AsyncTCPConnection ctxt, bool forced = false)
 	{
 
@@ -650,10 +667,12 @@ package:
 		try {
 			auto cb = m_tcpHandlers.get(ctxt.socket);
 			if (cb != TCPEventHandler.init){
+				ctxt.notifyDestroy(cb.del);
 				*cb.conn.connected = false;
 				*cb.conn.connecting = false;
 				return closeSocket(fd, true, forced);
 			}
+			ctxt.notifyDestroy(null);
 		} catch (Exception e) {
 			setInternalError!"in m_tcpHandlers"(Status.ERROR, e.msg);
 			assert(false);
@@ -1129,10 +1148,10 @@ package:
 		INT err;
 		if (ctxt.connectionOriented) {
 			if (forced) {
-				err = shutdown(handle, SD_BOTH);
+				err = .shutdown(handle, SD_BOTH);
 				closesocket(ctxt.handle);
 			} else {
-				err = shutdown(handle, SD_SEND);
+				err = .shutdown(handle, SD_SEND);
 			}
 			if (catchSocketError!"shutdown"(err)) {
 				return false;
@@ -1627,20 +1646,15 @@ package:
 		static if (LOG) try trace("Shutdown FD#" ~ fd.to!string);
 		catch (Throwable) {}
 		if (forced) {
-			err = shutdown(fd, SD_BOTH);
+			err = .shutdown(fd, SD_BOTH);
 			closesocket(fd);
 		}
 		else
-			err = shutdown(fd, SD_SEND);
+			err = .shutdown(fd, SD_SEND);
 
 		try {
 			TCPEventHandler* evh = fd in m_tcpHandlers;
 			if (evh) {
-				if (evh.conn.inbound) {
-					try ThreadMem.free(evh.conn);
-					catch(Exception e) { assert(false, "Failed to free resources"); }
-				}
-
 				evh.conn = null;
 				//static if (LOG) trace("Remove event handler for " ~ fd.to!string);
 				m_tcpHandlers.remove(fd);
@@ -2092,6 +2106,7 @@ private:
 
 				try {
 					m_tcpHandlers[csock] = cb; // keep the handler to setup the connection
+					conn.eventDelegate(cb.del);
 					static if (LOG) trace("ACCEPT&CONNECT FD#" ~ csock.to!string);
 					*conn.connected = true;
 					cb(TCPEvent.CONNECT);
@@ -2407,6 +2422,8 @@ mixin template COSocketMixins() {
 	struct CleanupData {
 		bool connected;
 		bool connecting;
+		bool writeShut;
+		bool readShut;
 	}
 
 	@property bool* connecting() {
@@ -2415,6 +2432,22 @@ mixin template COSocketMixins() {
 
 	@property bool* connected() {
 		return &m_impl.connected;
+	}
+
+	@property bool writeShut() const @safe pure @nogc {
+		return m_impl.writeShut;
+	}
+
+	@property void writeShut(bool b) @safe pure @nogc {
+		m_impl.writeShut = b;
+	}
+
+	@property bool readShut() const @safe pure @nogc {
+		return m_impl.readShut;
+	}
+
+	@property void readShut(bool b) @safe pure @nogc {
+		m_impl.readShut = b;
 	}
 
 }

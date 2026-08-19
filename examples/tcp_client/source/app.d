@@ -76,6 +76,8 @@ class TCPConnection {
 				break;
 			case TCPEvent.ERROR:
 				assert(false, m_conn.error());
+			case TCPEvent.DESTROY:
+				break;
 		} catch (Exception e) {
 			assert(false, e.toString());
 		}

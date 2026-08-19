@@ -115,6 +115,7 @@ package:
 		return m_evLoop.sendTo(fd, data, addr);
 	}
 
+	pragma(inline, true)
 	uint recv(in fd_t fd, ubyte[] data)
 	{
 		return m_evLoop.recv(fd, data);
@@ -271,6 +272,10 @@ package:
 
 	bool kill(AsyncTCPConnection obj, bool forced = false) {
 		return m_evLoop.kill(obj, forced);
+	}
+
+	bool shutdown(AsyncTCPConnection obj, bool shut_read, bool shut_write) {
+		return m_evLoop.shutdown(obj, shut_read, shut_write);
 	}
 
 	bool kill(AsyncTCPListener obj) {

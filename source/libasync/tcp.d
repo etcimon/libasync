@@ -15,12 +15,19 @@ package:
 
 private:
 	NetworkAddress m_peer;
+	// Accept/run stores the traffic callback so DESTROY still fires
+	// if evInfo was already cleared. Not `nothrow` — TCPEventHandler.del
+	// is a throwing delegate.
+	void delegate(TCPEvent) m_eventDel;
 
 nothrow:
 	fd_t m_socket;
 	fd_t m_preInitializedSocket;
 	bool m_noDelay;
 	bool m_inbound;
+	// Set before DESTROY is delivered so a nested kill() from the
+	// handler cannot close/free twice.
+	bool m_destroying;
 	version(Posix) {
 		~this() {
 			if (isConnected) {
@@ -136,6 +143,7 @@ public:
 	bool run(TCPEventHandler del)
 	in { assert(!isConnected); }
 	do {
+		m_eventDel = del.del;
 		m_socket = m_evLoop.run(this, del);
 		if (m_socket == 0)
 			return false;
@@ -160,20 +168,43 @@ public:
 	//do
 	{
 		uint ret = m_evLoop.send(m_socket, ub);
-		version(Posix)
-			if (m_evLoop.status.code == Status.ASYNC)
+		version(Posix) {
+			// A short send fills the OS buffer; the next send is EAGAIN.
+			// Mark write-blocked here so callers can skip that extra syscall
+			// and still get TCPEvent.WRITE on the next EPOLLOUT edge.
+			if (m_evLoop.status.code == Status.ASYNC
+					|| (ret > 0 && ret < ub.length))
 				this.writeBlocked = true;
+		}
 		return ret;
 	}
 
 	/// Removes the connection from the event loop, closing it if necessary, and
-	/// cleans up the underlying resources.
+	/// cleans up the underlying resources. Inbound (accept) objects are
+	/// ThreadMem-owned: kill delivers TCPEvent.DESTROY first, then frees.
 	bool kill(bool forced = false)
-	in { assert(isConnected); }
+	in { assert(isConnected || m_destroying); }
 	do {
+		if (m_destroying)
+			return true;
+		m_destroying = true;
+		immutable inbound = m_inbound;
 		bool ret = m_evLoop.kill(this, forced);
-		scope(exit) m_socket = 0;
+		m_socket = 0;
+		if (inbound) {
+			import memutils.utils : ThreadMem;
+			import std.exception : assumeWontThrow;
+			assumeWontThrow(ThreadMem.free(this));
+		}
 		return ret;
+	}
+
+	/// Half-close or full-close the TCP stream. Full close (`true, true`)
+	/// is `kill(true)`. Half-close keeps the fd and the other direction.
+	bool shutdown(bool shut_read = true, bool shut_write = true)
+	{
+		if (m_socket == 0) return true;
+		return m_evLoop.shutdown(this, shut_read, shut_write);
 	}
 
 	@property fd_t socket() const {
@@ -185,6 +216,24 @@ package:
 
 	@property void inbound(bool b) {
 		m_inbound = b;
+	}
+
+	package void eventDelegate(void delegate(TCPEvent) del)
+	{
+		m_eventDel = del;
+	}
+
+	/// Deliver DESTROY once. EventLoopImpl.kill calls this before close
+	/// so Slot.stream / user refs are gone before ThreadMem.free.
+	package void notifyDestroy(void delegate(TCPEvent) del)
+	{
+		auto d = del !is null ? del : m_eventDel;
+		m_eventDel = null;
+		m_destroying = true;
+		if (d) {
+			try d(TCPEvent.DESTROY);
+			catch (Exception) {}
+		}
 	}
 
 	@property bool noDelay() const
@@ -315,9 +364,11 @@ package struct TCPEventHandler {
 	void delegate(TCPEvent) del;
 
 	void opCall(TCPEvent ev){
-		if (conn is null || !conn.isConnected) return; //, "Connection was disposed before shutdown could be completed");
+		if (del is null) return;
+		// DESTROY must reach holders even after the fd is zeroed so
+		// they can drop AsyncTCPConnection refs before ThreadMem.free.
+		if (ev != TCPEvent.DESTROY && (conn is null || conn.socket == 0)) return;
 		del(ev);
-		return;
 	}
 }
 
@@ -342,7 +393,8 @@ enum TCPEvent : char {
 	CONNECT, /// indicates write will not block, although recv may or may not have data
 	READ, /// called once when new bytes are in the buffer
 	WRITE, /// only called when send returned Status.ASYNC
-	CLOSE /// The connection is being shutdown
+	CLOSE, /// The connection is being shutdown
+	DESTROY /// Object is about to be freed; drop every pointer now
 }
 
 ///

@@ -302,6 +302,8 @@ void trafficHandler(TCPEvent ev){
 		case TCPEvent.ERROR:
 			//writeln("!!Server Error!");
 			break;
+		case TCPEvent.DESTROY:
+			break;
 	}
 
 	return;
@@ -380,6 +382,8 @@ void testTCPConnect(string ip, ushort port) {
 			case TCPEvent.ERROR:
 				static if (LOG) tracef("!!Client Error!");
 				break;
+			case TCPEvent.DESTROY:
+				break;
 		}
 		return;
 	};
@@ -427,6 +431,8 @@ void testHTTPConnect() {
 				break;
 			case TCPEvent.ERROR:
 				//writeln("!!Error!");
+				break;
+			case TCPEvent.DESTROY:
 				break;
 		}
 		return;

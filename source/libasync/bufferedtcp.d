@@ -325,6 +325,8 @@ final class BufferedTCPConnection(size_t size = 4092)
             case TCPEvent.ERROR:
                 onError();
                 break;
+            case TCPEvent.DESTROY:
+                break;
         }
     }
 

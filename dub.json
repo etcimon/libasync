@@ -1,5 +1,6 @@
 {
     "name": "libasync",
+    "version": "0.9.8",
     "description": "A cross-platform event loop library of asynchronous objects.",
     "license": "MIT",
     "authors": ["Etienne Cimon", "Sönke Ludwig"],
@@ -10,7 +11,7 @@
     "libs-windows": ["advapi32", "user32", "ws2_32"],
     "libs-linux": ["rt", "resolv"],
     "dependencies": {
-            "memutils": { "version": "~>1.0.1" }
+            "memutils": { "version": "~>1.0.14" }
     },
     "configurations": [
             {

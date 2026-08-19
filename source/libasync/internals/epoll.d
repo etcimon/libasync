@@ -71,4 +71,6 @@ import core.sys.posix.time : itimerspec;
 
 import core.sys.posix.pthread : pthread_t;
 import core.sys.posix.signal : sigval;
-int pthread_sigqueue(pthread_t, int sig, in sigval);
+// `in` on extern(C) is deprecated (DMD/LDC 2.111+). C prototype is
+// pthread_sigqueue(pthread_t, int, const union sigval) passed by value.
+int pthread_sigqueue(pthread_t, int sig, sigval);

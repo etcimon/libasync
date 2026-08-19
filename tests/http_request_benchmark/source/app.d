@@ -146,6 +146,8 @@ auto doSetup_AsyncTCPConnection(NetworkAddress to)
 				break;
 			case TCPEvent.ERROR:
 				assert(false, client.error());
+			case TCPEvent.DESTROY:
+				break;
 		} catch (Exception e) {
 			assert(false, e.toString());
 		}

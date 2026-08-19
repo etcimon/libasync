@@ -86,6 +86,8 @@ class TCPConnection {
 				break;
 			case TCPEvent.ERROR:
 				assert(false, "Error during TCP Event");
+			case TCPEvent.DESTROY:
+				break;
 		}
 		return;
 	}
